@@ -214,8 +214,8 @@ export function makeHero(kind) {
     // Superman: everything on the face projects forward (no dents). Strong brow ridge, straight
     // nose bridge, high cheekbones, full lips and a jutting square chin with a cleft.
     const c = Math.cos(a), line = c > 0 ? 0.122 + 0.08 * c ** 2 - 0.006 * c ** 8 : 0.122 + 0.045 * c; // high forehead, slight widow-peak-free arch
-    const isHair = p.y > line;
-    hairMask.push(isHair);
+    const hairT = blend(line - 0.004, line + 0.004, p.y), isHair = hairT > 0;
+    hairMask.push(hairT); // soft 0..1 weight so the hairline is a clean gradient, not a stair-stepped edge
     const ax = Math.abs(p.x);
     p.z += f5 * (
       0.024 * bump(p.x, 0, 0.012) * bump(p.y, 0.118, 0.03)                 // nose
@@ -226,11 +226,18 @@ export function makeHero(kind) {
     p.z += front ** 2 * 0.007 * bump(ax, 0.052, 0.018) * bump(p.y, 0.112, 0.016); // cheekbones
     p.z -= front ** 3 * 0.0035 * bump(ax, 0.034, 0.016) * bump(p.y, 0.141, 0.01); // shallow eye sockets
     if (isHair) {
-      // Hair sits just proud of the skull and blends in, so the forehead isn't left sunken below it.
-      const k = 1 + 0.025 * blend(line, line + 0.03, p.y);
+      // Real hair volume instead of a painted cap: fuller on top, a swept-up pompadour at the front,
+      // a side part, and fine combed ridges so it catches light like slicked hair.
+      const up = blend(line, line + 0.05, p.y);
+      const comb = 0.0025 * Math.sin(a * 22 + p.y * 40) * up;
+      const k = 1 + hairT * (0.02 + 0.045 * up) + comb;
       p.x *= k; p.z *= k;
-      p.y += 0.008 * front ** 2 * bump(p.y, 0.215, 0.03);                  // slicked-back front wave
+      p.z += 0.016 * front ** 2 * bump(p.y, 0.228, 0.018);                 // pompadour pushed forward
+      p.y += 0.014 * front ** 1.5 * bump(p.y, 0.232, 0.025) * hairT;        // ...and lifted
+      p.y += 0.008 * up;                                                     // fuller crown
+      p.y -= 0.004 * bump(p.x, -0.032, 0.005) * up;                          // side part groove
     }
+    return p;
     return p;
   };
   const faceGeo = surface(faceRows, faceSculpt, 72);
@@ -251,7 +258,8 @@ export function makeHero(kind) {
   } else {
     const hair = mat(0x0c1018, 0.5);
     const colors = [];
-    for (const h of hairMask) { const c = h ? hair.color : skin.color; colors.push(c.r, c.g, c.b); }
+    const hc = new THREE.Color();
+    for (const h of hairMask) { hc.copy(skin.color).lerp(hair.color, h); colors.push(hc.r, hc.g, hc.b); }
     faceGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     part(head, faceGeo, mat(0xffffff, 0.75, 0, { vertexColors: true }));
     line(head, [[-0.027, 0.21, 0.06], [0.003, 0.2, 0.077], [0.017, 0.184, 0.078], [0.008, 0.169, 0.079], [-0.002, 0.174, 0.079]], 0.004, hair);
