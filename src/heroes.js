@@ -711,7 +711,10 @@ function kneePole(H, l, tg) {
 // In the air (air 0..1, the ankle's height above the roof) a free foot is not held flat to the body: flying
 // in pitched forward with the trailing knee bent, the root-aligned boot was cranked 65 deg up toward the shin
 // (a real ankle dorsiflexes ~20 deg). Airborne feet relax into a point along the shin line instead.
-const MAX_PF = 0.9, AIR_PF = 0.8, _toe = new THREE.Vector3(), _qf = new THREE.Quaternion(), _XA = new THREE.Vector3(1, 0, 0),
+// Dorsiflexion is capped at MAX_DF too: the rear boot of the guard was held flat with the shin 61 deg past
+// square (crouch 87, landing kneel 82; a loaded ankle manages ~35-40). Past the cap the heel lifts and the
+// boot pivots onto its toes; posePass then raises the ankle until the toes rest on the roof.
+const MAX_PF = 0.9, MAX_DF = 0.65, AIR_PF = 0.8, _toe = new THREE.Vector3(), _qf = new THREE.Quaternion(), _XA = new THREE.Vector3(1, 0, 0),
   _DN = new THREE.Vector3(0, -1, 0), _ax = new THREE.Vector3();
 function orientFoot(l, qRoot, air = 0) {
   l.kn.getWorldQuaternion(_qa).invert();
@@ -719,10 +722,16 @@ function orientFoot(l, qRoot, air = 0) {
   _toe.set(0, 0, 1).applyQuaternion(l.an.quaternion); // toes in the shin's frame
   const pf = Math.atan2(-_toe.y, _toe.z);
   if (pf > MAX_PF) l.an.quaternion.premultiply(_qf.setFromAxisAngle(_XA, MAX_PF - pf));
-  else if (air > 0 && _ax.crossVectors(_toe, _DN).lengthSq() > 1e-8) {
-    // Swing the toes toward the shin's long axis (no twist about it, so the sole never rolls in or out).
-    const cur = Math.asin(Math.max(-1, Math.min(1, -_toe.y)));
-    l.an.quaternion.premultiply(_qf.setFromAxisAngle(_ax.normalize(), air * (AIR_PF - cur)));
+  else {
+    if (pf < -MAX_DF) {
+      l.an.quaternion.premultiply(_qf.setFromAxisAngle(_XA, -MAX_DF - pf));
+      _toe.set(0, 0, 1).applyQuaternion(l.an.quaternion);
+    }
+    if (air > 0 && _ax.crossVectors(_toe, _DN).lengthSq() > 1e-8) {
+      // Swing the toes toward the shin's long axis (no twist about it, so the sole never rolls in or out).
+      const cur = Math.asin(Math.max(-1, Math.min(1, -_toe.y)));
+      l.an.quaternion.premultiply(_qf.setFromAxisAngle(_ax.normalize(), air * (AIR_PF - cur)));
+    }
   }
   l.an.updateMatrixWorld(true);
 }
@@ -805,15 +814,15 @@ function posePass(H, s, t, ground, raise) {
     orientFoot(l, _qb, air);
     // When the body is pitched (rolls, tumbles) the boot's toe/heel can still dip through the roof even
     // with the ankle above it: lift the ankle by the deficit of the lowest boot corner and re-solve.
-    if (_T.y > ground - 0.6) {
+    // Repeated: a heel lifted by the dorsiflexion cap changes the shin angle as the ankle rises.
+    for (let it = 0; it < 4 && _T.y > ground - 0.6; it++) {
       let low = Infinity;
       for (const c of BOOT_CORNERS) { _P.copy(c); l.an.localToWorld(_P); low = Math.min(low, _P.y); }
-      if (low < ground) {
-        _T.y += ground - low;
-        kneePole(H, l, tg);
-        solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
-        orientFoot(l, _qb);
-      }
+      if (low >= ground - 0.002) break;
+      _T.y += ground - low;
+      kneePole(H, l, tg);
+      solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
+      orientFoot(l, _qb);
     }
   }
 }
