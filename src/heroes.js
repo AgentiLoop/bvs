@@ -41,20 +41,38 @@ function emblemTexture(kind) {
     g.fillStyle = '#0b0b0d';
     drawBat(g, 64, 66, 54, 50);
   } else {
-    const shield = (s) => {
+    // Man of Steel style Kryptonian "hope" glyph: a very wide, shallow diamond shield and an angular,
+    // Z-like S with a heavy diagonal centre stroke, thin top/bottom bars and a descending upper serif.
+    c.width = 512; c.height = 384;
+    const poly = (pts, k = 1, cx = 256, cy = 140) => {
       g.beginPath();
-      [[6, 34], [30, 8], [98, 8], [122, 34], [64, 122]].forEach(([x, y], i) => {
-        const X = 64 + (x - 64) * s, Y = 58 + (y - 58) * s;
-        i ? g.lineTo(X, Y) : g.moveTo(X, Y);
-      });
+      pts.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](cx + (x - cx) * k, cy + (y - cy) * k));
       g.closePath(); g.fill();
     };
-    g.fillStyle = '#c21a1a'; shield(1);
-    g.fillStyle = '#f2c230'; shield(0.82);
-    g.fillStyle = '#c21a1a';
-    g.font = 'italic bold 74px Georgia, serif';
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText('S', 64, 54);
+    const shield = [[4, 76], [100, 6], [412, 6], [508, 76], [256, 380]];
+    g.fillStyle = '#6e0b12'; poly(shield);
+    g.fillStyle = '#b3141f'; poly(shield, 0.94);
+    g.fillStyle = '#e3ab2b'; poly(shield, 0.83);
+    g.fillStyle = '#b3141f';
+    g.beginPath();
+    g.moveTo(402, 44);                                  // top-right tip of the upper bar
+    g.lineTo(384, 98);                                  // descending serif point
+    g.lineTo(358, 76);
+    g.lineTo(178, 76);                                  // thin top bar, inner edge
+    g.quadraticCurveTo(150, 78, 152, 100);
+    g.lineTo(168, 118);
+    g.lineTo(322, 160);                                 // heavy diagonal centre stroke, top edge
+    g.quadraticCurveTo(372, 178, 344, 230);             // lower-right bowl, outer
+    g.quadraticCurveTo(322, 270, 262, 272);
+    g.lineTo(214, 272);                                 // thin bottom bar, tapering to a point
+    g.lineTo(232, 248);
+    g.lineTo(268, 248);
+    g.quadraticCurveTo(298, 246, 298, 226);
+    g.lineTo(284, 206);
+    g.lineTo(126, 160);                                 // centre stroke, bottom edge
+    g.quadraticCurveTo(84, 142, 92, 100);               // upper-left bowl, outer
+    g.quadraticCurveTo(104, 46, 170, 44);
+    g.closePath(); g.fill();
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -155,10 +173,10 @@ export function makeHero(kind) {
   torsoGeo.addGroup(0, neckRing * 48 * 6, 0);
   torsoGeo.addGroup(neckRing * 48 * 6, (96 - neckRing) * 48 * 6, 1);
   skinSurface(hips, torsoGeo, [suit, B ? dark : skin], torsoWeights);
-  const emblemGeo = new THREE.PlaneGeometry(B ? 0.22 : 0.17, B ? 0.11 : 0.155, 24, 20);
+  const emblemGeo = new THREE.PlaneGeometry(B ? 0.22 : 0.4, B ? 0.11 : 0.3, 32, 24); // Superman: big chest-spanning shield
   const ep = emblemGeo.attributes.position;
   for (let i = 0; i < ep.count; i++) {
-    const x = ep.getX(i), y = ep.getY(i) + 0.565;
+    const x = ep.getX(i), y = ep.getY(i) + (B ? 0.565 : 0.545);
     ep.setXYZ(i, x, y, chestDepth(x, y) + 0.0025);
   }
   emblemGeo.computeVertexNormals();
