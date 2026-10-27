@@ -173,11 +173,11 @@ const SHOT = {
     keys: [[0, 'clapUp'], [0.16, 'clap'], [0.42, 'guard']] },
 };
 // Batman's Grapnel Gun (G, or R3 away from a drum; Batman only). Neutral / toward = a kryptonite hook fired like a laser,
-// dead straight at Superman's chest (jump, duck or sidestep it): it latches on, the kryptonite burns him (`drain` HP/s, he
+// dead straight at Superman's chest (sidestep or block it): it latches on, the kryptonite burns him (`drain` HP/s, he
 // can't act) and reels him in to `stop` m for `latch` s, leaving him stunned `release` s. Blocked = chip, it bounces off.
 // A direction held (not toward) = zip `zip.dist` m that way off a skyline anchor; block + G = swing over him, land behind.
 // One every `cd` s.
-const GRAPNEL = { cd: 1.8, rel: 0.16, speed: 34, back: 40, range: 9, r: 0.6, latch: 0.9, drain: 10, reel: 7, stop: 1.05, release: 0.45, rec: 0.18,
+const GRAPNEL = { cd: 1.8, rel: 0.16, speed: 34, back: 40, range: 9, r: 0.45, latch: 0.9, drain: 10, reel: 7, stop: 1.05, release: 0.45, rec: 0.18,
   col: 0x39ff6a, hit: { dmg: 5, kb: 0, stun: 0.4, at: 'rh', blast: 0.5 }, ko: { dmg: 0.01, kb: 2, up: 2, stun: 0.5, heavy: true, blast: 1.2 },
   zip: { dist: 5.5, behind: 1.6, anchor: 6, speed: 13, arc: 1.3, min: 0.35 } };
 const QCF = 0.35; // crouch must have been held within this many seconds of toward + punch

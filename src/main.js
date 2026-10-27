@@ -526,7 +526,7 @@ function updateVisuals() {
   grapMesh.light.intensity = 0;
   if (gp) {
     _v.set(gp.a[0], gp.a[1], gp.a[2]); _w.set(gp.b[0], gp.b[1], gp.b[2]).sub(_v);
-    const len = _w.length(), w = (gp.mode === 'hook' ? 0.035 : 0.016) * (1 + Math.sin(game.t * 70) * 0.15);
+    const len = _w.length(), w = (gp.mode === 'hook' ? 0.035 : 0.024) * (1 + Math.sin(game.t * 70) * 0.15);
     grapMesh.line.position.copy(_v); grapMesh.line.quaternion.setFromUnitVectors(UP, _w.normalize());
     grapMesh.line.children[0].scale.set(w, len, w); grapMesh.line.children[1].scale.set(w * 0.3, len, w * 0.3);
     grapMesh.hook.position.set(gp.b[0], gp.b[1], gp.b[2]); grapMesh.hook.quaternion.copy(grapMesh.line.quaternion);
