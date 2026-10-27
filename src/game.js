@@ -49,6 +49,8 @@ const MP = {
   // rising uppercut: fist driven straight up, body corkscrewing, lead knee tucked
   riseUp:  { ...P.upper, h: 0.88, lean: -0.05, tw: -0.45, lh: [0.22, 0.3, 0.2], rh: [-0.04, 1.2, 0.3], lf: [0.15, -0.45, 0.3], rf: [-0.15, -0.88, -0.1] },
   // parry: the lead hand sweeps the blow up and out past the head (standing) or down past the knee (crouching)
+  // MK breaker: chest thrown open, arms flung wide and back, up on the toes
+  burst:   { ...G, h: 0.9, lean: -0.3, tw: 0, lh: [0.62, 0.8, -0.05], rh: [-0.62, 0.8, -0.05], lf: [0.22, -0.86, 0.12], rf: [-0.22, -0.86, -0.14] },
   parry:   { ...G, h: 0.86, lean: -0.1, tw: 0.35, lh: [0.4, 0.86, 0.5], rh: [-0.12, 0.55, 0.28] },
   parryLow:{ ...G, h: 0.54, lean: 0.5, tw: 0.3, lh: [0.42, -0.02, 0.55], rh: [-0.12, 0.36, 0.3], lf: [0.22, -0.47, 0.36], rf: [-0.22, -0.47, -0.3] },
   // fatal blow: Batman drags the head down into a rising knee, then drops a hammer elbow; Superman holds him up by the throat
@@ -181,6 +183,10 @@ const BLOW = { hp: 30, lunge: 8, reach: 1.15, win: 0.5, rec: 0.9, pause: 0.16, c
     [0.42, 'choke', { dmg: 5, kb: 0, stun: 0.5, at: 'lh', blast: 0.6, beam: true }, 0.6], [0.59, 'choke', { dmg: 5, kb: 0, stun: 0.5, at: 'lh', blast: 0.8, beam: true }, 0.65],
     [0.8, 'dip', null, 0], [0.95, 'upper', { dmg: 24, kb: 2, up: 11, stun: 1, heavy: true, at: 'rh', blast: 2.4, last: true }, 0]] },
 };
+// MK Breaker: caught in a combo (`hits`+ hits) with `cost` meter, hold block + toward = burst out of it: the attacker is
+// blown back `kb` and stunned `stun` s, the breaker is invulnerable for `inv` s and drops to his feet. Not during supers,
+// Fatal Blows or fatalities. cpu: chance per combo hit that the CPU breaks.
+const BREAK = { cost: 50, hits: 2, inv: 0.4, kb: 7, stun: 0.6, pose: 0.3, cpu: 0.12 };
 // Power-ups: a glowing orb drops into the arena now and then (first at `first` s, then every `every` s if none is out);
 // walk through it to collect. rage: 1.5x damage for `time` s (red aura); meter: +50 super meter; heal: +15 HP.
 const ORB = { first: 8, every: 11, life: 9, y: 1.0, r: 0.75, fall: 1.2 };
@@ -225,7 +231,7 @@ export class Game {
     this.round = 1; this.wins = { bat: 0, sup: 0 }; this.clock = ROUND_TIME; this.fightT = 0; this.matchOver = false; this.winner = null;
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
       ko: false, cd: 0, down: 0, meter: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
-      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, blowUsed: false, blowSaid: false,
+      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, brk: 0, blowUsed: false, blowSaid: false,
       ai: { t: 0, mx: 0, mz: 0, block: 0, crouch: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0, hx: 0, hy: 0, squash: 0 });
     this.F = { bat: mk(bat, 'bat', -7.4, Math.PI / 2), sup: mk(sup, 'sup', 2.2, -Math.PI / 2) };
     this.F.sup.y = 26; this.F.sup.cur = T(POSES.fly, { pitch: 0.35 });
@@ -643,6 +649,30 @@ export class Game {
     if (!a.done) pin(0.8, f.y + (a.t < S.grab ? 0 : 0.9 * clamp((a.t - S.grab) / 0.2, 0, 1)));
     return a.t < dn + 0.6;
   }
+  canBreak(f) {
+    const o = f === this.me ? this.cpu : this.me, oa = o.act;
+    return this.state === 'fight' && !this.finish && f.stun > 0 && !f.ko && !f.dazed && f.hp > 0 && !f.heldBy && f.down <= 0 && f.brk <= 0
+      && f.meter >= BREAK.cost && o.hits >= BREAK.hits && !(oa && (oa.type === 'super' || oa.type === 'blow' || oa.type === 'fatal'));
+  }
+  // MK Breaker: a shockwave bursts out of the victim mid-combo and throws the attacker off him.
+  breaker(f) {
+    if (!this.canBreak(f)) return false;
+    const o = f === this.me ? this.cpu : this.me, { fx } = this.ctx;
+    const dx = o.x - f.x, dz = o.z - f.z, d = Math.hypot(dx, dz) || 1, nx = dx / d, nz = dz / d;
+    f.meter -= BREAK.cost; f.stun = 0; f.act = null; f.buf = null; f.brk = BREAK.inv; f.launched = false; f.kx = -nx * 1.5; f.kz = -nz * 1.5;
+    if (f.y > 0.05) f.vy = Math.max(f.vy, 2); // flips out of the juggle and drops to his feet
+    o.act = null; o.buf = null; o.hits = 0; o.stun = o.stunMax = BREAK.stun; o.heavy = true; o.zone = 'body'; o.hitSide = 1;
+    o.kx = nx * BREAK.kb; o.kz = nz * BREAK.kb; o.cur.lean -= 0.5; if (o.y > 0.05) o.launched = true;
+    const c = f.H.chest.getWorldPosition(new THREE.Vector3()), col = f.key === 'bat' ? 0xffd23a : 0x6fa8ff;
+    fx.waves.spawn(c.x, c.y, c.z, 3, col, 0.6); fx.waves.spawn(f.x, 0.05, f.z, 4, 0xffffff, 0.7);
+    fx.sparkBurst(c.x, c.y, c.z, 80, 6, col); fx.blast(c.x, c.y, c.z, 1.6, 0.6, col); fx.dustBurst(f.x, 0, f.z, 50, 3);
+    fx.impact(c.x, c.y, c.z, 0.4); fx.flash(0.3);
+    this.hitstop = Math.max(this.hitstop, 0.15); this.camKick(c, 1.2, f.key === 'bat' ? 1 : -1);
+    if (f === this.me || o === this.me) this.rumble(0.8, 250);
+    this.showCombo('BREAKER!', f.key); this.updateBars();
+    return true;
+  }
+
   reaches(f, o, M, d) {
     if (o.ko || o.down > 0) return false;
     if (M.air) { const dy = f.y - o.y; return d < M.reach && dy > -0.8 && dy < 1.7; } // limb reaches down to a standing head
@@ -678,7 +708,7 @@ export class Game {
 
   hurt(def, att, M, at, trade = false) {
     const { fx } = this.ctx;
-    if (def.ko || def.down > 0) return;
+    if (def.ko || def.down > 0 || def.brk > 0) return;
     if (def.act && (def.act.type === 'super' || def.act.type === 'blow')) { this.ctx.fx.sparkBurst(at.x, at.y, at.z, 10, 2, 0xffffff); return; } // armoured
     if (def.act && def.act.type === 'dash' && def.act.dir < 0 && def.act.t < DASH.invuln) return; // backdash invulnerability
     if (def.act && def.act.type === 'rise' && def.act.t < RISE[def.key].inv) { fx.sparkBurst(at.x, at.y, at.z, 8, 2, 0xffffff); return; } // invincible start-up
@@ -786,7 +816,7 @@ export class Game {
   nextRound() {
     this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.winner = null; this.koCam = null; this.kick = null; this.finish = null; this.shots = []; this.orb = null; this.orbT = ORB.first;
     for (const [f, x] of [[this.F.bat, -2.2], [this.F.sup, 2.2]]) {
-      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, dazed: false, downT: -9, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, frz: 0, cur: T(POSES.guard) });
+      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, dazed: false, downT: -9, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, frz: 0, brk: 0, cur: T(POSES.guard) });
       f.yaw = x < 0 ? Math.PI / 2 : -Math.PI / 2;
     }
     this.ctx.batCape.reset(); this.ctx.supCape.reset();
@@ -874,7 +904,7 @@ export class Game {
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
     if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN',
-      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
+      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }
   }
@@ -906,6 +936,7 @@ export class Game {
     if (s === 1 && f.tapS !== 1) { if (tapT > PARRY.lock) f.parT = this.fightT; f.parTap = this.fightT; }
     else if (cTap) { if (tapT > PARRY.lock) f.parL = this.fightT; f.parTap = this.fightT; }
     f.tapS = s; f.tow = tow;
+    if (f.stun > 0 && tow > 0.6 && this.blockHeld()) this.breaker(f);
     if (tow > 0.6 && !ch) f.fwdT = this.fightT;
     this.walk(f, f.inX, f.inZ, dt);
   }
@@ -922,6 +953,8 @@ export class Game {
       this.walk(f, d > 1.2 ? tx : 0, d > 1.2 ? tz : 0, dt);
       return;
     }
+    // one breaker roll per combo hit taken
+    if (f.stun > 0 && A.brkN !== o.hits && this.canBreak(f)) { A.brkN = o.hits; if (rng() < BREAK.cpu) this.breaker(f); }
     f.block = A.block > 0 && this.free(f);
     f.crouch = A.crouch > 0 && this.canCrouch(f);
     // keep strings going once the first hit is out
@@ -1004,7 +1037,7 @@ export class Game {
 
   physics(f, o, dt) {
     const { fx } = this.ctx;
-    f.parryT -= dt;
+    f.parryT -= dt; f.brk -= dt;
     if (f.frz > 0) { f.frz -= dt; return; } // parried: frozen mid-move
     // airborne
     if ((f.y > 0 || f.vy > 0) && !(f.act && (f.act.type === 'flykick' || f.act.type === 'fatal'))) {
@@ -1188,6 +1221,7 @@ export class Game {
     if (a && a.type === 'flykick') { const u = a.t / 0.75; return u < 0.15 ? T(POSES.tuck) : T(POSES.flykick, { h: 0.75 }); }
     if (a && a.type === 'heat') return T(POSES.heat);
     if (a && a.type === 'rise') return a.landT != null ? T(MP.crouch) : a.t < 0.05 ? T(MP.dip) : f.vy > -1.5 ? T(MP.riseUp) : T(POSES.tuck);
+    if (f.brk > BREAK.inv - BREAK.pose && !a) return T(MP.burst);
     if (f.parryT > 0 && !a && f.stun <= 0) return T(f.parLow ? MP.parryLow : MP.parry);
     if (f.stun > 0) {
       // reaction by where the blow landed, mirrored to the side it came from; heavy head shots whip all the way back.
