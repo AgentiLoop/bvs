@@ -543,9 +543,13 @@ function posePass(H, s, t, ground, raise) {
   H.root.rotation.set(s.pitch, s.yaw, s.roll, 'YXZ');
   // Athletic, coiled posture: the lean is spread through spine and chest at 1.35x (hunched shoulders,
   // chest driving forward) and the head counters most of it so the eyes stay on the opponent.
+  // The pelvis tips forward too (anterior tilt) so the hinge starts at the hips, not just the back.
+  // Only in standing/fighting stances: in tucks and kneels the thighs are already folded up to the belly.
+  const tilt = Math.min(0.45, Math.max(0, s.lean)) * 0.3 * blend(0.5, 0.65, -Math.max(s.lf[1], s.rf[1]));
+  H.hips.rotation.set(tilt, 0, 0);
   H.spine.rotation.set(s.lean * 0.6, 0, s.roll * 0.3);
   H.chest.rotation.set(s.lean * 0.75 + Math.sin(t * 2.1) * 0.012, 0, 0);
-  H.head.rotation.set(-s.lean * 0.95, 0, 0);
+  H.head.rotation.set(-s.lean * 0.95 - tilt, 0, 0);
   H.root.updateMatrixWorld(true);
 
   const g = s.gait || 0, ph = t * Math.PI * 2 * 1.7, sw = Math.sin(ph), cw = Math.cos(ph);
