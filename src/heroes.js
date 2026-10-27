@@ -184,7 +184,7 @@ export function makeHero(kind) {
   torsoGeo.addGroup(0, neckRing * 48 * 6, 0);
   torsoGeo.addGroup(neckRing * 48 * 6, (96 - neckRing) * 48 * 6, 1);
   skinSurface(hips, torsoGeo, [suit, B ? dark : skin], torsoWeights);
-  const emblemGeo = new THREE.PlaneGeometry(B ? 0.22 : 0.4, B ? 0.11 : 0.3, 32, 24); // Superman: big chest-spanning shield
+  const emblemGeo = new THREE.PlaneGeometry(B ? 0.29 : 0.4, B ? 0.145 : 0.3, 32, 24); // Superman: big chest-spanning shield
   const ep = emblemGeo.attributes.position;
   for (let i = 0; i < ep.count; i++) {
     const x = ep.getX(i), y = ep.getY(i) + (B ? 0.565 : 0.545);
