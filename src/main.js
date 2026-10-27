@@ -9,6 +9,10 @@ import { BAT, SUP, HEAT, SLOWMO, KEY, sampleTrack, sampleCam, face } from './tim
 import { mulberry32 } from './rng.js';
 import { loadFanModel } from './modelrig.js';
 import { Game } from './game.js';
+import { Sound } from './audio.js';
+
+const sound = new Sound();
+for (const ev of ['keydown', 'pointerdown']) addEventListener(ev, () => sound.start());
 
 const qs = new URLSearchParams(location.search);
 const SEED = +(qs.get('seed') || 1337);
@@ -131,7 +135,7 @@ for (const k of (qs.get('off') || '').split(',')) { // debug: ?off=rain,spot,fog
 const bat = makeHero('batman'), sup = makeHero('superman');
 scene.add(bat.root, sup.root);
 // Clean procedural heroes by default; imported models remain available through explicit URLs.
-document.getElementById('hud').textContent = 'Procedural Batman & Superman · B / S play as Batman / Superman · P pixel-art / comic · - + pixel size · C free camera · SPACE pause · R restart';
+document.getElementById('hud').textContent = 'Procedural Batman & Superman · B / S play as Batman / Superman · P pixel-art / comic · - + pixel size · C free camera · SPACE pause · R restart · M sound';
 window.__fan = {};
 const DEFAULT_CAPE = { bat: 'Cube_2', sup: null }; // Batman's cape shares a shell with the cowl, so name it
 const DEFAULT_YAW = { bat: 0, sup: -Math.PI / 2 }; // verified facing for the bundled models (auto-detect is fooled by capes)
@@ -155,6 +159,7 @@ const water = new Particles(2200, { size: 0.07, gravity: 9.8, bounce: 0.15, drag
 const sparks = new Particles(900, { size: 0.06, additive: true, gravity: 5, bounce: 0.4, drag: 1.2 });
 const dust = new Particles(900, { size: 0.16, additive: false, gravity: -0.3, bounce: 0, drag: 2.5, opacity: 0.35 });
 const waves = new Shockwaves(scene, 10);
+{ const spawn = waves.spawn.bind(waves); waves.spawn = (x, y, z, r, ...rest) => { sound.note('wave', r); return spawn(x, y, z, r, ...rest); }; }
 const decals = new Decals(400);
 scene.add(debris.mesh, water.points, sparks.points, dust.points, decals.mesh);
 
@@ -230,7 +235,7 @@ const CLASH_T = 18.2, BLAST_LIFE = 0.9; // sim seconds (clash happens in slow-mo
 let blastN = 2;
 function blast(x, y, z, size = 1, life = 0.45, tint = 0xffffff) {
   const b = blasts[blastN]; blastN = blastN + 1 < blasts.length ? blastN + 1 : 2;
-  b.position.set(x, y, z); b.material.color.set(tint); b.material.rotation = 0;
+  b.position.set(x, y, z); b.material.color.set(tint); b.material.rotation = 0; sound.note('blast', size);
   Object.assign(b.userData, { age: 0, size, life }); b.visible = true;
 }
 
@@ -252,6 +257,7 @@ function fistBlast() {
 }
 
 function rubble(x, y, z, n, speed, sMin, sMax, up = 4) {
+  sound.note('rubble', n);
   for (let i = 0; i < n; i++) {
     const a = rng() * Math.PI * 2, sp = speed * (0.25 + rng() * 0.75), s = sMin + rng() * (sMax - sMin);
     _q.setFromEuler(_e.set(rng() * 6, rng() * 6, rng() * 6));
@@ -261,19 +267,21 @@ function rubble(x, y, z, n, speed, sMin, sMax, up = 4) {
   }
 }
 function sparkBurst(x, y, z, n, speed, col = 0xffc060) {
+  sound.note('sparks', n); if (col === 0xffd23a) sound.note('metal', 1); // Batman's gold = gauntlet on steel
   for (let i = 0; i < n; i++) {
     const u = rng() * 2 - 1, a = rng() * Math.PI * 2, r = Math.sqrt(1 - u * u), sp = speed * (0.3 + rng());
     sparks.spawn(x, y, z, Math.cos(a) * r * sp, u * sp + speed * 0.3, Math.sin(a) * r * sp, 0.25 + rng() * 0.45, col);
   }
 }
 function dustBurst(x, y, z, n, speed) {
+  sound.note('dust', n);
   for (let i = 0; i < n; i++) {
     const a = rng() * Math.PI * 2, sp = speed * (0.3 + rng());
     dust.spawn(x, y + 0.1, z, Math.cos(a) * sp, rng() * 0.6, Math.sin(a) * sp, 1.2 + rng() * 1.2, 0x8a8478);
   }
 }
 function impact(x, y, z, power) {
-  shake = Math.max(shake, power);
+  shake = Math.max(shake, power); sound.note('impact', power);
   flashI = Math.max(flashI, 25 * power);
   flashLight.position.set(x, y + 0.5, z);
 }
@@ -374,8 +382,41 @@ function reset() {
 // Playable mode (B / S on the title loop): the game drives the heroes; fx, capes and world keep running here.
 const game = new Game({
   bat, sup, batCape, supCape, rng: () => rng(), restart: (c) => startGame(c), quit: () => quitGame(),
-  fx: { sparkBurst, dustBurst, rubble, impact, waves, decals, blast, flash: (v) => (postFlash = Math.max(postFlash, v)) },
+  fx: { sparkBurst, dustBurst, rubble, impact, waves, decals, blast, flash: (v) => { sound.note('flash', v); postFlash = Math.max(postFlash, v); } },
 });
+
+// ---------- sound cues: what the fx feed can't see (swings, heat vision, announcer banners, lightning, score intensity) ----------
+const SWING_LIGHT = new Set(['dash', 'side']), SWING_HEAVY = new Set(['super', 'blow', 'fatal', 'impact', 'flykick', 'throw', 'prop']);
+const lastAct = { bat: null, sup: null };
+let lastBanner = '', lastLightning = 0, lastPost = 0;
+function soundCues(sdt) {
+  const banner = game.active ? game.ui.banner.textContent : '';
+  if (banner !== lastBanner) {
+    const t = sound.ctx && sound.ctx.currentTime;
+    if (t && sound.on) {
+      if (banner.startsWith('FIGHT')) sound.braam(0.7, t);
+      else if (banner.startsWith('ROUND')) sound.gong(t);
+      else if (banner.startsWith('FINISH')) { sound.braam(0.8, t, 21, 3.5); sound.riser(1.2, t + 0.3); }
+      else if (banner.includes('WINS')) sound.fanfare(t);
+      else if (banner.startsWith('YOU ARE')) sound.taiko(1, t, sound.out(sound.sfx, 0.6));
+    }
+    lastBanner = banner;
+  }
+  if (game.active && game.F) for (const k of ['bat', 'sup']) {
+    const a = game.F[k].act;
+    if (a && a !== lastAct[k] && a.type !== 'rise') sound.note('swing', SWING_HEAVY.has(a.type) ? 2 : SWING_LIGHT.has(a.type) ? 1 : k === 'sup' ? 2 : 1);
+    lastAct[k] = a;
+  }
+  if (sound.ctx && sound.on && lightning > lastLightning + 0.3) sound.thunder(Math.min(1, lightning)); lastLightning = lightning;
+  if (!game.active && postFlash > lastPost + 0.15) sound.note('flash', postFlash); lastPost = postFlash; // title loop sets postFlash directly
+  sound.heat(game.active ? !!game.heat : inHeat(simT));
+  sound.setSlow(sdt / DT);
+  let I;
+  if (game.active) I = game.finish ? 1 : game.state === 'fight' ? 0.85 : game.state === 'over' ? 0.3 : 0.55;
+  else I = simT < 4.5 ? 0.15 : simT < 12 ? 0.45 : simT < SLOWMO ? 0.8 : 0.35;
+  sound.setIntensity(I);
+  sound.flush();
+}
 
 let stepCount = 0;
 function step() {
@@ -401,6 +442,7 @@ function step() {
     b.scale.setScalar((0.25 + 1.6 * Math.sqrt(u)) * (b.userData.size || 1)); b.material.opacity = 1 - u * u; b.material.rotation = u * 0.8; });
   chestPos(bat, _v); chestPos(sup, _w);
   world.update(t, sdt, _v.lerp(_w, 0.5).setY(0.5));
+  soundCues(sdt);
   if (!game.active && realT >= LOOP_END) reset();
 }
 
@@ -513,6 +555,7 @@ function quitGame() { game.stop(); reset(); playUI.style.display = 'flex'; }
 playUI.addEventListener('click', (e) => { const h = e.target.dataset && e.target.dataset.hero; if (h) { e.target.blur(); startGame(h); } });
 addEventListener('keyup', (e) => game.keyup(e));
 addEventListener('keydown', (e) => {
+  if (e.key === 'm' || e.key === 'M') { sound.toggle(); return; }
   if (game.active) {
     if (e.key === 'Escape') { quitGame(); return; }
     if (e.code === 'Space' || e.key.startsWith('Arrow')) e.preventDefault();
@@ -522,7 +565,7 @@ addEventListener('keydown', (e) => {
   }
   if (e.key === 'b' || e.key === 'B' || e.key === '1') startGame('bat');
   else if (e.key === 's' || e.key === 'S' || e.key === '2') startGame('sup');
-  else if (e.code === 'Space') paused = !paused;
+  else if (e.code === 'Space') { paused = !paused; sound.pause(paused); }
   else if (e.key === 'p' || e.key === 'P') { if (pixelMode) { pixelMode = false; comicMode = true; } else if (comicMode) comicMode = false; else pixelMode = true; resize(); }
   else if (e.key === '-' || e.key === '_') { if (comicMode) CPIX = Math.max(1, CPIX - 1); else PIX = Math.max(1, PIX - 1); resize(); }
   else if (e.key === '=' || e.key === '+') { if (comicMode) CPIX = Math.min(8, CPIX + 1); else PIX = Math.min(8, PIX + 1); resize(); }
@@ -536,7 +579,7 @@ const seekT = +(qs.get('t') || 0);
 while (simT < seekT) step();
 if (qs.get('freeze')) paused = true;
 if (qs.get('play') === 'bat' || qs.get('play') === 'sup') startGame(qs.get('play')); // ?play=bat|sup skips the title loop
-window.__game = game;
+window.__game = game; window.__sound = sound;
 let last = performance.now();
 function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
