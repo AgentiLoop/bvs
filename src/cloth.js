@@ -124,7 +124,7 @@ export class Cape {
     } else { this.anchor = new THREE.Vector3(); this.anchorQ = new THREE.Quaternion(); }
     this.anchor.copy(_a); this.anchorQ.copy(_cq);
     const dt2 = dt * dt, damp = 0.982;
-    // A real cape trails behind the hero: a gentle push toward the back (strongest on cloth that has
+    // A real cape trails behind the hero: a gentle push toward the back (6x on cloth that has
     // swung round in front of the chest) keeps it off his front after rolls and spins.
     _fw.set(0, 0, 1).applyQuaternion(_cq);
     for (let k = 0; k < n; k++) {
@@ -142,7 +142,7 @@ export class Cape {
         P[o + a] += vel + ((a === 1 ? -9.8 : 0) + wind[a] * flutter) * dt2;
       }
       const fz = (P[o] - _a.x) * _fw.x + (P[o + 1] - _a.y) * _fw.y + (P[o + 2] - _a.z) * _fw.z;
-      const back = (4) * (fz > 0 ? 3 : 1) * dt2;
+      const back = (4) * (fz > 0 ? 6 : 1) * dt2;
       P[o] -= _fw.x * back; P[o + 1] -= _fw.y * back; P[o + 2] -= _fw.z * back;
     }
     for (let it = 0; it < 10; it++) {
