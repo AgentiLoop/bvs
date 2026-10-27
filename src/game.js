@@ -320,7 +320,7 @@ export class Game {
   endCine(after) { if (this.cine) this.cine.end = Math.min(this.cine.end, this.cine.t + after); }
   reaches(f, o, M, d) {
     if (o.ko || o.down > 0) return false;
-    if (M.air) return d < M.reach && Math.abs(o.y - f.y) < 1.2;
+    if (M.air) { const dy = f.y - o.y; return d < M.reach && dy > -0.8 && dy < 1.7; } // limb reaches down to a standing head
     if (M.low) return d < M.reach && o.y < 0.15;
     if (M.hi && o.crouch && o.y <= 0.001) return false; // ducked under
     return d < M.reach && o.y < (M.at[1] === 'f' || M.up > 5 ? 1.6 : 1.2);
@@ -624,8 +624,10 @@ export class Game {
       const M = MOVES[a.type];
       if (M) {
         if (M.lunge && a.t < M.hit && d > 0.85) { f.x += Math.sin(f.yaw) * M.lunge * dt; f.z += Math.cos(f.yaw) * M.lunge * dt; }
-        if (!a.done && a.t >= M.hit) { a.done = true; if (this.state === 'fight' && this.reaches(f, o, M, d)) this.pending.push({ att: f, def: o, M }); }
-        if (a.t >= M.dur) f.act = null;
+        // SF jump-ins: air attacks stay active from the hit frame until landing (one hit), so an early button connects on the way down
+        if (M.air) { if (!a.done && a.t >= M.hit && this.state === 'fight' && this.reaches(f, o, M, d)) { a.done = true; this.pending.push({ att: f, def: o, M }); } }
+        else if (!a.done && a.t >= M.hit) { a.done = true; if (this.state === 'fight' && this.reaches(f, o, M, d)) this.pending.push({ att: f, def: o, M }); }
+        if (a.t >= M.dur && !(M.air && f.y > 0)) f.act = null;
       } else if (a.type === 'super') {
         if (!this.superStep(f, o, a, dt)) f.act = null;
       } else if (a.type === 'dash') {
