@@ -248,8 +248,8 @@ const inHeat = (t) => t >= HEAT.t0 && t < HEAT.t1;
 function poseHeroes(t) {
   const sb = sampleTrack(BAT, t), ss = sampleTrack(SUP, t);
   if (inHeat(t)) ss.yaw = face(ss.p, heatTarget(t));
-  applyPose(bat, sb, t);
-  applyPose(sup, ss, t);
+  applyPose(bat, sb, t, groundAt(sb.p[0], sb.p[2]));
+  applyPose(sup, ss, t, groundAt(ss.p[0], ss.p[2]));
 }
 
 function reset() {

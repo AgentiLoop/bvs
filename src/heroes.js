@@ -520,7 +520,10 @@ function solveIK(upper, lower, L1, L2, target, pole) {
 }
 
 // pose: { p:[x,y,z] hips world, yaw, pitch, roll, lean, gait, lh, rh, lf, rf (hip-relative targets) }
-export function applyPose(H, s, t) {
+const SOLE = 0.076;
+const BOOT_CORNERS = [[0, -0.074, -0.058], [0, -0.074, 0.178], [0.042, -0.074, 0.06], [-0.042, -0.074, 0.06], [0, 0.021, 0.178], [0, 0.021, -0.058]]
+  .map(p => new THREE.Vector3(...p));
+export function applyPose(H, s, t, ground = 0) {
   H.root.position.set(s.p[0], s.p[1], s.p[2]);
   H.root.rotation.set(s.pitch, s.yaw, s.roll, 'YXZ');
   H.spine.rotation.set(s.lean * 0.45, 0, s.roll * 0.3);
@@ -543,10 +546,27 @@ export function applyPose(H, s, t) {
   for (const [side, tg, lift, dz] of [['L', s.lf, Math.max(0, cw), sw], ['R', s.rf, Math.max(0, -cw), -sw]]) {
     const l = H.legs[side];
     _T.set(tg[0], tg[1] + lift * 0.18 * g, tg[2] + dz * 0.32 * g); H.root.localToWorld(_T);
+    // Keep the boot sole on top of the roof (ankle sits 7.4 cm above the sole) instead of sinking into it;
+    // targets far below (falling off the roof) are left alone.
+    if (_T.y < ground + SOLE && _T.y > ground - 0.6) _T.y = ground + SOLE;
     _P.set(l.s * 0.15, -0.45, 1.0); H.root.localToWorld(_P);
     solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
     l.kn.getWorldQuaternion(_qa).invert();
     l.an.quaternion.copy(_qa).multiply(_qb);
     l.an.updateMatrixWorld(true);
+    // When the body is pitched (rolls, tumbles) the boot's toe/heel can still dip through the roof even
+    // with the ankle above it: lift the ankle by the deficit of the lowest boot corner and re-solve.
+    if (_T.y > ground - 0.6) {
+      let low = Infinity;
+      for (const c of BOOT_CORNERS) { _P.copy(c); l.an.localToWorld(_P); low = Math.min(low, _P.y); }
+      if (low < ground) {
+        _T.y += ground - low;
+        _P.set(l.s * 0.15, -0.45, 1.0); H.root.localToWorld(_P);
+        solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
+        l.kn.getWorldQuaternion(_qa).invert();
+        l.an.quaternion.copy(_qa).multiply(_qb);
+        l.an.updateMatrixWorld(true);
+      }
+    }
   }
 }
