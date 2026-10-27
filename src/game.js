@@ -2,7 +2,7 @@
 // Poses are the same hip-relative IK poses as the film (POSES), blended toward a target every step.
 // Combat: chained punches/kicks, launchers, sweeps, air attacks, juggles, bounces, hitstop, trades; keyboard + gamepad.
 import * as THREE from 'three';
-import { applyPose } from './heroes.js';
+import { applyPose, GAIT_A, GAIT_SIDE } from './heroes.js';
 import { POSES, face } from './timeline.js';
 import { groundAt } from './world.js';
 
@@ -261,7 +261,7 @@ export class Game {
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
       ko: false, cd: 0, down: 0, meter: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
       heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, lastLat: 0, lastLatT: -1, latS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, brk: 0, rollA: null, blowUsed: false, blowSaid: false,
-      ai: { t: 0, mx: 0, mz: 0, block: 0, crouch: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0, hx: 0, hy: 0, squash: 0 });
+      ai: { t: 0, mx: 0, mz: 0, block: 0, crouch: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0, hx: 0, hy: 0, squash: 0, gph: 0, gdx: 0, gdz: 1, gpx: null, gpz: null });
     this.F = { bat: mk(bat, 'bat', -7.4, Math.PI / 2), sup: mk(sup, 'sup', 2.2, -Math.PI / 2) };
     this.F.sup.y = 26; this.F.sup.cur = T(POSES.fly, { pitch: 0.35 });
     this.me = this.F[choice]; this.cpu = this.F[choice === 'bat' ? 'sup' : 'bat'];
@@ -1466,10 +1466,23 @@ export class Game {
         hx = -clamp(Math.atan2(o.y - f.y, d + 0.5), -0.3, 0.6);
       }
       f.hy += (hy - f.hy) * hk; f.hx += (hx - f.hx) * hk;
+      // gait: the step cycle advances with the ground actually covered, in the hip-local direction of travel
+      // (forward, backward or sideways), so planted feet stay put instead of sliding (capped at 4.5 strides/s)
+      if (dt && f.gpx != null) {
+        const wx = f.x - f.gpx, wz = f.z - f.gpz, d = Math.hypot(wx, wz);
+        if (d > 1e-5 && d < 0.3) {
+          const y = f.yaw + c.tw, lx = (wx * Math.cos(y) - wz * Math.sin(y)) / d, lz = (wx * Math.sin(y) + wz * Math.cos(y)) / d;
+          f.gdx += (lx - f.gdx) * hk; f.gdz += (lz - f.gdz) * hk;
+          const n = Math.hypot(f.gdx, f.gdz) || 1, stride = 4 * GAIT_A * Math.max(0.2, c.gait) * Math.hypot(f.gdz / n, f.gdx / n * GAIT_SIDE);
+          f.gph += Math.min(d / stride, 4.5 * dt) * Math.PI * 2;
+        }
+      }
+      f.gpx = f.x; f.gpz = f.z;
       // landing squash: hips drop with the feet held on the ground, then spring back
       f.squash *= dt ? Math.exp(-dt * 7) : 1;
       const sq = f.y <= 0.001 && !f.ko && f.down <= 0 ? f.squash : 0;
-      const s = { ...c, hx: f.hx, hy: f.hy };
+      const s = { ...c, hx: f.hx, hy: f.hy, gph: f.gph, gdx: f.gdx, gdz: f.gdz };
+      s.h -= 0.014 * c.gait * Math.cos(2 * f.gph); // hips rise as a foot passes under them, dip in double support
       if (sq > 0.002) { s.h -= sq; s.lf = [c.lf[0], c.lf[1] + sq, c.lf[2]]; s.rf = [c.rf[0], c.rf[1] + sq, c.rf[2]]; s.lean += sq; }
       const base = tg.base ?? f.y;
       applyPose(f.H, { ...s, p: [f.x, base + s.h, f.z], yaw: f.yaw + c.tw }, this.t, groundAt(f.x, f.z));

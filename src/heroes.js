@@ -586,6 +586,16 @@ const BOOT_CORNERS = [[0, -0.074, -0.058], [0, -0.074, 0.178], [0.042, -0.074, 0
   .map(p => new THREE.Vector3(...p));
 // Contact radii of the joints that touch the roof in kneels, landings and lying poses.
 const CONTACT = [['legs', 'kn', 0.062], ['arms', 'el', 0.055], ['arms', 'hand', 0.07]];
+// Distance-driven gait: stride half-amplitude (m), swing lift (m), sideways strides shortened so the feet never cross.
+export const GAIT_A = 0.3, GAIT_LIFT = 0.15, GAIT_SIDE = 0.55;
+// One foot's cycle (p in cycles): first half planted, sliding back under the hips at constant speed (no skating
+// against the ground), second half lifted on an arc and swung forward with an ease-in-out. -> [offset -1..1, lift 0..1]
+function gaitStep(p) {
+  p -= Math.floor(p);
+  if (p < 0.5) return [1 - 4 * p, 0];
+  const u = (p - 0.5) * 2;
+  return [-1 + 2 * u * u * (3 - 2 * u), Math.sin(Math.PI * u)];
+}
 export function applyPose(H, s, t, ground = 0) {
   posePass(H, s, t, ground, 0);
   // Knees, elbows and fists used to go up to 5 cm through the roof (Superman's landing kneel, Batman lying
@@ -613,7 +623,11 @@ function posePass(H, s, t, ground, raise) {
   H.head.rotation.set(-s.lean * 0.95 - tilt + Math.min(0.5, Math.max(0, s.lean)) * 0.25 + (s.hx || 0), s.hy || 0, 0);
   H.root.updateMatrixWorld(true);
 
-  const g = s.gait || 0, ph = t * Math.PI * 2 * 1.7, sw = Math.sin(ph), cw = Math.cos(ph);
+  // Game mode passes gph (gait phase driven by distance travelled) and gdx/gdz (hip-local travel direction):
+  // each foot stays planted while the body passes over it, then lifts and swings ahead in the direction of
+  // travel, so walking backwards or sideways no longer moonwalks. Film keyframes keep the timed sine gait.
+  const g = s.gait || 0, ph = s.gph ?? t * Math.PI * 2 * 1.7, sw = Math.sin(ph), cw = Math.cos(ph);
+  const gn = Math.hypot(s.gdx || 0, s.gdz ?? 1) || 1, gx = (s.gdx || 0) / gn * GAIT_SIDE, gz = (s.gdz ?? 1) / gn;
   const limbs = [
     ['L', s.lh, 0, 0, -sw * 0.22 * g],
     ['R', s.rh, 0, 0, sw * 0.22 * g],
@@ -650,9 +664,13 @@ function posePass(H, s, t, ground, raise) {
     }
   }
   H.root.getWorldQuaternion(_qb);
-  for (const [side, tg, lift, dz] of [['L', s.lf, Math.max(0, cw), sw], ['R', s.rf, Math.max(0, -cw), -sw]]) {
+  for (const [side, tg, lift, dz, p] of [['L', s.lf, Math.max(0, cw), sw, 0], ['R', s.rf, Math.max(0, -cw), -sw, 0.5]]) {
     const l = H.legs[side];
-    _T.set(tg[0], tg[1] + lift * 0.18 * g, tg[2] + dz * 0.32 * g); H.root.localToWorld(_T);
+    if (s.gph != null) {
+      const [off, up] = gaitStep(s.gph / (Math.PI * 2) + p);
+      _T.set(tg[0] + off * GAIT_A * g * gx, tg[1] + up * GAIT_LIFT * g, tg[2] + off * GAIT_A * g * gz);
+    } else _T.set(tg[0], tg[1] + lift * 0.18 * g, tg[2] + dz * 0.32 * g);
+    H.root.localToWorld(_T);
     _T.y -= raise; // body-lift pass: feet stay planted where the first pass put them
     // Keep the boot sole on top of the roof (ankle sits 7.4 cm above the sole) instead of sinking into it;
     // targets far below (falling off the roof) are left alone.
