@@ -13,6 +13,14 @@ import { Sound } from './audio.js';
 
 const sound = new Sound();
 for (const ev of ['keydown', 'pointerdown']) addEventListener(ev, () => sound.start());
+// Browsers keep audio locked until a click / key (a gamepad press doesn't count), so say so on screen.
+const sndUI = document.getElementById('snd');
+sndUI.addEventListener('pointerdown', () => { if (!sound.on) sound.toggle(); });
+function soundPrompt() {
+  const live = sound.ctx && sound.ctx.state === 'running';
+  sndUI.style.display = live || (sound.ctx && sound.on && paused) ? 'none' : '';
+  if (!live) sndUI.textContent = sound.on ? '\u{1F507} CLICK / PRESS ANY KEY FOR SOUND' : '\u{1F507} MUTED \u00B7 M / CLICK FOR SOUND';
+}
 
 const qs = new URLSearchParams(location.search);
 const SEED = +(qs.get('seed') || 1337);
@@ -451,6 +459,7 @@ function soundCues(sdt) {
   else I = simT < 4.5 ? 0.15 : simT < 12 ? 0.45 : simT < SLOWMO ? 0.8 : 0.35;
   sound.setIntensity(I);
   sound.flush();
+  soundPrompt();
 }
 
 let stepCount = 0;
@@ -460,7 +469,7 @@ function step() {
     sdt = game.step(DT); t = game.t; realT += DT; stepCount++;
   } else {
     const pick = playUI.style.display !== 'none' && game.menuPad(); // gamepad on the title loop: X Batman, B Superman
-    if (pick) { startGame(pick); return; }
+    if (pick) { sound.start(); startGame(pick); return; }
     const scale = simT < SLOWMO - 0.3 ? 1 : simT < SLOWMO ? 1 - 0.88 * (simT - (SLOWMO - 0.3)) / 0.3 : 0.12;
     sdt = DT * scale;
     simT += sdt; realT += DT; stepCount++; t = simT;

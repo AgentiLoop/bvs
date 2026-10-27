@@ -35,6 +35,8 @@
   #sub { position: fixed; left: 0; right: 0; bottom: 9vh; text-align: center; color: #dde; font: 1.6vw monospace;
          letter-spacing: .35em; opacity: 0; pointer-events: none; text-shadow: 0 0 6px #000; }
   #hud { position: fixed; left: 10px; bottom: 8px; color: #8890a0; font: 11px monospace; pointer-events: none; }
+  #snd { position: fixed; right: 12px; bottom: 8px; color: #f4f1ea; font: bold 12px monospace; letter-spacing: .15em; padding: .5em .8em;
+         background: rgba(194,26,26,.8); border: 1px solid #f4f1ea; cursor: pointer; animation: pulse 1.6s ease-in-out infinite; }
   #err { position: fixed; top: 0; left: 0; color: #f55; font: 12px monospace; white-space: pre; }
   #play { position: fixed; top: 4vh; left: 0; right: 0; display: flex; justify-content: center; gap: 2vw; }
   #play button { font: bold 1.3vw monospace; letter-spacing: .25em; padding: .8em 1.4em; color: #f4f1ea; background: rgba(10,12,18,.72);
@@ -73,6 +75,7 @@
   <div id="combo"></div>
   <div id="banner"></div>
 </div>
+<div id="snd">&#128263; CLICK / PRESS ANY KEY FOR SOUND</div>
 <div id="err"></div>
 <script>window.addEventListener('error', e => { document.getElementById('err').textContent += e.message + '\n'; });</script>
 <script type="module" src="./src/main.js"></script>
