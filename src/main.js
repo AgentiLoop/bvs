@@ -109,7 +109,7 @@ for (const [H, key, file] of [[bat, 'bat', 'batman'], [sup, 'sup', 'superman']])
     .catch((e) => (window.__fan[key] = 'none: ' + String((e && e.message) || e).slice(0, 80)));
 }
 const batCape = new Cape(bat, { cols: 11, rows: 15, topW: 0.38, botW: 1.45, len: 1.45, color: 0x111216, scallop: true });
-const supCape = new Cape(sup, { cols: 9, rows: 14, topW: 0.38, botW: 1.0, len: 1.35, color: 0xb3161a });
+const supCape = new Cape(sup, { cols: 11, rows: 14, topW: 0.42, botW: 1.3, len: 1.4, color: 0xb3161a }); // full, sweeping cape, not a ribbon
 scene.add(batCape.mesh, supCape.mesh);
 for (const [cape, key] of [[batCape, 'bcape'], [supCape, 'scape']]) if (qs.get(key) === '0' || qs.get('cape') === '0') cape.mesh.visible = false;
 
