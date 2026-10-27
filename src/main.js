@@ -97,8 +97,12 @@ scene.add(bat.root, sup.root);
 window.__fan = {};
 for (const [H, key, file] of [[bat, 'bat', 'batman'], [sup, 'sup', 'superman']]) {
   if (qs.get(key) === '0') continue;
-  loadFanModel(H, qs.get(key) || `./models/${file}.glb`, { yaw: (+(qs.get(key[0] + 'yaw')) || 0) * Math.PI / 180 })
-    .then((n) => (window.__fan[key] = n))
+  loadFanModel(H, qs.get(key) || `./models/${file}.glb`, { yaw: qs.has(key[0] + 'yaw') ? +qs.get(key[0] + 'yaw') * Math.PI / 180 : null })
+    .then((n) => {
+      window.__fan[key] = { n, yaw: Math.round(H.fanYaw * 180 / Math.PI) };
+      const cape = key === 'bat' ? batCape : supCape; // fan models bring their own cape
+      if (qs.get(key[0] + 'cape') !== '1') cape.mesh.visible = false;
+    })
     .catch((e) => (window.__fan[key] = 'none: ' + String((e && e.message) || e).slice(0, 80)));
 }
 const batCape = new Cape(bat, { cols: 11, rows: 15, topW: 0.4, botW: 1.7, len: 1.45, color: 0x111216, scallop: true });
@@ -376,8 +380,8 @@ if (qs.has('debug')) {
       const b = new THREE.Box3(); let n = 0, vis = 0;
       H.root.updateMatrixWorld(true);
       H.root.traverse((o) => { if (o.userData.fan) { n++; b.expandByObject(o); } else if (o.isMesh && o.visible) vis++; });
-      info[k] = { n, procVisible: vis, min: b.min.toArray().map((v) => +v.toFixed(2)), max: b.max.toArray().map((v) => +v.toFixed(2)) };
+      info[k] = { stats: H.fanStats, armDir: H.fanArm, n, procVisible: vis, min: b.min.toArray().map((v) => +v.toFixed(2)), max: b.max.toArray().map((v) => +v.toFixed(2)) };
     }
     document.getElementById('err').textContent += ' fan=' + JSON.stringify(window.__fan) + ' box=' + JSON.stringify(info);
-  }, 2500);
+  }, 6000);
 }

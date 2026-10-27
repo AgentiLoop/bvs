@@ -31,22 +31,51 @@ function capsuleDist(p, bn) {
   return _ap.copy(bn.a).addScaledVector(_ab, t).distanceTo(p) - bn.r;
 }
 
-export async function loadFanModel(H, url, { yaw = 0 } = {}) {
+export async function loadFanModel(H, url, { yaw = null } = {}) {
   const gltf = await new GLTFLoader().loadAsync(url);
   const src = gltf.scene;
-  src.rotation.y = yaw;
-  src.updateMatrixWorld(true);
+  const wrap = new THREE.Group();
+  wrap.add(src);
+  wrap.updateMatrixWorld(true);
 
   // gather triangles in model space (bind pose for skinned meshes)
   const parts = [];
   src.traverse((o) => { if (o.isMesh) parts.push(o); });
-  const box = new THREE.Box3();
-  for (const m of parts) {
-    const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
-    g.applyMatrix4(m.matrixWorld);
-    m.userData.g = g;
-    g.computeBoundingBox(); box.union(g.boundingBox);
+  const gather = () => {
+    const b = new THREE.Box3();
+    for (const m of parts) {
+      const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+      g.applyMatrix4(m.matrixWorld);
+      m.userData.g = g;
+      g.computeBoundingBox(); b.union(g.boundingBox);
+    }
+    return b;
+  };
+  let box = gather();
+  // auto up-axis: Z-up exports get stood upright (+Z -> +Y, Blender front -Y -> +Z)
+  let sz = box.getSize(new THREE.Vector3());
+  if (sz.z > sz.y * 1.3) { src.rotation.x = -Math.PI / 2; wrap.updateMatrixWorld(true); box = gather(); sz = box.getSize(new THREE.Vector3()); }
+  // auto facing: toes stick out in front of the ankles -> rotate so the feet point +Z
+  if (yaw === null) {
+    const feet = new THREE.Vector3(), all = new THREE.Vector3(), p = new THREE.Vector3();
+    let nf = 0, na = 0;
+    const footTop = box.min.y + sz.y * 0.04;
+    for (const m of parts) {
+      const P = m.userData.g.attributes.position;
+      for (let i = 0; i < P.count; i++) {
+        p.fromBufferAttribute(P, i); all.add(p); na++;
+        if (p.y < footTop) { feet.add(p); nf++; }
+      }
+    }
+    yaw = 0;
+    if (nf && na) {
+      const d = feet.multiplyScalar(1 / nf).sub(all.multiplyScalar(1 / na)).setY(0);
+      if (d.lengthSq() > 1e-10) yaw = Math.atan2(-d.x, d.z) + 0; // rotate d onto +Z
+      yaw = Math.round(yaw / (Math.PI / 2)) * (Math.PI / 2);      // snap to 90° steps
+    }
   }
+  if (yaw) { wrap.rotation.y = yaw; wrap.updateMatrixWorld(true); box = gather(); }
+  H.fanYaw = yaw;
   const size = box.getSize(new THREE.Vector3());
   const k = (TOP_Y - FOOT_Y) / size.y;
   const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
@@ -68,6 +97,7 @@ export async function loadFanModel(H, url, { yaw = 0 } = {}) {
     }
     armDir[side] = best ? best.sub(sh).normalize().toArray() : [0, -1, 0];
   }
+  H.fanArm = Object.fromEntries(Object.entries(armDir).map(([k, d]) => [k, d.map((x) => +x.toFixed(2))]));
   const BN = bones(H, armDir);
 
   // per-bone rotation that maps the model's rest direction onto the skeleton's rest direction (DOWN for limbs)
@@ -95,6 +125,10 @@ export async function loadFanModel(H, url, { yaw = 0 } = {}) {
   });
 
   const out = [];
+  H.fanStats = {};
+  const boneName = (o) => (o === H.hips ? 'hips' : o === H.spine ? 'spine' : o === H.chest ? 'chest' : o === H.head ? 'head'
+    : ['L', 'R'].map((sd) => [['sh', H.arms[sd].sh], ['el', H.arms[sd].el], ['hand', H.arms[sd].hand], ['th', H.legs[sd].th], ['kn', H.legs[sd].kn], ['an', H.legs[sd].an]]
+      .filter(([, j]) => j === o).map(([n]) => n + sd)).flat()[0]);
   const c = new THREE.Vector3(), tmp = new THREE.Vector3();
   for (const m of parts) {
     const g = m.userData.g, P = g.attributes.position, N = g.attributes.normal;
@@ -109,6 +143,7 @@ export async function loadFanModel(H, url, { yaw = 0 } = {}) {
     }
     buckets.forEach((tris, bi) => {
       if (!tris.length) return;
+      const bnm = boneName(BN[bi].obj); H.fanStats[bnm] = (H.fanStats[bnm] || 0) + tris.length;
       const { piv, q, start } = xf[bi];
       const names = Object.keys(g.attributes);
       const ng = new THREE.BufferGeometry();
@@ -123,7 +158,11 @@ export async function loadFanModel(H, url, { yaw = 0 } = {}) {
         norm(tmp.fromBufferAttribute(pa, i)).sub(start).applyQuaternion(q);
         pa.setXYZ(i, tmp.x, tmp.y, tmp.z);
       }
-      if (N) { const na = ng.attributes.normal; for (let i = 0; i < na.count; i++) { tmp.fromBufferAttribute(na, i).applyQuaternion(q); na.setXYZ(i, tmp.x, tmp.y, tmp.z); } }
+      for (const nm of ['normal', 'tangent']) {
+        const A = ng.attributes[nm]; if (!A) continue;
+        for (let i = 0; i < A.count; i++) { tmp.fromBufferAttribute(A, i).applyQuaternion(q); A.setXYZ(i, tmp.x, tmp.y, tmp.z); }
+      }
+      if (N) { /* rotated above */ }
       else ng.computeVertexNormals();
       const mesh = new THREE.Mesh(ng, m.material);
       mesh.castShadow = mesh.receiveShadow = true;
