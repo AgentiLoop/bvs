@@ -49,6 +49,13 @@ const SUPERS = {
   bat: { name: 'DARK KNIGHT RUSH', seq: ['jab', 'cross', 'front', 'hook', 'jab', 'cross'], fin: 'round', finish: { dmg: 16, kb: 8, up: 5, stun: 1, heavy: true, at: 'rf', blast: 2.2 } },
   sup: { name: 'KRYPTONIAN FURY', seq: ['cross', 'hook', 'jab', 'cross', 'hook'], fin: 'upper', finish: { dmg: 18, kb: 4, up: 10, stun: 1, heavy: true, at: 'rh', blast: 2.4 } },
 };
+// Idle stance personality: Batman is a bouncing street fighter (low, rhythmic bob, fists circling);
+// Superman stands tall and calm with a slow float. hz: bounce rate, bob: dip depth (m), dh/dl: height/lean offset,
+// fist: hand circling radius (m), off: phase so the two never move in sync.
+const STYLE = {
+  bat: { hz: 1.7, bob: 0.045, dh: -0.03, dl: 0.05, fist: 0.022, off: 0 },
+  sup: { hz: 0.8, bob: 0.018, dh: 0.03, dl: -0.08, fist: 0.012, off: 1.3 },
+};
 const ROUND_TIME = 60, WINS = 2;
 const FLYKICK = { dmg: 16, kb: 6, up: 3, stun: 0.7, heavy: true, at: 'rf', blast: 1.3 };
 const HEATKO = { dmg: 0.01, kb: 2, up: 2, stun: 0.5, heavy: true, blast: 1 };
@@ -79,7 +86,7 @@ export class Game {
     this.round = 1; this.wins = { bat: 0, sup: 0 }; this.clock = ROUND_TIME; this.fightT = 0; this.matchOver = false; this.winner = null;
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
       ko: false, cd: 0, down: 0, meter: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
-      ai: { t: 0, mx: 0, mz: 0, block: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0 });
+      ai: { t: 0, mx: 0, mz: 0, block: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0, hx: 0, hy: 0, squash: 0 });
     this.F = { bat: mk(bat, 'bat', -7.4, Math.PI / 2), sup: mk(sup, 'sup', 2.2, -Math.PI / 2) };
     this.F.sup.y = 26; this.F.sup.cur = T(POSES.fly, { pitch: 0.35 });
     this.me = this.F[choice]; this.cpu = this.F[choice === 'bat' ? 'sup' : 'bat'];
@@ -273,6 +280,7 @@ export class Game {
     else if (up < 0 && air) { def.vy = up * 1.5; def.launched = true; }
     // the blow snaps the body back / twists it; the pose spring brings it round again
     def.cur.lean -= M.heavy ? 0.6 : 0.3; def.cur.tw += (M.at === 'lh' ? -0.3 : 0.3);
+    def.hy += (M.at === 'lh' ? -0.5 : 0.5); def.hx -= M.heavy ? 0.55 : 0.3; // head snaps with the blow
     const col = att.key === 'bat' ? 0xfff0c0 : 0xbfd8ff, size = (M.blast || 0.6) * (trade ? 1.35 : 1);
     fx.sparkBurst(at.x, at.y, at.z, M.heavy ? 50 : 22, M.heavy ? 5 : 3.5, col);
     fx.blast(at.x, at.y, at.z, size, 0.3 + size * 0.25);
@@ -483,6 +491,7 @@ export class Game {
       f.launched = false; if (!f.ko) f.down = 0.9;
       fx.dustBurst(f.x, 0, f.z, 30, 1.8);
     } else if (v > 3) fx.dustBurst(f.x, 0, f.z, 12, 1.2);
+    f.squash = Math.max(f.squash, Math.min(0.2, v * 0.025)); // knees absorb the landing
     f.vy = 0;
     if (f.act && MOVES[f.act.type] && MOVES[f.act.type].air) f.act = null;
   }
@@ -565,7 +574,7 @@ export class Game {
     }
     if (f.ko) return T(POSES.down, { pitch: -1.5 });
     if (this.state === 'over' && f === this.winner && this.overT > 1.4) return T(POSES.heroic);
-    if (this.state === 'ready') return T(POSES.guard);
+    if (this.state === 'ready') return this.idle(f);
     if (f.down > 0) return f.down > 0.3 ? T(POSES.down, { pitch: -1.5 }) : T(POSES.kneel);
     if (f.launched && f.y > 0.05) return T(MP.air, { pitch: -0.5 });
     const a = f.act;
@@ -585,18 +594,49 @@ export class Game {
     if (a && a.type === 'heat') return T(POSES.heat);
     if (f.stun > 0) return T(POSES[f.heavy ? 'hit' : 'flinch']);
     if (f.y > 0.05) return T(POSES.tuck);
-    if (f.block) return T(POSES.guard, BLOCK);
-    return T(POSES.guard, { gait: f.moving });
+    if (f.block) { const b = this.breath(f); return T(POSES.guard, { ...BLOCK, lean: BLOCK.lean + b * 0.01 }); }
+    return this.idle(f);
+  }
+
+  // Breathing: faster and deeper as health drops.
+  breath(f) { const tired = 1 - f.hp / 100; return Math.sin(this.t * (1.7 + tired * 2.6) + STYLE[f.key].off) * (1 + tired * 1.5); }
+  // Living fight stance: rhythmic bounce with the feet planted (hips dip, knees flex), breathing in the chest and
+  // fists, a slow weight shift from leg to leg, fists circling, and a lower, hunched, heavier stance when hurt.
+  idle(f) {
+    const S = STYLE[f.key], t = this.t + S.off, tired = 1 - f.hp / 100, g = POSES.guard;
+    const w = t * S.hz * Math.PI * 2, br = this.breath(f);
+    const drop = S.bob * (0.5 - 0.5 * Math.cos(w)) * (1 - 0.6 * f.moving) + tired * 0.05;
+    const shift = Math.sin(t * 0.55) * (1 - f.moving);
+    const fist = (p, ph) => [p[0] + Math.cos(w + ph) * S.fist * 0.5,
+      p[1] + br * 0.012 - drop * 0.4 - tired * 0.07 + Math.sin(w + ph) * S.fist, p[2] + Math.cos(w + ph) * S.fist * 0.6];
+    const foot = (p, s) => [p[0], p[1] - S.dh + drop + s * shift * 0.025, p[2]];
+    return T(g, { h: g.h + S.dh - drop, lean: g.lean + S.dl + br * 0.015 + tired * 0.12, roll: shift * 0.045,
+      lh: fist(g.lh, 0), rh: fist(g.rh, 1.9), lf: foot(g.lf, 1), rf: foot(g.rf, -1), gait: f.moving });
   }
 
   pose(dt) {
+    const hk = dt ? 1 - Math.exp(-dt * 9) : 1;
     for (const f of [this.F.bat, this.F.sup]) {
+      const o = f === this.F.bat ? this.F.sup : this.F.bat;
       const k = dt ? 1 - Math.exp(-dt * (f.act || f.stun > 0 ? 26 : 16)) : 1;
       const tg = this.target(f), c = f.cur;
       for (const n of NUM) c[n] += (tg[n] - c[n]) * k;
       for (const n of ARR) c[n] = c[n].map((v, j) => v + (tg[n][j] - v) * k);
+      // eyes on the opponent: the head turns against body twist and looks up at airborne foes
+      let hy = 0, hx = 0;
+      if (this.active && this.state !== 'enter' && !f.ko && f.down <= 0 && !f.launched) {
+        const d = Math.hypot(o.x - f.x, o.z - f.z);
+        hy = clamp(wrap(face([f.x, 0, f.z], [o.x, 0, o.z]) - f.yaw - c.tw), -0.8, 0.8);
+        hx = -clamp(Math.atan2(o.y - f.y, d + 0.5), -0.3, 0.6);
+      }
+      f.hy += (hy - f.hy) * hk; f.hx += (hx - f.hx) * hk;
+      // landing squash: hips drop with the feet held on the ground, then spring back
+      f.squash *= dt ? Math.exp(-dt * 7) : 1;
+      const sq = f.y <= 0.001 && !f.ko && f.down <= 0 ? f.squash : 0;
+      const s = { ...c, hx: f.hx, hy: f.hy };
+      if (sq > 0.002) { s.h -= sq; s.lf = [c.lf[0], c.lf[1] + sq, c.lf[2]]; s.rf = [c.rf[0], c.rf[1] + sq, c.rf[2]]; s.lean += sq; }
       const base = tg.base ?? f.y;
-      applyPose(f.H, { ...c, p: [f.x, base + c.h, f.z], yaw: f.yaw + c.tw }, this.t, groundAt(f.x, f.z));
+      applyPose(f.H, { ...s, p: [f.x, base + s.h, f.z], yaw: f.yaw + c.tw }, this.t, groundAt(f.x, f.z));
     }
   }
 
