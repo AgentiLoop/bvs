@@ -71,7 +71,7 @@ const B2 = [-2.6, 0, 1.9];
 const kd = [S1[0] - B2[0], S1[2] - B2[2]], kl = Math.hypot(...kd), KD = [kd[0] / kl, kd[1] / kl];
 const along = (p, s, y = 0) => [p[0] + KD[0] * s, y, p[2] + KD[1] * s];
 const S2 = along(S1, 2.2);
-export const KEY = { S1, B1, Bm, B2, kick: along(S1, -0.95, 1.3) };
+export const KEY = { S1, B1, Bm, B2, kick: along(S1, -0.72, 1.3) };
 
 export const HEAT = { t0: 12.9, t1: 14.4 };
 export const SLOWMO = 18.2;
@@ -89,8 +89,8 @@ export const BAT = buildTrack([
   { t: 8.3, pose: 'dodge', g: [-0.55, 0, 0], e: 'out' },
   { t: 8.6, pose: 'guard', g: [-0.38, 0, 0] },
   { t: 8.8, pose: 'guard', g: [-0.32, 0, 0] },
-  { t: 9.0, pose: 'kickR', g: [-0.2, 0, 0], e: 'out' },
-  { t: 9.35, pose: 'kickR', g: [-0.25, 0, 0] },
+  { t: 9.0, pose: 'kickR', g: [0.05, 0, 0], e: 'out' },
+  { t: 9.35, pose: 'kickR', g: [0.0, 0, 0] },
   { t: 9.7, pose: 'guard', g: [-0.3, 0, 0] },
   { t: 10.3, pose: 'guard', g: [-0.15, 0, 0] },
   { t: 10.55, pose: 'hit', p: [-0.25, 1.0, 0], pitch: 0 },
@@ -133,8 +133,8 @@ export const SUP = buildTrack([
   { t: 9.1, pose: 'flinch', g: [1.0, 0, 0], yaw: SY + 0.35, e: 'out' },
   { t: 9.7, pose: 'guard', g: [0.9, 0, 0], yaw: SY },
   { t: 10.1, pose: 'windup', g: [0.7, 0, 0] },
-  { t: 10.55, pose: 'upper', g: [0.45, 0, 0], e: 'out' },
-  { t: 11.2, pose: 'upper', g: [0.45, 0, 0] },
+  { t: 10.55, pose: 'upper', g: [0.18, 0, 0], e: 'out' },
+  { t: 11.2, pose: 'upper', g: [0.25, 0, 0] },
   { t: 11.8, pose: 'stand', g: [0.5, 0, 0.1], yaw: face([0.5, 0, 0.1], [-4.5, 0, -1.9]) },
   { t: 12.6, pose: 'heroic', g: S1 },
   { t: 12.9, pose: 'heat', g: S1 },

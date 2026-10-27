@@ -270,6 +270,7 @@ const resolveLook = (l) => {
 };
 function updateCamera() {
   if (freeCam) { controls.update(); return; }
+  if (qs.get('cam')) { const c = qs.get('cam').split(',').map(Number); camera.position.set(c[0], c[1], c[2]); camera.lookAt(c[3], c[4], c[5]); return; }
   let pos, look;
   if (simT < SLOWMO) ({ pos, look } = sampleCam(simT, resolveLook));
   else {
@@ -354,6 +355,9 @@ if (qs.has('debug')) {
   updateCamera();
   const bad = [];
   scene.traverse((o) => { if (o.matrixWorld && o.matrixWorld.elements.some((v) => !Number.isFinite(v))) bad.push(o.type + ':' + (o.parent && o.parent.type)); });
+  const wp = (o) => o.getWorldPosition(new THREE.Vector3()).toArray().map((v) => +v.toFixed(2));
   document.getElementById('err').textContent = JSON.stringify({ t: simT, cam: camera.position.toArray(), bat: bat.root.position.toArray(),
+    batRF: wp(bat.legs.R.an), batRH: wp(bat.arms.R.hand), batHead: wp(bat.head), batChest: wp(bat.chest),
+    supRH: wp(sup.arms.R.hand), supHead: wp(sup.head), supChest: wp(sup.chest), supLF: wp(sup.legs.L.an),
     sup: sup.root.position.toArray(), capeNaN: [...batCape.pos, ...supCape.pos].some((v) => !Number.isFinite(v)), bad: bad.slice(0, 10), nbad: bad.length });
 }
