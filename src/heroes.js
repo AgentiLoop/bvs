@@ -347,7 +347,7 @@ export function makeHero(kind) {
     const armRows = [[-0.63, 0.038, 0.036], [-0.57, 0.046, 0.042], [-0.49, 0.068, 0.057],
       [-0.41, 0.082, 0.066], [-0.32, 0.058, 0.057], [-0.25, 0.075, 0.077],
       [-0.16, 0.092, 0.09], [-0.075, 0.09, 0.088], [0.0, 0.112, 0.1],
-      [0.06, 0.09, 0.08], [0.1, 0.001, 0.001]];
+      [0.045, 0.092, 0.08], [0.075, 0.001, 0.001]]; // deltoid cap tucked under the trapezius slope, not a ball on top
     const armGeo = surface(armRows, (p, a) => {
       p.z += 0.02 * bump(p.y, -0.17, 0.065) * Math.cos(a) ** 3; // biceps peak
       p.x += s * 0.022 * bump(p.y, 0.0, 0.06);                                  // deltoid cap
@@ -362,7 +362,7 @@ export function makeHero(kind) {
     armGeo.addGroup(0, cuffRing * 40 * 6, B ? 1 : 0);
     armGeo.addGroup(cuffRing * 40 * 6, (80 - cuffRing) * 40 * 6, 0);
     skinSurface(sh, armGeo, [suit, dark], p => {
-      const lower = 1 - blend(-0.38, -0.26, p.y), shoulder = blend(0.015, 0.095, p.y) * 0.7;
+      const lower = 1 - blend(-0.38, -0.26, p.y), shoulder = blend(-0.04, 0.06, p.y) * 0.8; // deltoid top rides with the chest (no hump when the arm lifts)
       return [[el, lower], [sh, (1 - lower) * (1 - shoulder)], [chest, (1 - lower) * shoulder]];
     });
     if (B) {

@@ -33,20 +33,57 @@ let rt;
 const post = new THREE.ShaderMaterial({
   uniforms: {
     tColor: { value: null }, tDepth: { value: null }, res: { value: new THREE.Vector2() },
-    near: { value: camera.near }, far: { value: camera.far }, pixel: { value: 1 }, flash: { value: 0 }, levels: { value: 6 },
+    near: { value: camera.near }, far: { value: camera.far }, pixel: { value: 1 }, comic: { value: 0 }, flash: { value: 0 }, levels: { value: 6 },
   },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
   fragmentShader: `
-    uniform sampler2D tColor, tDepth; uniform vec2 res; uniform float near, far, pixel, flash, levels;
+    uniform sampler2D tColor, tDepth; uniform vec2 res; uniform float near, far, pixel, comic, flash, levels;
     varying vec2 vUv;
     float lin(vec2 uv){ float z = texture2D(tDepth, uv).x * 2.0 - 1.0; return 2.0*near*far/(far+near - z*(far-near)); }
     float bayer2(vec2 a){ a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75))); }
     float bayer4(vec2 a){ return bayer2(0.5 * a) * 0.25 + bayer2(a); }
+    vec3 grade(vec2 uv){ vec3 c = texture2D(tColor, uv).rgb; c = vec3(1.0) - exp(-c * 1.3); return pow(c, vec3(1.0 / 2.2)); }
+    float lum(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
+    // halftone: dot grid rotated by ang, dot radius grows with ink amount (Ben-Day / CMYK print screens)
+    float dots(vec2 p, float ang, float cell, float ink){
+      mat2 r = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
+      vec2 q = r * p / cell; vec2 f = fract(q) - 0.5;
+      return 1.0 - smoothstep(-0.08, 0.08, length(f) - sqrt(clamp(ink, 0.0, 1.0)) * 0.62);
+    }
     void main(){
-      vec3 c = texture2D(tColor, vUv).rgb;
-      c = vec3(1.0) - exp(-c * 1.3);                 // filmic-ish tonemap
-      c = pow(c, vec3(1.0 / 2.2));                    // to sRGB
-      c *= vec3(0.96, 1.0, 1.07);                     // cool night grade
+      vec3 c = grade(vUv);
+      if (comic > 0.5) {
+        vec2 px = 1.0 / res, fc = gl_FragCoord.xy;
+        // ink lines: depth discontinuities + colour edges (Sobel on luma), drawn ~2px thick
+        float d0 = lin(vUv), e = 0.0;
+        for (int i = 0; i < 4; i++) {
+          vec2 o = (i == 0 ? vec2(2.,0.) : i == 1 ? vec2(-2.,0.) : i == 2 ? vec2(0.,2.) : vec2(0.,-2.)) * px;
+          if (lin(vUv + o) - d0 > 0.04 * d0 + 0.06) e = 1.0;
+        }
+        float l00 = lum(grade(vUv + vec2(-px.x, -px.y))), l10 = lum(grade(vUv + vec2(0., -px.y))), l20 = lum(grade(vUv + vec2(px.x, -px.y)));
+        float l01 = lum(grade(vUv + vec2(-px.x, 0.))), l21 = lum(grade(vUv + vec2(px.x, 0.)));
+        float l02 = lum(grade(vUv + vec2(-px.x, px.y))), l12 = lum(grade(vUv + vec2(0., px.y))), l22 = lum(grade(vUv + vec2(px.x, px.y)));
+        float gx = (l20 + 2.*l21 + l22) - (l00 + 2.*l01 + l02), gy = (l02 + 2.*l12 + l22) - (l00 + 2.*l10 + l20);
+        e = max(e, smoothstep(0.18, 0.35, length(vec2(gx, gy))));
+        // pop-art colour: lift the night, punch saturation, posterize into flat print tones
+        c = pow(c, vec3(0.7)) * 1.25;
+        float L = lum(c);
+        c = clamp(mix(vec3(L), c, 2.2), 0.0, 1.0);
+        c = floor(c * 4.0 + 0.5) / 4.0;
+        // CMYK screens on paper
+        float k = 1.0 - max(c.r, max(c.g, c.b));
+        vec3 cmy = (1.0 - c - k) / max(1.0 - k, 1e-3);
+        float cell = 7.0;
+        vec3 paper = vec3(0.98, 0.95, 0.86), col = paper;
+        col *= 1.0 - dots(fc, 0.2618, cell, cmy.x) * vec3(1.0, 0.25, 0.0);   // cyan 15°
+        col *= 1.0 - dots(fc, 1.3090, cell, cmy.y) * vec3(0.0, 0.9, 0.35);   // magenta 75°
+        col *= 1.0 - dots(fc, 0.0,    cell, cmy.z) * vec3(0.0, 0.05, 0.9);   // yellow 0°
+        col *= 1.0 - dots(fc, 0.7854, cell * 0.8, k * 0.9);                   // key 45°
+        col *= step(0.12, L) * 0.85 + 0.15;                                  // solid black shadows
+        c = mix(col, vec3(0.04, 0.03, 0.05), e);                             // ink outline
+      } else {
+        c *= vec3(0.96, 1.0, 1.07);                     // cool night grade
+      }
       if (pixel > 0.5) {
         vec2 px = 1.0 / res;
         float d0 = lin(vUv), e = 0.0;
