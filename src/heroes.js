@@ -385,6 +385,9 @@ export function makeHero(kind) {
       // Boot cuff: a slight flared lip just below the boot top so the boot reads as a real boot, not paint.
       const cuff = 1 + 0.07 * bump(p.y, -0.612, 0.011);
       p.x *= cuff; p.z *= cuff;
+      // Superman's classic boot top dips into a V at the front of the shin. Rings near the boot line are
+      // pulled down at the front (smooth falloff, slope < 1 so rings never cross), moving the colour edge.
+      if (!B) p.y -= 0.03 * bump(p.y, -0.6, 0.04) * Math.max(0, Math.cos(a)) ** 3;
       return p;
     }, 112, 40);
     legGeo.clearGroups();
