@@ -288,7 +288,8 @@ export function makeHero(kind) {
     faceGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     part(head, faceGeo, mat(0xffffff, 0.7, 0, { vertexColors: true }));
     for (const s of [-1, 1]) {
-      const ear = surface([[0.19, 0.025, 0.022], [0.235, 0.018, 0.014], [0.30, 0.01, 0.007], [0.36, 0.0001, 0.0001]], p => { p.x += s * (0.064 + (p.y - 0.19) * 0.045); return p; }, 32, 24);
+      // Short, sharp modern cowl ears (~7 cm above the crown), not tall devil horns.
+      const ear = surface([[0.19, 0.025, 0.022], [0.225, 0.017, 0.013], [0.27, 0.008, 0.006], [0.305, 0.0001, 0.0001]], p => { p.x += s * (0.064 + (p.y - 0.19) * 0.045); return p; }, 32, 24);
       part(head, ear, dark, [0, 0, -0.017]);
     }
   } else {
