@@ -213,6 +213,18 @@ const orbMesh = (() => {
   g.add(core, shell, halo); g.visible = false; scene.add(g);
   return { g, core, shell, halo };
 })();
+// Playable-mode stage interactables: rusty red steel drums (body, rolled rims, lid), one mesh per game.props entry.
+const propMesh = [0, 1].map(() => {
+  const g = new THREE.Group();
+  const paint = new THREE.MeshStandardMaterial({ color: 0x8a2a1c, roughness: 0.55, metalness: 0.55 });
+  const rim = new THREE.MeshStandardMaterial({ color: 0x3a3c42, roughness: 0.45, metalness: 0.8 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.9, 20), paint);
+  body.castShadow = body.receiveShadow = true; g.add(body);
+  for (const y of [-0.44, -0.15, 0.15, 0.44]) { const r = new THREE.Mesh(new THREE.TorusGeometry(0.305, 0.018, 6, 24).rotateX(Math.PI / 2), rim); r.position.y = y; g.add(r); }
+  const lid = new THREE.Mesh(new THREE.CircleGeometry(0.29, 20).rotateX(-Math.PI / 2), rim); lid.position.y = 0.451; g.add(lid);
+  g.rotation.order = 'YXZ'; g.visible = false; scene.add(g);
+  return g;
+});
 const ORB_COL = { rage: 0xff3a2a, meter: 0xffd23a, heal: 0x3aff7a }, _white = new THREE.Color(0xffffff);
 const CLASH_T = 18.2, BLAST_LIFE = 0.9; // sim seconds (clash happens in slow-mo, so this plays out long)
 let blastN = 2;
@@ -460,6 +472,12 @@ function updateVisuals() {
     orbMesh.shell.material.color.setHex(c); orbMesh.halo.material.color.setHex(c); orbMesh.core.material.color.setHex(c).lerp(_white, 0.55);
     orbMesh.halo.scale.setScalar(1.0 + Math.sin(orb.t * 6) * 0.15);
   }
+
+  propMesh.forEach((m, i) => {
+    const p = game.active && game.props && game.props[i];
+    m.visible = !!p && p.st !== 'gone';
+    if (m.visible) { m.position.set(p.x, p.y, p.z); m.rotation.set(p.rx, p.ry, 0); }
+  });
 
   title.style.opacity = game.active ? 0 : Math.min(1, Math.max(0, (realT - 19.0) / 0.8)) * Math.min(1, Math.max(0, (LOOP_END - realT) / 0.4));
   const subText = !game.active && realT < 3 ? 'GOTHAM · 2:14 AM' : '';

@@ -36,6 +36,10 @@ const MP = {
   lift:    { ...G, h: 0.98, lean: -0.2, lh: [0.18, 1.15, 0.4], rh: [-0.18, 1.15, 0.4] },
   slam:    { ...G, h: 0.66, lean: 0.8, lh: [0.18, 0.25, 0.75], rh: [-0.18, 0.25, 0.75] },
   whiff:   { ...G, lean: 0.55, lh: [0.25, 0.5, 0.75], rh: [-0.25, 0.5, 0.75] },
+  // stage throw: squat and grip the drum low, press it overhead, arch back, then heave it forward with both arms
+  pickUp:  { ...G, h: 0.58, lean: 0.75, lh: [0.26, 0.12, 0.5], rh: [-0.26, 0.12, 0.5], lf: [0.24, -0.5, 0.3], rf: [-0.24, -0.5, -0.2] },
+  heaveUp: { ...G, h: 0.92, lean: -0.4, lh: [0.24, 1.1, -0.1], rh: [-0.24, 1.1, -0.1] },
+  heave:   { ...G, h: 0.84, lean: 0.65, lh: [0.24, 0.62, 0.8], rh: [-0.24, 0.62, 0.8], rf: [-0.2, -0.76, -0.55] },
   // crouching: knees deep, hips low, guard tucked in front of the face
   crouch:  { ...G, h: 0.54, lean: 0.55, lh: [0.12, 0.42, 0.38], rh: [-0.12, 0.36, 0.3], lf: [0.22, -0.47, 0.36], rf: [-0.22, -0.47, -0.3] },
   cblock:  { ...G, h: 0.52, lean: 0.45, lh: [0.1, 0.52, 0.3], rh: [-0.1, 0.5, 0.28], lf: [0.22, -0.46, 0.36], rf: [-0.22, -0.46, -0.3] },
@@ -224,6 +228,14 @@ const POWER = {
   meter: { name: 'POWER SURGE +50', col: 0xffd23a, meter: 50 },
   heal:  { name: 'HEALTH +15', col: 0x3aff7a, hp: 15 },
 };
+// MK stage interactables: steel drums stand at the back corners of the roof (`spots`). Free and within `reach` m of one,
+// E / R3 heaves it overhead and hurls it at the foe on an aimed arc (released at `rel` s, `speed` m/s); it bursts on whatever
+// it hits (block it for chip, or sidestep / jump / backdash it) or on the floor, and a new one drops in `respawn` s later.
+// Hit while lifting it and you drop it where you stand. r: hit radius (m); cpu: chance the CPU hurls one it is standing by.
+const PROP = { reach: 1.4, lift: 0.16, rel: 0.44, dur: 0.72, speed: 12, r: 0.6, rad: 0.3, half: 0.45, life: 1.6, respawn: 10, cpu: 0.55,
+  spots: [[-5.4, -1.1], [5.4, -1.1]],
+  hit: { dmg: 11, kb: 6, up: 3.5, stun: 0.8, heavy: true, at: 'rh', blast: 1.6 },
+  keys: [[0, 'pickUp'], [0.16, 'lift'], [0.34, 'heaveUp'], [0.44, 'heave'], [0.62, 'guard']] };
 // what a parry can deflect: normal strikes, the rising uppercut, projectiles and the flying kick (not throws, supers, fatalities)
 const PARRYABLE = new Set([...Object.values(MOVES), ...Object.values(RISE), ...Object.values(SHOT), FLYKICK]);
 const LIMB = { lh: (H) => H.arms.L.hand, rh: (H) => H.arms.R.hand, lf: (H) => H.legs.L.an, rf: (H) => H.legs.R.an };
@@ -256,7 +268,7 @@ export class Game {
   start(choice) {
     const { bat, sup } = this.ctx;
     this.active = true; this.choice = choice; this.t = 0; this.state = 'enter'; this.overT = 0; this.ts = 1; this.landed = false; this.shownWin = false;
-    this.hitstop = 0; this.comboT = 0; this.pending = []; this.cine = null; this.kick = null; this.koCam = null; this.camRoll = 0; this.finish = null; this.shots = []; this.orb = null; this.orbT = ORB.first;
+    this.hitstop = 0; this.comboT = 0; this.pending = []; this.cine = null; this.kick = null; this.koCam = null; this.camRoll = 0; this.finish = null; this.shots = []; this.orb = null; this.orbT = ORB.first; this.resetProps();
     this.round = 1; this.wins = { bat: 0, sup: 0 }; this.clock = ROUND_TIME; this.fightT = 0; this.matchOver = false; this.winner = null;
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
       ko: false, cd: 0, down: 0, meter: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
@@ -294,6 +306,7 @@ export class Game {
     else if (k === 'o') this.rise(this.me);
     else if (k === 'f') this.blow(this.me);
     else if (k === 'h') this.impact(this.me);
+    else if (k === 'e') this.interact(this.me);
     else if (k === ' ') this.press(this.me, 'A');
   }
   keyup(e) { this.keys.delete(e.key.toLowerCase()); }
@@ -329,6 +342,7 @@ export class Game {
     if (this.padHit(3)) this.press(this.me, 'K', this.blockHeld());
     if (this.padHit(1)) this.press(this.me, 'S', this.blockHeld());
     if (this.padHit(0)) this.press(this.me, 'A');
+    if (this.padHit(11)) this.interact(this.me); // R3 = stage interactable
     if (this.padNow[6] && this.padNow[7] && (this.padHit(6) || this.padHit(7))) this.blow(this.me); // both triggers = fatal blow
     if (this.padNow[4] && this.padNow[5] && (this.padHit(4) || this.padHit(5))) this.impact(this.me); // both bumpers = drive impact
     return true;
@@ -498,6 +512,76 @@ export class Game {
       if (f === this.me) this.rumble(0.4, 150);
       this.orb = null; this.updateBars();
       return;
+    }
+  }
+  // Stage props (see PROP): st = rest | held | fly | gone; y = centre height; rx / ry = tilt / heading for the mesh.
+  resetProps() { this.props = PROP.spots.map(([x, z]) => ({ hx: x, hz: z, x, z, y: PROP.half, vx: 0, vy: 0, vz: 0, st: 'rest', t: 0, by: null, rx: 0, ry: 0, spin: 0, harmless: true })); }
+  nearProp(f) {
+    let best = null, bd = PROP.reach;
+    for (const p of this.props) { const d = Math.hypot(p.x - f.x, p.z - f.z); if (p.st === 'rest' && p.y <= PROP.half + 0.01 && d < bd) { bd = d; best = p; } }
+    return best;
+  }
+  interact(f) {
+    if (this.state !== 'fight' || f.dazed || !this.free(f)) return false;
+    const p = this.nearProp(f);
+    if (!p) return false;
+    p.st = 'held'; p.by = f; p.t = 0;
+    f.act = { type: 'prop', t: 0, done: false, p }; f.buf = null; f.block = f.crouch = false;
+    this.ctx.fx.dustBurst(p.x, 0, p.z, 8, 1);
+    return true;
+  }
+  // The drum bursts: shrapnel, sparks and dust; a new one drops onto its spot after PROP.respawn.
+  burstProp(p) {
+    const { fx } = this.ctx;
+    fx.rubble(p.x, p.y, p.z, 30, 4.5, 0.04, 0.16, 4); fx.sparkBurst(p.x, p.y, p.z, 40, 4, 0xffb060); fx.dustBurst(p.x, Math.max(0, p.y - 0.4), p.z, 40, 2.5);
+    fx.waves.spawn(p.x, p.y, p.z, 1.8, 0xfff2d0, 0.45); fx.impact(p.x, p.y, p.z, 0.25);
+    p.st = 'gone'; p.t = 0; p.by = null;
+  }
+  propsStep(dt) {
+    const { fx } = this.ctx;
+    for (const p of this.props) {
+      p.t += dt;
+      if (p.st === 'gone') {
+        if (p.t > PROP.respawn) Object.assign(p, { x: p.hx, z: p.hz, y: 6, vx: 0, vy: 0, vz: 0, st: 'fly', harmless: true, t: 0, rx: 0, ry: 0, spin: 0 }); // new drum drops in
+        continue;
+      }
+      if (p.st === 'held') {
+        const f = p.by;
+        if (!f.act || f.act.p !== p) { // knocked out of his hands: it falls where he stands
+          Object.assign(p, { st: 'fly', harmless: true, vx: f.kx * 0.3, vy: 1, vz: f.kz * 0.3, t: 0 }); continue;
+        }
+        if (f.act.t < PROP.lift) continue; // still gripping it on the floor
+        const h = LIMB.lh(f.H).getWorldPosition(new THREE.Vector3()).lerp(LIMB.rh(f.H).getWorldPosition(new THREE.Vector3()), 0.5);
+        p.x = h.x; p.y = h.y + 0.12; p.z = h.z; p.ry = f.yaw; p.rx += (Math.PI / 2 - p.rx) * Math.min(1, dt * 12);
+        continue;
+      }
+      if (p.st === 'rest') { // fighters walk round a standing drum, not through it
+        for (const f of [this.me, this.cpu]) {
+          const dx = f.x - p.x, dz = f.z - p.z, d = Math.hypot(dx, dz), m = PROP.rad + 0.32;
+          if (f.y < 0.9 && d < m && d > 1e-4) { f.x = p.x + dx / d * m; f.z = p.z + dz / d * m; }
+        }
+        continue;
+      }
+      // flying (thrown, dropped or respawning): ballistic, tumbling end over end when thrown
+      p.vy -= GRAV * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+      if (!p.harmless) { p.spin += dt * 11; p.rx = Math.PI / 2 + p.spin; if (this.ctx.rng() < 0.5) fx.sparkBurst(p.x, p.y, p.z, 1, 0.5, 0xffb060); }
+      const o = p.by && (p.by === this.me ? this.cpu : this.me);
+      if (o && !p.harmless && this.state === 'fight' && !o.ko && o.down <= 0 && !o.heldBy && Math.hypot(o.x - p.x, o.z - p.z) < PROP.r
+        && p.y > o.y + 0.1 && p.y < o.y + 2.0 && !(o.act && (o.act.type === 'dash' && o.act.dir < 0 && o.act.t < DASH.invuln || o.act.type === 'rise' && o.act.t < RISE[o.key].inv))) {
+        const at = new THREE.Vector3(p.x, p.y, p.z), att = p.by;
+        this.burstProp(p);
+        this.hurt(o, att, PROP.hit, at);
+        this.camKick(at, 1, att.key === 'bat' ? 1 : -1);
+        continue;
+      }
+      const out = p.x < ARENA.x0 - 1 || p.x > ARENA.x1 + 1 || p.z < ARENA.z0 - 1 || p.z > ARENA.z1 + 1;
+      if (p.y <= PROP.half || out || (!p.harmless && p.t > PROP.life)) {
+        if (p.harmless && !out) { // dropped / respawned: lands upright and stays
+          p.y = PROP.half; p.st = 'rest'; p.by = null; p.rx = 0; p.vx = p.vy = p.vz = 0;
+          p.x = clamp(p.x, ARENA.x0 + 0.4, ARENA.x1 - 0.4); p.z = clamp(p.z, ARENA.z0 + 0.4, ARENA.z1 - 0.4);
+          fx.dustBurst(p.x, 0, p.z, 16, 1.4); fx.impact(p.x, 0, p.z, 0.1);
+        } else { p.y = Math.max(p.y, PROP.half); this.burstProp(p); }
+      }
     }
   }
   rise(f) {
@@ -818,6 +902,7 @@ export class Game {
     else if (a.type === 'throw') k = a.checked && !a.grab ? 'punish' : 'counter';
     else if (a.type === 'heat') k = 'counter';
     else if (a.type === 'impact') k = a.done ? 'punish' : 'counter';
+    else if (a.type === 'prop') k = a.done ? 'punish' : 'counter';
     else if (a.type === 'side' && a.t > SIDE.evade[1]) k = 'punish';
     return k && COUNTER[k];
   }
@@ -945,7 +1030,7 @@ export class Game {
     this.say(text, this.matchOver ? '' : winner ? `${winner.key === 'bat' ? 'BATMAN' : 'SUPERMAN'} TAKES ROUND ${this.round}` : 'NO WINNER');
   }
   nextRound() {
-    this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.winner = null; this.koCam = null; this.kick = null; this.finish = null; this.shots = []; this.orb = null; this.orbT = ORB.first;
+    this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.winner = null; this.koCam = null; this.kick = null; this.finish = null; this.shots = []; this.orb = null; this.orbT = ORB.first; this.resetProps();
     for (const [f, x] of [[this.F.bat, -2.2], [this.F.sup, 2.2]]) {
       Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, dazed: false, downT: -9, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, frz: 0, brk: 0, rollA: null, cur: T(POSES.guard) });
       f.yaw = x < 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -994,6 +1079,7 @@ export class Game {
       this.resolve();
       this.shotsStep(sdt);
       this.orbStep(sdt);
+      this.propsStep(sdt);
       this.separate();
       if (this.state === 'fight' && this.fightT > 1 && this.fightT < 1.2) this.say('');
       if (this.state === 'over' && !this.matchOver && this.overT > 2.8) this.nextRound();
@@ -1035,7 +1121,7 @@ export class Game {
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
     if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN',
-      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>DOUBLE-TAP UP / DOWN = SIDESTEP · STRAIGHT HITS + PROJECTILES MISS, HOOKS / ROUNDHOUSE / SWEEP TRACK IT<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>HIT HIM WHILE HE WINDS UP = COUNTER · WHILE HE RECOVERS FROM A MISS = PUNISH COUNTER (MORE DAMAGE + STUN)<br>H / LB+RB = DRIVE IMPACT (QUARTER METER): ARMOURED, ABSORBS 2 HITS · COUNTER = CRUMPLE · NEAR A WALL = WALL SPLAT (EVEN BLOCKED)<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
+      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>DOUBLE-TAP UP / DOWN = SIDESTEP · STRAIGHT HITS + PROJECTILES MISS, HOOKS / ROUNDHOUSE / SWEEP TRACK IT<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>HIT HIM WHILE HE WINDS UP = COUNTER · WHILE HE RECOVERS FROM A MISS = PUNISH COUNTER (MORE DAMAGE + STUN)<br>H / LB+RB = DRIVE IMPACT (QUARTER METER): ARMOURED, ABSORBS 2 HITS · COUNTER = CRUMPLE · NEAR A WALL = WALL SPLAT (EVEN BLOCKED)<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH · E / R3 BY A STEEL DRUM = HURL IT (BLOCK / SIDESTEP / JUMP IT)<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }
   }
@@ -1113,6 +1199,13 @@ export class Game {
       else { A.block = 0.5; A.crouch = read ? 0.5 : 0; }
       A.t = Math.max(A.t, 0.3);
     }
+    // incoming drum: one read each: step out of its path, jump it, or block it
+    for (const p of this.props) {
+      if (p.st !== 'fly' || p.harmless || p.by === f || p.seen || Math.hypot(p.x - f.x, p.z - f.z) > 5) continue;
+      p.seen = true; const r = rng();
+      if (r < 0.3 && this.sidestep(f, rng() < 0.5 ? 1 : -1)) {} else if (r < 0.45 && this.free(f)) this.jump(f, -tx, -tz); else { A.block = 0.6; A.crouch = 0; }
+      A.t = Math.max(A.t, 0.3);
+    }
     // anti-air: one read per jump-in; about half the time the CPU meets it with the rising uppercut
     if (o.y <= 0.001) A.aa = false;
     else if (!A.aa && o.y > 0.3 && !o.launched && d < 2.4 && this.free(f)) { A.aa = true; if (rng() < 0.5) this.rise(f); }
@@ -1123,7 +1216,7 @@ export class Game {
     }
     if (A.t <= 0) {
       A.t = 0.2 + rng() * 0.3; A.mx = A.mz = 0;
-      const threat = o.act && d < 2;
+      const threat = o.act && d < 2, pr = this.props.find((p) => p.st === 'rest' && Math.hypot(p.x - f.x, p.z - f.z) < 3);
       if (this.canBlow(f) && d < 2.2 && !o.launched && o.down <= 0 && rng() < 0.3) this.blow(f);
       else if (f.meter >= 100 && d < 3.2 && this.free(f) && !o.launched && rng() < 0.35) this.superMove(f);
       else if (threat && d < 1.4 && rng() < 0.08 && this.free(f)) this.rise(f); // reversal through pressure
@@ -1143,6 +1236,9 @@ export class Game {
       else if (d < 1.1 && this.free(f) && (o.block || rng() < 0.12)) this.throwStart(f);
       else if (this.orb && this.orb.t > ORB.fall * 0.5 && rng() < 0.6 && Math.hypot(this.orb.x - f.x, this.orb.z - f.z) < Math.hypot(this.orb.x - o.x, this.orb.z - o.z) + 1) {
         const ox = this.orb.x - f.x, oz = this.orb.z - f.z, od = Math.hypot(ox, oz) || 1; A.mx = ox / od; A.mz = oz / od; // race for the power-up
+      }
+      else if (pr && d > 2.2 && this.free(f) && rng() < PROP.cpu) { // hurl a stage drum (walk over to it first)
+        if (!this.interact(f)) { const px = pr.x - f.x, pz = pr.z - f.z, pd = Math.hypot(px, pz) || 1; A.mx = px / pd; A.mz = pz / pd; }
       }
       else if (d > 3 && rng() < 0.3 && this.free(f) && this.shoot(f)) {} // zoning from range
       else if (d > 2.6 && d < 5 && rng() < 0.22 && this.free(f)) this.dash(f, 1);
@@ -1291,6 +1387,20 @@ export class Game {
           this.showCombo(S.name, f.key);
         }
         if (a.t >= S.dur) f.act = null;
+      } else if (a.type === 'prop') {
+        // heave: release at PROP.rel on an arc aimed to reach the foe's chest in flight time D / speed
+        const p = a.p;
+        if (!a.done && a.t >= PROP.rel) {
+          a.done = true;
+          if (p.st === 'held') {
+            const tx = o.x - p.x, tz = o.z - p.z, D = Math.max(0.5, Math.hypot(tx, tz)), ft = D / PROP.speed;
+            p.vx = tx / D * PROP.speed; p.vz = tz / D * PROP.speed; p.vy = (o.y + 1.1 - p.y) / ft + 0.5 * GRAV * ft;
+            p.st = 'fly'; p.harmless = false; p.t = 0; p.spin = 0; p.seen = false;
+            fx.dustBurst(f.x, 0, f.z, 20, 1.6); this.showCombo('STAGE THROW', f.key);
+            if (f === this.me) this.rumble(0.4, 120);
+          }
+        }
+        if (a.t >= PROP.dur) f.act = null;
       } else if (a.type === 'rise') {
         // launch straight up off the back foot; the fist is live through the rise, then a fall and landing lag
         const R = RISE[f.key];
@@ -1396,6 +1506,11 @@ export class Game {
     if (a && a.type === 'shoot') {
       let n = null;
       for (const [t, p] of SHOT[f.key].keys) if (a.t >= t) n = p;
+      return T(MP[n] || POSES[n]);
+    }
+    if (a && a.type === 'prop') {
+      let n = null;
+      for (const [t, p] of PROP.keys) if (a.t >= t) n = p;
       return T(MP[n] || POSES[n]);
     }
     if (a && a.type === 'dash') return a.dir > 0 ? T(MP.rush, { gait: 0 }) : T(MP.backdash);
