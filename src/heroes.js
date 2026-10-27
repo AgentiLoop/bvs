@@ -355,8 +355,17 @@ export function makeHero(kind) {
     // Closed at both ends so the fist never reads as a hollow ring.
     part(hand, surface([[-0.104, 0.001, 0.001, 0.016], [-0.095, 0.025, 0.028, 0.014], [-0.078, 0.044, 0.037, 0.012],
       [-0.035, 0.044, 0.031, 0.006], [0.005, 0.035, 0.03, 0], [0.016, 0.001, 0.001, 0]], p => p, 40, 32), handMat);
-    for (let k = 0; k < 4; k++) oval(hand, handMat, [(k - 1.5) * 0.019, -0.072, 0.039], [0.011, 0.016, 0.012]);
-    oval(hand, handMat, [-s * 0.034, -0.036, 0.028], [0.018, 0.031, 0.021]);
+    // Clenched fist built from finger segments instead of four knuckle balls: each finger's first
+    // phalanx juts forward from the knuckle, the second curls down, and the thumb wraps across the front.
+    const seg = new THREE.CapsuleGeometry(1, 1, 6, 12);
+    const phal = (pos, r, len, rot) => part(hand, seg, handMat, pos, [r, len / 2, r], rot);
+    for (let k = 0; k < 4; k++) {
+      const x = (k - 1.5) * 0.019, tip = k === 0 || k === 3 ? 0.9 : 1; // outer fingers a touch smaller
+      phal([x, -0.07, 0.044], 0.0095 * tip, 0.016, [Math.PI / 2, 0, 0]);
+      phal([x, -0.087, 0.056], 0.0088 * tip, 0.014, [0.15, 0, 0]);
+    }
+    oval(hand, handMat, [-s * 0.036, -0.05, 0.03], [0.016, 0.026, 0.019]);          // thumb base
+    phal([-s * 0.019, -0.097, 0.066], 0.0092, 0.024, [0, 0, s * (Math.PI / 2 - 0.25)]); // thumb over the fingers
     arms[side] = { sh, el, hand, s };
 
     const th = joint(hips, [s * 0.1, -0.04, 0]);
