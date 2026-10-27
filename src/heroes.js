@@ -196,8 +196,21 @@ export function makeHero(kind) {
   part(hips, surface([[-0.095, 0.05, 0.05], [-0.06, 0.142, 0.104], [0.015, 0.162, 0.114], [0.085, 0.15, 0.106]], p => p, 32), B ? dark : red);
   part(hips, surface([[0.063, 0.153, 0.108], [0.071, 0.158, 0.113], [0.103, 0.153, 0.11], [0.11, 0.148, 0.105]], p => p, 12), yellow);
   oval(hips, yellow, [0, 0.087, 0.114], [0.03, 0.024, 0.011]);
-  if (B) for (const s of [-1, 1]) for (const a of [0.5, 0.9, 1.3])
-    oval(hips, yellow, [s * Math.sin(a) * 0.158, 0.084, Math.cos(a) * 0.112], [0.024, 0.034, 0.018]);
+  if (B) {
+    // Utility-belt pouches: bevelled capsule-cornered boxes sitting flush on the belt, instead of blobs.
+    const pr = new THREE.Shape(), w = 0.021, h = 0.025, r = 0.008;
+    pr.moveTo(-w + r, -h); pr.lineTo(w - r, -h); pr.quadraticCurveTo(w, -h, w, -h + r); pr.lineTo(w, h - r);
+    pr.quadraticCurveTo(w, h, w - r, h); pr.lineTo(-w + r, h); pr.quadraticCurveTo(-w, h, -w, h - r);
+    pr.lineTo(-w, -h + r); pr.quadraticCurveTo(-w, -h, -w + r, -h);
+    const pouchGeo = new THREE.ExtrudeGeometry(pr, { depth: 0.012, bevelEnabled: true, bevelThickness: 0.004,
+      bevelSize: 0.004, bevelSegments: 3, curveSegments: 6 });
+    pouchGeo.center();
+    for (const s of [-1, 1]) for (const a of [0.55, 0.95, 1.35]) {
+      const x = s * Math.sin(a) * 0.158, z = Math.cos(a) * 0.112;
+      const n = new THREE.Vector2(x / 0.158 ** 2, z / 0.112 ** 2).normalize();
+      part(hips, pouchGeo, yellow, [x + n.x * 0.009, 0.084, z + n.y * 0.009], [1, 1, 1], [0, Math.atan2(n.x, n.y), 0]);
+    }
+  }
 
   // Planar jaw, cheekbones, recessed temples and an integrated nose replace the egg head.
   // Superman's face has a broad, square jaw rather than an egg-shaped head.
@@ -316,8 +329,17 @@ export function makeHero(kind) {
       const lower = 1 - blend(-0.38, -0.26, p.y), shoulder = blend(0.015, 0.095, p.y) * 0.7;
       return [[el, lower], [sh, (1 - lower) * (1 - shoulder)], [chest, (1 - lower) * shoulder]];
     });
-    if (B) for (let k = 0; k < 3; k++)
-      part(el, new THREE.ConeGeometry(0.012, 0.06, 4), dark, [s * 0.072, -0.11 - k * 0.05, -0.02], [0.6, 1, 1], [0, 0, -s * 1.1]);
+    if (B) {
+      // Gauntlet fins: thin swept-back blades (base on the forearm, tip raked toward the elbow).
+      const fin = new THREE.Shape();
+      fin.moveTo(0, 0); fin.lineTo(0, -0.05); fin.quadraticCurveTo(0.016, -0.026, 0.034, 0.012);
+      fin.quadraticCurveTo(0.014, 0.004, 0, 0);
+      const finGeo = new THREE.ExtrudeGeometry(fin, { depth: 0.003, bevelEnabled: true, bevelThickness: 0.0012,
+        bevelSize: 0.0012, bevelSegments: 2, curveSegments: 10 });
+      finGeo.translate(0, 0, -0.0015);
+      for (let k = 0; k < 3; k++)
+        part(el, finGeo, dark, [s * 0.058, -0.1 - k * 0.045, -0.012], [1, 1, 1], [0, s > 0 ? 0 : Math.PI, 0]);
+    }
     const handMat = B ? dark : skin;
     // Closed at both ends so the fist never reads as a hollow ring.
     part(hand, surface([[-0.104, 0.001, 0.001, 0.016], [-0.095, 0.025, 0.028, 0.014], [-0.078, 0.044, 0.037, 0.012],
