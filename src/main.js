@@ -203,6 +203,17 @@ const shotMesh = (() => {
   for (const g of [bat, sup]) { g.visible = false; scene.add(g); }
   return { bat, sup };
 })();
+// Playable-mode power-up orb: a bright core inside a translucent shell with a halo, tinted per power-up type.
+const orbMesh = (() => {
+  const g = new THREE.Group();
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 1), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  const shell = new THREE.Mesh(new THREE.IcosahedronGeometry(0.28, 1), new THREE.MeshBasicMaterial({ blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.45, wireframe: true }));
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: blastTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.8 }));
+  halo.scale.setScalar(1.1);
+  g.add(core, shell, halo); g.visible = false; scene.add(g);
+  return { g, core, shell, halo };
+})();
+const ORB_COL = { rage: 0xff3a2a, meter: 0xffd23a, heal: 0x3aff7a }, _white = new THREE.Color(0xffffff);
 const CLASH_T = 18.2, BLAST_LIFE = 0.9; // sim seconds (clash happens in slow-mo, so this plays out long)
 let blastN = 2;
 function blast(x, y, z, size = 1, life = 0.45, tint = 0xffffff) {
@@ -439,6 +450,15 @@ function updateVisuals() {
     m.position.set(s.x, s.y, s.z);
     if (k === 'bat') m.rotation.set(0, s.t * 28, 0); // spins flat as it flies
     else { m.rotation.set(0, Math.atan2(s.vx, s.vz), 0); m.scale.setScalar(0.85 + s.t * 0.35 + Math.sin(s.t * 40) * 0.04); }
+  }
+  const orb = game.active && game.orb;
+  orbMesh.g.visible = !!orb;
+  if (orb) {
+    const c = ORB_COL[orb.type];
+    orbMesh.g.position.set(orb.x, orb.y, orb.z);
+    orbMesh.shell.rotation.set(orb.t * 1.3, orb.t * 2.1, 0);
+    orbMesh.shell.material.color.setHex(c); orbMesh.halo.material.color.setHex(c); orbMesh.core.material.color.setHex(c).lerp(_white, 0.55);
+    orbMesh.halo.scale.setScalar(1.0 + Math.sin(orb.t * 6) * 0.15);
   }
 
   title.style.opacity = game.active ? 0 : Math.min(1, Math.max(0, (realT - 19.0) / 0.8)) * Math.min(1, Math.max(0, (LOOP_END - realT) / 0.4));

@@ -108,6 +108,14 @@ const SHOT = {
     keys: [[0, 'clapUp'], [0.16, 'clap'], [0.42, 'guard']] },
 };
 const QCF = 0.35; // crouch must have been held within this many seconds of toward + punch
+// Power-ups: a glowing orb drops into the arena now and then (first at `first` s, then every `every` s if none is out);
+// walk through it to collect. rage: 1.5x damage for `time` s (red aura); meter: +50 super meter; heal: +15 HP.
+const ORB = { first: 8, every: 11, life: 9, y: 1.0, r: 0.75, fall: 1.2 };
+const POWER = {
+  rage:  { name: 'RAGE! ×1.5 DAMAGE', col: 0xff3a2a, time: 8, mult: 1.5 },
+  meter: { name: 'POWER SURGE +50', col: 0xffd23a, meter: 50 },
+  heal:  { name: 'HEALTH +15', col: 0x3aff7a, hp: 15 },
+};
 const LIMB = { lh: (H) => H.arms.L.hand, rh: (H) => H.arms.R.hand, lf: (H) => H.legs.L.an, rf: (H) => H.legs.R.an };
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -132,11 +140,11 @@ export class Game {
   start(choice) {
     const { bat, sup } = this.ctx;
     this.active = true; this.choice = choice; this.t = 0; this.state = 'enter'; this.overT = 0; this.ts = 1; this.landed = false; this.shownWin = false;
-    this.hitstop = 0; this.comboT = 0; this.pending = []; this.cine = null; this.kick = null; this.koCam = null; this.camRoll = 0; this.finish = null; this.shots = [];
+    this.hitstop = 0; this.comboT = 0; this.pending = []; this.cine = null; this.kick = null; this.koCam = null; this.camRoll = 0; this.finish = null; this.shots = []; this.orb = null; this.orbT = ORB.first;
     this.round = 1; this.wins = { bat: 0, sup: 0 }; this.clock = ROUND_TIME; this.fightT = 0; this.matchOver = false; this.winner = null;
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
       ko: false, cd: 0, down: 0, meter: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
-      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, crouch: false, dazed: false, downT: -9, tow: 0,
+      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0,
       ai: { t: 0, mx: 0, mz: 0, block: 0, crouch: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0, hx: 0, hy: 0, squash: 0 });
     this.F = { bat: mk(bat, 'bat', -7.4, Math.PI / 2), sup: mk(sup, 'sup', 2.2, -Math.PI / 2) };
     this.F.sup.y = 26; this.F.sup.cur = T(POSES.fly, { pitch: 0.35 });
@@ -152,7 +160,7 @@ export class Game {
     this.updateBars();
   }
 
-  stop() { this.active = false; this.heat = null; this.shots = []; this.ui.hud.style.display = 'none'; this.say(''); }
+  stop() { this.active = false; this.heat = null; this.shots = []; this.orb = null; this.ui.hud.style.display = 'none'; this.say(''); }
 
   say(text, sub = '') { this.ui.banner.innerHTML = text ? `${text}${sub ? `<small>${sub}</small>` : ''}` : ''; this.ui.banner.style.opacity = text ? 1 : 0; }
 
@@ -325,6 +333,39 @@ export class Game {
     }
     this.shots = this.shots.filter((s) => !s.dead);
   }
+  // Power-up orb: drops from the sky, hovers, and is collected by the first fighter to walk through it.
+  orbStep(dt) {
+    const { fx } = this.ctx, rng = this.ctx.rng;
+    if (this.state !== 'fight') { this.orb = null; return; }
+    for (const f of [this.me, this.cpu]) if (f.rage > 0) {
+      f.rage -= dt;
+      if (rng() < 0.35) { const c = f.H.chest.getWorldPosition(new THREE.Vector3()); fx.sparkBurst(c.x + (rng() - 0.5) * 0.5, c.y + (rng() - 0.5) * 0.8, c.z + (rng() - 0.5) * 0.5, 1, 1.2, POWER.rage.col); }
+    }
+    let o = this.orb;
+    if (!o) {
+      if (this.finish || this.cine || (this.orbT -= dt) > 0) return;
+      const types = Object.keys(POWER);
+      o = this.orb = { type: types[Math.floor(rng() * types.length)], x: ARENA.x0 + 1.5 + rng() * (ARENA.x1 - ARENA.x0 - 3), z: -1 + rng() * 2.5, y: 8, t: 0 };
+      this.orbT = ORB.every;
+    }
+    o.t += dt;
+    o.y = o.t < ORB.fall ? ORB.y + 7 * (1 - o.t / ORB.fall) ** 2 : ORB.y + Math.sin(o.t * 3) * 0.08;
+    if (o.t >= ORB.fall && !o.landed) { o.landed = true; fx.waves.spawn(o.x, 0.05, o.z, 1.6, POWER[o.type].col, 0.5); fx.dustBurst(o.x, 0, o.z, 20, 1.5); }
+    if (o.t > ORB.fall + ORB.life) { fx.sparkBurst(o.x, o.y, o.z, 15, 1.5, POWER[o.type].col); this.orb = null; return; }
+    if (!o.landed) return;
+    for (const f of [this.me, this.cpu]) {
+      if (f.ko || f.dazed || f.launched || f.heldBy || f.y > 1.6 || Math.hypot(f.x - o.x, f.z - o.z) > ORB.r) continue;
+      const P = POWER[o.type];
+      if (P.time) f.rage = P.time;
+      if (P.meter) f.meter = Math.min(100, f.meter + P.meter);
+      if (P.hp) f.hp = Math.min(100, f.hp + P.hp);
+      fx.sparkBurst(o.x, o.y, o.z, 50, 4, P.col); fx.waves.spawn(o.x, o.y, o.z, 2, P.col, 0.6); fx.blast(o.x, o.y, o.z, 1, 0.4, P.col); fx.flash(0.12);
+      this.showCombo(P.name, f.key);
+      if (f === this.me) this.rumble(0.4, 150);
+      this.orb = null; this.updateBars();
+      return;
+    }
+  }
   jump(f, mx = 0, mz = 0) { if (this.free(f) && !f.block) { f.vy = 6; f.kx += mx * 3; f.kz += mz * 3; } }
   special(f) {
     if (!this.free(f) || f.cd > 0) return;
@@ -464,8 +505,9 @@ export class Game {
     const dx = def.x - att.x, dz = def.z - att.z, d = Math.hypot(dx, dz) || 1, nx = dx / d, nz = dz / d;
     const mine = def === this.me || att === this.me;
     const guarding = def.block && !def.act && def.stun <= 0 && def.y <= 0.001, over = M.air || M.over;
+    const rage = att.rage > 0 ? POWER.rage.mult : 1;
     if (guarding && (def.crouch ? !over : !M.low)) {
-      def.hp = Math.max(1, def.hp - M.dmg * 0.15);
+      def.hp = Math.max(1, def.hp - M.dmg * 0.15 * rage);
       att.meter = Math.min(100, att.meter + 2); def.meter = Math.min(100, def.meter + 4);
       def.kx += nx * M.kb * 0.45; def.kz += nz * M.kb * 0.45; att.kx -= nx * 0.6; att.kz -= nz * 0.6;
       fx.sparkBurst(at.x, at.y, at.z, 14, 3, 0xbfd8ff);
@@ -478,7 +520,7 @@ export class Game {
     }
     const juggle = def.stun > 0 || def.launched || def.y > 0.05;
     att.hits = juggle ? att.hits + 1 : 1;
-    const dmg = M.dmg * Math.max(0.45, 1 - 0.1 * (att.hits - 1));
+    const dmg = M.dmg * rage * Math.max(0.45, 1 - 0.1 * (att.hits - 1));
     def.act = null; def.buf = null; def.stun = M.stun; def.heavy = !!M.heavy;
     def.kx = def.kx * 0.3 + nx * M.kb; def.kz = def.kz * 0.3 + nz * M.kb;
     att.kx -= nx * 0.5; att.kz -= nz * 0.5;
@@ -559,9 +601,9 @@ export class Game {
     this.say(text, this.matchOver ? '' : winner ? `${winner.key === 'bat' ? 'BATMAN' : 'SUPERMAN'} TAKES ROUND ${this.round}` : 'NO WINNER');
   }
   nextRound() {
-    this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.winner = null; this.koCam = null; this.kick = null; this.finish = null; this.shots = [];
+    this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.winner = null; this.koCam = null; this.kick = null; this.finish = null; this.shots = []; this.orb = null; this.orbT = ORB.first;
     for (const [f, x] of [[this.F.bat, -2.2], [this.F.sup, 2.2]]) {
-      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, dazed: false, downT: -9, cur: T(POSES.guard) });
+      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, dazed: false, downT: -9, rage: 0, cur: T(POSES.guard) });
       f.yaw = x < 0 ? Math.PI / 2 : -Math.PI / 2;
     }
     this.ctx.batCape.reset(); this.ctx.supCape.reset();
@@ -604,6 +646,7 @@ export class Game {
       if (![this.me, this.cpu].some((f) => f.act && f.act.type === 'heat')) this.heat = null;
       this.resolve();
       this.shotsStep(sdt);
+      this.orbStep(sdt);
       this.separate();
       if (this.state === 'fight' && this.fightT > 1 && this.fightT < 1.2) this.say('');
       if (this.state === 'over' && !this.matchOver && this.overT > 2.8) this.nextRound();
@@ -645,7 +688,7 @@ export class Game {
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
     if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN',
-      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
+      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }
   }
@@ -714,6 +757,9 @@ export class Game {
         if (OM && OM.hi && read && rng() < 0.35) { A.block = 0; A.crouch = 0.4; } // duck under it
       }
       else if (d < 1.1 && this.free(f) && (o.block || rng() < 0.12)) this.throwStart(f);
+      else if (this.orb && this.orb.t > ORB.fall * 0.5 && rng() < 0.6 && Math.hypot(this.orb.x - f.x, this.orb.z - f.z) < Math.hypot(this.orb.x - o.x, this.orb.z - o.z) + 1) {
+        const ox = this.orb.x - f.x, oz = this.orb.z - f.z, od = Math.hypot(ox, oz) || 1; A.mx = ox / od; A.mz = oz / od; // race for the power-up
+      }
       else if (d > 3 && rng() < 0.3 && this.free(f) && this.shoot(f)) {} // zoning from range
       else if (d > 2.6 && d < 5 && rng() < 0.22 && this.free(f)) this.dash(f, 1);
       else if (o.launched && d < 1.4 && this.free(f)) { A.chain = 1; this.press(f, 'J'); }
