@@ -202,21 +202,34 @@ export function makeHero(kind) {
       [0.237, 0.036, 0.035, -0.009], [0.245, 0.0001, 0.0001, -0.009]];
   const hairMask = [];
   const faceSculpt = (p, a) => {
-    const front = Math.max(0, Math.cos(a));
-    if (!B) {
-      const c = Math.cos(a), line = c > 0 ? 0.118 + 0.064 * c ** 2 : 0.118 + 0.045 * c;
-      const isHair = p.y > line;
-      hairMask.push(isHair);
-      if (isHair) {
-        const k = 1 + 0.07 * blend(line, line + 0.02, p.y);
-        p.x *= k; p.z *= k;
-        p.y += 0.008 * front ** 2 * bump(p.y, 0.215, 0.03); // slicked-back front wave
-      }
-    }
+    const front = Math.max(0, Math.cos(a)), f5 = front ** 5;
     p.x = Math.sign(p.x) * Math.pow(Math.abs(Math.sin(a)), 0.83) * contour(faceRows, p.y)[0];
-    p.z += front ** 5 * (0.025 * bump(p.x, 0, 0.014) * bump(p.y, 0.112, 0.032)
-      + 0.012 * bump(p.y, 0.032, 0.023) - 0.008 * bump(p.y, 0.068, 0.012));
-    p.z -= 0.008 * bump(Math.abs(p.x), 0.034, 0.021) * bump(p.y, 0.144, 0.014) * front;
+    if (B) {
+      p.z += f5 * (0.025 * bump(p.x, 0, 0.014) * bump(p.y, 0.112, 0.032)
+        + 0.012 * bump(p.y, 0.032, 0.023) - 0.008 * bump(p.y, 0.068, 0.012));
+      p.z -= 0.008 * bump(Math.abs(p.x), 0.034, 0.021) * bump(p.y, 0.144, 0.014) * front;
+      return p;
+    }
+    // Superman: everything on the face projects forward (no dents). Strong brow ridge, straight
+    // nose bridge, high cheekbones, full lips and a jutting square chin with a cleft.
+    const c = Math.cos(a), line = c > 0 ? 0.118 + 0.064 * c ** 2 : 0.118 + 0.045 * c;
+    const isHair = p.y > line;
+    hairMask.push(isHair);
+    const ax = Math.abs(p.x);
+    p.z += f5 * (
+      0.024 * bump(p.x, 0, 0.012) * bump(p.y, 0.118, 0.03)                 // nose
+      + 0.009 * bump(p.y, 0.157, 0.012) * bump(ax, 0.03, 0.045)            // brow ridge
+      + 0.016 * bump(p.y, 0.028, 0.02) * bump(p.x, 0, 0.04)                 // jutting chin
+      - 0.003 * bump(p.x, 0, 0.005) * bump(p.y, 0.022, 0.012)               // chin cleft
+      + 0.004 * bump(p.y, 0.062, 0.012) * bump(p.x, 0, 0.022));             // lips
+    p.z += front ** 2 * 0.007 * bump(ax, 0.052, 0.018) * bump(p.y, 0.112, 0.016); // cheekbones
+    p.z -= front ** 3 * 0.0035 * bump(ax, 0.034, 0.016) * bump(p.y, 0.141, 0.01); // shallow eye sockets
+    if (isHair) {
+      // Hair sits just proud of the skull and blends in, so the forehead isn't left sunken below it.
+      const k = 1 + 0.025 * blend(line, line + 0.03, p.y);
+      p.x *= k; p.z *= k;
+      p.y += 0.008 * front ** 2 * bump(p.y, 0.215, 0.03);                  // slicked-back front wave
+    }
     return p;
   };
   const faceGeo = surface(faceRows, faceSculpt, 72);
@@ -254,7 +267,7 @@ export function makeHero(kind) {
     }
     line(head, [[s * 0.014, 0.156, 0.076], [s * 0.032, 0.16, 0.076], [s * 0.053, 0.157, 0.067]], B ? 0.006 : 0.005, brow);
   }
-  line(head, [[-0.018, 0.06, 0.077], [0, 0.061, 0.08], [0.018, 0.06, 0.077]], 0.0016, mat(0x754b43, 0.9));
+  line(head, [[-0.018, 0.06, B ? 0.077 : 0.079], [0, 0.061, B ? 0.08 : 0.083], [0.018, 0.06, B ? 0.077 : 0.079]], 0.0016, mat(0x754b43, 0.9));
 
   const arms = {}, legs = {};
   for (const [side, s] of [['L', 1], ['R', -1]]) {
