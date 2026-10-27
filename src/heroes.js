@@ -611,9 +611,9 @@ function posePass(H, s, t, ground, raise) {
     // Upper arm hugging the lats used to sink up to 4 cm into the side of the back (the arm looked thin and
     // glued into the torso): swing the elbow out until the middle of the upper arm clears the body.
     for (let it = 0; it < 2; it++) {
-      a.sh.getWorldPosition(_A); a.el.getWorldPosition(_C); _C.lerp(_A, 0.5); _F.copy(_C);
+      a.sh.getWorldPosition(_A); a.el.getWorldPosition(_C); _C.lerp(_A, 0.65); _F.copy(_C); // a third down the upper arm, where the inner arm meets the lats
       if (!pushOutOfTorso(H, _C, UPPER_R)) break;
-      a.el.getWorldPosition(_E); _E.add(_C.sub(_F).multiplyScalar(2));
+      a.el.getWorldPosition(_E); _E.add(_C.sub(_F).multiplyScalar(1 / 0.35));
       solveIK(a.sh, a.el, 0.32, 0.30, _T, _E.sub(_A).multiplyScalar(4).add(_A));
     }
     // Forearm resting across the chest: if its middle is inside the torso, move the fist out by the same amount.
