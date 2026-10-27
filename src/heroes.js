@@ -104,9 +104,9 @@ function surface(rows, sculpt = (p) => p, rings = 64, sides = 48) {
 
 export function makeHero(kind) {
   const B = kind === 'batman';
-  const suit = mat(B ? 0x414751 : 0x174b9c, 0.66, 0.04);
+  const suit = mat(B ? 0x414751 : 0x174b9c, 0.82, 0.0);
   const dark = mat(0x10151e, 0.57, 0.06);
-  const red = mat(0xa9152b, 0.64);
+  const red = mat(0xa9152b, 0.8);
   const skin = mat(0xdca784, 0.84);
   const yellow = mat(0xd9ac38, 0.48, 0.24);
   const boot = B ? dark : red;
@@ -126,17 +126,19 @@ export function makeHero(kind) {
   // The pecs, sternum, obliques and abdomen are sculpted into one continuous surface.
   // Heavyweight V-taper: wide lats/chest, trapezius slope into a thick neck, tight waist.
   const torsoRows = [[0.035, 0.155, 0.108], [0.13, 0.142, 0.104], [0.23, 0.14, 0.103],
-    [0.34, 0.178, 0.12], [0.45, 0.228, 0.14], [0.56, 0.262, 0.152],
-    [0.64, 0.252, 0.142], [0.69, 0.205, 0.12], [0.735, 0.1, 0.082],
-    [0.78, B ? 0.065 : 0.074, B ? 0.063 : 0.068], [0.835, B ? 0.061 : 0.069, B ? 0.06 : 0.064]];
+    [0.34, 0.182, 0.12], [0.45, 0.245, 0.142], [0.56, 0.282, 0.154],
+    [0.64, 0.272, 0.144], [0.69, 0.228, 0.122], [0.735, 0.122, 0.082],
+    [0.78, B ? 0.07 : 0.08, B ? 0.066 : 0.072], [0.835, B ? 0.066 : 0.074, B ? 0.063 : 0.068]];
   const chestDepth = (x, y) => {
     const [rx, rz] = contour(torsoRows, y);
     const base = rz * Math.sqrt(Math.max(0, 1 - (x / rx) ** 2));
-    const pec = 0.052 * bump(Math.abs(x), 0.105, 0.07) * bump(y, 0.565, 0.065);
+    const pec = 0.06 * bump(Math.abs(x), 0.11, 0.075) * bump(y, 0.57, 0.065)
+      - 0.012 * bump(y, 0.505, 0.012) * bump(Math.abs(x), 0.11, 0.07); // hard lower pec edge
+    const lineaAlba = -0.007 * bump(x, 0, 0.01) * blend(0.15, 0.2, y) * (1 - blend(0.44, 0.5, y));
     const abs = [0.21, 0.285, 0.36, 0.427].reduce((v, cy) => v + 0.016 * bump(Math.abs(x), 0.047, 0.035) * bump(y, cy, 0.028), 0);
     const sternum = -0.007 * bump(x, 0, 0.017) * bump(y, 0.52, 0.12);
     const clavicle = 0.011 * bump(y, 0.663 - Math.abs(x) * 0.10, 0.013) * bump(Math.abs(x), 0.12, 0.10);
-    return base + pec + abs + sternum + clavicle;
+    return base + pec + abs + sternum + clavicle + lineaAlba;
   };
   const torsoGeo = surface(torsoRows, (p, a) => {
     if (Math.cos(a) > 0) p.z = chestDepth(p.x, p.y);
@@ -180,8 +182,19 @@ export function makeHero(kind) {
       [0.115, 0.085, 0.076, 0], [0.149, 0.081, 0.077, -0.002],
       [0.182, 0.079, 0.076, -0.006], [0.214, 0.068, 0.064, -0.009],
       [0.237, 0.036, 0.035, -0.009], [0.245, 0.0001, 0.0001, -0.009]];
+  const hairMask = [];
   const faceSculpt = (p, a) => {
     const front = Math.max(0, Math.cos(a));
+    if (!B) {
+      const c = Math.cos(a), line = c > 0 ? 0.118 + 0.064 * c ** 2 : 0.118 + 0.045 * c;
+      const isHair = p.y > line;
+      hairMask.push(isHair);
+      if (isHair) {
+        const k = 1 + 0.07 * blend(line, line + 0.02, p.y);
+        p.x *= k; p.z *= k;
+        p.y += 0.008 * front ** 2 * bump(p.y, 0.215, 0.03); // slicked-back front wave
+      }
+    }
     p.x = Math.sign(p.x) * Math.pow(Math.abs(Math.sin(a)), 0.83) * contour(faceRows, p.y)[0];
     p.z += front ** 5 * (0.025 * bump(p.x, 0, 0.014) * bump(p.y, 0.112, 0.032)
       + 0.012 * bump(p.y, 0.032, 0.023) - 0.008 * bump(p.y, 0.068, 0.012));
@@ -204,19 +217,11 @@ export function makeHero(kind) {
       part(head, ear, dark, [0, 0, -0.017]);
     }
   } else {
-    part(head, faceGeo, skin);
-    const hair = mat(0x0c1018, 0.48);
-    const hairGeo = new THREE.SphereGeometry(1, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2);
-    const hp = hairGeo.attributes.position;
-    for (let i = 0; i < hp.count; i++) {
-      const x = hp.getX(i), y = hp.getY(i), z = hp.getZ(i);
-      // Low hairline at the temples and enough volume to cover the crown fully.
-      const hairline = 0.158 + 0.02 * Math.max(0, z) - 0.012 * (1 - Math.abs(z));
-      hp.setXYZ(i, x * 0.093, hairline + y * (0.09 + 0.01 * z), z * 0.092 - 0.006);
-    }
-    hairGeo.computeVertexNormals(); part(head, hairGeo, hair);
-    oval(head, hair, [0.008, 0.222, 0.05], [0.07, 0.02, 0.045]); // low swept front, not a top-knot
-    for (const s of [-1, 1]) oval(head, hair, [s * 0.08, 0.15, -0.004], [0.014, 0.034, 0.03]); // sideburns
+    const hair = mat(0x0c1018, 0.5);
+    const colors = [];
+    for (const h of hairMask) { const c = h ? hair.color : skin.color; colors.push(c.r, c.g, c.b); }
+    faceGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    part(head, faceGeo, mat(0xffffff, 0.75, 0, { vertexColors: true }));
     line(head, [[-0.027, 0.21, 0.06], [0.003, 0.2, 0.077], [0.017, 0.184, 0.078], [0.008, 0.169, 0.079], [-0.002, 0.174, 0.079]], 0.004, hair);
     for (const s of [-1, 1]) oval(head, skin, [s * 0.085, 0.126, -0.004], [0.012, 0.026, 0.017]);
   }
@@ -229,22 +234,26 @@ export function makeHero(kind) {
       oval(head, mat(0x416b88), [s * 0.034, 0.143, 0.077], [0.0045, 0.005, 0.002]);
       oval(head, dark, [s * 0.034, 0.143, 0.079], [0.002, 0.003, 0.001]);
     }
-    line(head, [[s * 0.014, 0.156, 0.076], [s * 0.032, 0.16, 0.076], [s * 0.053, 0.158, 0.067]], B ? 0.006 : 0.0035, brow);
+    line(head, [[s * 0.014, 0.156, 0.076], [s * 0.032, 0.16, 0.076], [s * 0.053, 0.157, 0.067]], B ? 0.006 : 0.005, brow);
   }
   line(head, [[-0.018, 0.06, 0.077], [0, 0.061, 0.08], [0.018, 0.06, 0.077]], 0.0016, mat(0x754b43, 0.9));
 
   const arms = {}, legs = {};
   for (const [side, s] of [['L', 1], ['R', -1]]) {
-    const sh = joint(chest, [s * 0.24, 0.235, 0]);
+    const sh = joint(chest, [s * 0.262, 0.232, 0]);
     const el = joint(sh, [0, -0.32, 0]);
     const hand = joint(el, [0, -0.3, 0]);
-    const armRows = [[-0.63, 0.036, 0.034], [-0.57, 0.043, 0.039], [-0.49, 0.062, 0.052],
-      [-0.41, 0.074, 0.06], [-0.32, 0.055, 0.054], [-0.25, 0.07, 0.072],
-      [-0.16, 0.086, 0.084], [-0.065, 0.088, 0.086], [0.015, 0.1, 0.092],
-      [0.072, 0.07, 0.064], [0.1, 0.001, 0.001]];
+    hand.scale.setScalar(1.18); // big readable fists
+    const armRows = [[-0.63, 0.038, 0.036], [-0.57, 0.046, 0.042], [-0.49, 0.068, 0.057],
+      [-0.41, 0.082, 0.066], [-0.32, 0.058, 0.057], [-0.25, 0.075, 0.077],
+      [-0.16, 0.092, 0.09], [-0.075, 0.09, 0.088], [0.0, 0.112, 0.1],
+      [0.06, 0.09, 0.08], [0.1, 0.001, 0.001]];
     const armGeo = surface(armRows, (p, a) => {
       p.z += 0.02 * bump(p.y, -0.17, 0.065) * Math.cos(a) ** 3; // biceps peak
-      p.x += s * 0.017 * bump(p.y, 0.005, 0.06);
+      p.x += s * 0.022 * bump(p.y, 0.0, 0.06);                                  // deltoid cap
+      p.z -= 0.016 * bump(p.y, -0.17, 0.07) * Math.max(0, -Math.cos(a)) ** 2; // triceps horseshoe
+      const r = Math.hypot(p.x, p.z), dip = 1 - 0.07 * bump(p.y, -0.075, 0.016);    // deltoid insertion groove
+      if (r > 1e-6) { p.x *= dip; p.z *= dip; }
       return p;
     }, 80, 40);
     armGeo.clearGroups();
@@ -267,13 +276,14 @@ export function makeHero(kind) {
     const th = joint(hips, [s * 0.1, -0.04, 0]);
     const kn = joint(th, [0, -0.46, 0]);
     const an = joint(kn, [0, -0.46, 0]);
-    const legRows = [[-0.94, 0.044, 0.044], [-0.85, 0.048, 0.048], [-0.73, 0.07, 0.066],
-      [-0.62, 0.08, 0.078], [-0.54, 0.064, 0.062], [-0.46, 0.058, 0.06],
-      [-0.37, 0.078, 0.078], [-0.25, 0.098, 0.095], [-0.12, 0.108, 0.102],
-      [-0.025, 0.1, 0.098], [0.06, 0.062, 0.066], [0.09, 0.001, 0.001]];
+    const legRows = [[-0.94, 0.045, 0.045], [-0.85, 0.05, 0.05], [-0.73, 0.076, 0.072],
+      [-0.62, 0.088, 0.085], [-0.54, 0.068, 0.066], [-0.46, 0.06, 0.062],
+      [-0.37, 0.084, 0.082], [-0.25, 0.108, 0.1], [-0.12, 0.118, 0.108],
+      [-0.025, 0.108, 0.104], [0.06, 0.066, 0.07], [0.09, 0.001, 0.001]];
     const legGeo = surface(legRows, (p, a) => {
       p.x += s * 0.01 * bump(p.y, -0.2, 0.15);
-      p.z += 0.012 * bump(p.y, -0.29, 0.14) * Math.max(0, Math.cos(a));
+      p.z += 0.018 * bump(p.y, -0.29, 0.12) * Math.max(0, Math.cos(a)); // quad sweep
+      p.x -= s * 0.012 * bump(p.y, -0.4, 0.05) * Math.max(0, Math.cos(a)); // teardrop vastus
       p.z -= 0.017 * bump(p.y, -0.65, 0.09);
       return p;
     }, 96, 40);
