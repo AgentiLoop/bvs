@@ -594,7 +594,8 @@ function posePass(H, s, t, ground, raise) {
     // Keep the boot sole on top of the roof (ankle sits 7.4 cm above the sole) instead of sinking into it;
     // targets far below (falling off the roof) are left alone.
     if (_T.y < ground + SOLE && _T.y > ground - 0.6) _T.y = ground + SOLE;
-    _P.set(l.s * 0.15, -0.45, 1.0); H.root.localToWorld(_P);
+    // Knee pole tracks the foot's spread so knees track over the toes and never knock together.
+    _P.set(l.s * Math.max(0.15, Math.abs(tg[0]) * 1.5), -0.45, 1.0); H.root.localToWorld(_P);
     solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
     l.kn.getWorldQuaternion(_qa).invert();
     l.an.quaternion.copy(_qa).multiply(_qb);
@@ -606,7 +607,7 @@ function posePass(H, s, t, ground, raise) {
       for (const c of BOOT_CORNERS) { _P.copy(c); l.an.localToWorld(_P); low = Math.min(low, _P.y); }
       if (low < ground) {
         _T.y += ground - low;
-        _P.set(l.s * 0.15, -0.45, 1.0); H.root.localToWorld(_P);
+        _P.set(l.s * Math.max(0.15, Math.abs(tg[0]) * 1.5), -0.45, 1.0); H.root.localToWorld(_P);
         solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
         l.kn.getWorldQuaternion(_qa).invert();
         l.an.quaternion.copy(_qa).multiply(_qb);
