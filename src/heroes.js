@@ -382,6 +382,9 @@ export function makeHero(kind) {
       p.z += 0.014 * bump(p.y, -0.27, 0.1) * Math.max(0, Math.cos(a)); // quad sweep
       p.x -= s * 0.01 * bump(p.y, -0.42, 0.04) * Math.max(0, Math.cos(a)); // teardrop vastus
       p.z += 0.005 * bump(p.y, -0.49, 0.02) * Math.max(0, Math.cos(a)) ** 4; // kneecap
+      // Boot cuff: a slight flared lip just below the boot top so the boot reads as a real boot, not paint.
+      const cuff = 1 + 0.07 * bump(p.y, -0.612, 0.011);
+      p.x *= cuff; p.z *= cuff;
       return p;
     }, 112, 40);
     legGeo.clearGroups();
