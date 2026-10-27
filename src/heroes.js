@@ -418,7 +418,7 @@ export function makeHero(kind) {
     legGeo.addGroup(0, bootRing * 40 * 6, 1);
     // The top of the thigh bulges up to ~5 cm out through the sides of the trunks (blue/grey patches
     // poking through them). Colouring it as the trunks' leg band turns that into a clean brief line.
-    const briefRing = Math.floor((-0.085 + 0.94) / 1.03 * 112);
+    const briefRing = Math.floor((-0.11 + 0.94) / 1.03 * 112);
     legGeo.addGroup(bootRing * 40 * 6, (briefRing - bootRing) * 40 * 6, 0);
     legGeo.addGroup(briefRing * 40 * 6, (112 - briefRing) * 40 * 6, 2);
     skinSurface(th, legGeo, [suit, boot, B ? dark : red], p => {
