@@ -1,4 +1,4 @@
-// Procedural Batman / Superman built from primitives, posed with analytic two-bone IK.
+// Contoured, skinned Batman / Superman, posed with analytic two-bone IK.
 import * as THREE from 'three';
 
 const DOWN = new THREE.Vector3(0, -1, 0);
@@ -14,7 +14,7 @@ function part(parent, geo, material, pos = [0, 0, 0], scale = [1, 1, 1], rot = [
   return m;
 }
 function joint(parent, pos) {
-  const o = new THREE.Object3D();
+  const o = new THREE.Bone();
   o.position.set(...pos);
   parent.add(o);
   return o;
@@ -61,102 +61,245 @@ function emblemTexture(kind) {
   return t;
 }
 
-// Lathe "muscle" from a [radius, y] profile (y increasing), so limbs taper and bulge instead of being tubes.
-function muscle(parent, prof, material, pos = [0, 0, 0], scale = [1, 1, 1], rot = [0, 0, 0], seg = 16) {
-  return part(parent, new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), seg), material, pos, scale, rot);
+// Ring surfaces keep muscle contours in the skin instead of stacking separate solids.
+function contour(rows, y) {
+  let i = 0;
+  while (i < rows.length - 2 && y > rows[i + 1][0]) i++;
+  const a = rows[i], b = rows[i + 1], t = THREE.MathUtils.clamp((y - a[0]) / (b[0] - a[0]), 0, 1);
+  return a.slice(1).map((v, k) => {
+    const p = rows[Math.max(0, i - 1)][k + 1], q = b[k + 1], r = rows[Math.min(rows.length - 1, i + 2)][k + 1];
+    return THREE.MathUtils.lerp(v, q, t) + t * (1 - t) * ((1 - t) * (v - p - (q - v)) + t * (q - v - (r - q))) * 0.5;
+  });
+}
+const bump = (x, center, width) => Math.exp(-(((x - center) / width) ** 2));
+const blend = (a, b, x) => THREE.MathUtils.smoothstep(x, a, b);
+
+function surface(rows, sculpt = (p) => p, rings = 64, sides = 48) {
+  const positions = [], uv = [], indices = [];
+  for (let j = 0; j <= rings; j++) {
+    const y = THREE.MathUtils.lerp(rows[0][0], rows[rows.length - 1][0], j / rings);
+    const [rx, rz, offset = 0] = contour(rows, y);
+    for (let i = 0; i <= sides; i++) {
+      const a = i / sides * Math.PI * 2;
+      const p = sculpt(new THREE.Vector3(Math.max(0.0001, rx) * Math.sin(a), y, Math.max(0.0001, rz) * Math.cos(a) + offset), a);
+      positions.push(p.x, p.y, p.z); uv.push(i / sides, j / rings);
+      if (j < rings && i < sides) {
+        const n = j * (sides + 1) + i, next = n + sides + 1;
+        indices.push(n, n + 1, next, next, n + 1, next + 1);
+      }
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(indices); geo.computeVertexNormals();
+  const normals = geo.attributes.normal;
+  for (let j = 0; j <= rings; j++) {
+    const a = j * (sides + 1), b = a + sides;
+    const n = new THREE.Vector3().fromBufferAttribute(normals, a).add(new THREE.Vector3().fromBufferAttribute(normals, b)).normalize();
+    normals.setXYZ(a, n.x, n.y, n.z); normals.setXYZ(b, n.x, n.y, n.z);
+  }
+  return geo;
 }
 
-// Heroic proportions (~9 heads tall): small head, thick neck, broad delts + lats tapering to a narrow waist,
-// heavy pecs, six-pack, big arms and long powerful legs, square jaw.
 export function makeHero(kind) {
   const B = kind === 'batman';
-  const suit = mat(B ? 0x454b56 : 0x174fa8, 0.72);
-  const dark = mat(0x11151e, 0.68);
-  const red = mat(0xb51d32, 0.7);
-  const skin = mat(0xe0aa89, 0.8);
-  const yellow = mat(0xe5b641, 0.55, 0.15);
+  const suit = mat(B ? 0x414751 : 0x174b9c, 0.66, 0.04);
+  const dark = mat(0x10151e, 0.57, 0.06);
+  const red = mat(0xa9152b, 0.64);
+  const skin = mat(0xdca784, 0.84);
+  const yellow = mat(0xd9ac38, 0.48, 0.24);
   const boot = B ? dark : red;
   const root = new THREE.Group();
   const hips = joint(root, [0, 0, 0]);
+  const spine = joint(hips, [0, 0.08, 0]);
+  const chest = joint(spine, [0, 0.28, 0]);
+  const head = joint(chest, [0, 0.44, 0]);
   const sphere = new THREE.SphereGeometry(1, 32, 24);
   const oval = (parent, material, pos, scale) => part(parent, sphere, material, pos, scale);
-  // Each limb has one surface, with rounded joints rather than layered muscle shells.
-  const limb = (parent, length, radius, material) => {
-    part(parent, new THREE.CapsuleGeometry(radius, length - 2 * radius, 10, 24), material, [0, -length / 2, 0]);
-    oval(parent, material, [0, 0, 0], [radius, radius, radius]);
+  const skins = [];
+  const skinSurface = (parent, geometry, material, weights) => skins.push({ parent, geometry, material, weights });
+  const line = (parent, points, radius, material) => part(parent,
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p))), 24, radius, 8, false), material);
+
+  // The pecs, sternum, obliques and abdomen are sculpted into one continuous surface.
+  const torsoRows = [[0.035, 0.164, 0.112], [0.13, 0.15, 0.105], [0.23, 0.145, 0.101],
+    [0.34, 0.178, 0.118], [0.45, 0.225, 0.136], [0.56, B ? 0.277 : 0.265, 0.144],
+    [0.64, 0.262, 0.133], [0.69, 0.205, 0.112], [0.735, 0.094, 0.076],
+    [0.78, 0.065, 0.063], [0.835, 0.061, 0.06]];
+  const chestDepth = (x, y) => {
+    const [rx, rz] = contour(torsoRows, y);
+    const base = rz * Math.sqrt(Math.max(0, 1 - (x / rx) ** 2));
+    const pec = 0.045 * bump(Math.abs(x), 0.112, 0.077) * bump(y, 0.565, 0.062);
+    const abs = [0.21, 0.285, 0.36, 0.427].reduce((v, cy) => v + 0.012 * bump(Math.abs(x), 0.047, 0.035) * bump(y, cy, 0.028), 0);
+    const sternum = -0.007 * bump(x, 0, 0.017) * bump(y, 0.52, 0.12);
+    const clavicle = 0.011 * bump(y, 0.663 - Math.abs(x) * 0.10, 0.013) * bump(Math.abs(x), 0.12, 0.10);
+    return base + pec + abs + sternum + clavicle;
   };
-  oval(hips, B ? dark : red, [0, -0.015, 0], [0.18, 0.135, 0.125]);
-  part(hips, new THREE.CylinderGeometry(0.169, 0.175, 0.055, 48), yellow, [0, 0.075, 0], [1, 1, 0.78]);
-  part(hips, new THREE.BoxGeometry(0.065, 0.045, 0.025), yellow, [0, 0.075, 0.143]);
-  if (B) for (const s of [-1, 1]) for (const a of [0.55, 1.05]) {
-    part(hips, new THREE.BoxGeometry(0.04, 0.05, 0.025), yellow,
-      [s * Math.sin(a) * 0.177, 0.075, Math.cos(a) * 0.141], [1, 1, 1], [0, s * a, 0]);
+  const torsoGeo = surface(torsoRows, (p, a) => {
+    if (Math.cos(a) > 0) p.z = chestDepth(p.x, p.y);
+    else p.z -= 0.017 * bump(Math.abs(p.x), 0.13, 0.07) * bump(p.y, 0.56, 0.12) * -Math.cos(a);
+    return p;
+  }, 96);
+  const torsoWeights = (p) => {
+    const upper = blend(0.30, 0.49, p.y), lower = blend(0.06, 0.22, p.y);
+    return [[hips, (1 - lower) * (1 - upper)], [spine, lower * (1 - upper)], [chest, upper]];
+  };
+  // The neck shares topology with the torso, with a separate costume/skin material band.
+  torsoGeo.clearGroups();
+  const neckRing = Math.ceil((0.738 - 0.035) / 0.8 * 96);
+  torsoGeo.addGroup(0, neckRing * 48 * 6, 0);
+  torsoGeo.addGroup(neckRing * 48 * 6, (96 - neckRing) * 48 * 6, 1);
+  skinSurface(hips, torsoGeo, [suit, B ? dark : skin], torsoWeights);
+  const emblemGeo = new THREE.PlaneGeometry(B ? 0.255 : 0.20, B ? 0.125 : 0.18, 24, 20);
+  const ep = emblemGeo.attributes.position;
+  for (let i = 0; i < ep.count; i++) {
+    const x = ep.getX(i), y = ep.getY(i) + 0.565;
+    ep.setXYZ(i, x, y, chestDepth(x, y) + 0.0025);
   }
-  const spine = joint(hips, [0, 0.08, 0]);
-  oval(spine, suit, [0, 0.12, 0], [0.151, 0.21, 0.108]);
-  const chest = joint(spine, [0, 0.28, 0]);
-  // A single curved ribcage gives a continuous chest and a broad, tapered silhouette.
-  const profile = new THREE.SplineCurve([
-    new THREE.Vector2(0, -0.09), new THREE.Vector2(0.145, -0.06),
-    new THREE.Vector2(0.2, 0.06), new THREE.Vector2(0.26, 0.19),
-    new THREE.Vector2(0.255, 0.27), new THREE.Vector2(0.18, 0.34),
-    new THREE.Vector2(0.075, 0.37), new THREE.Vector2(0, 0.375),
-  ]).getPoints(48);
-  part(chest, new THREE.LatheGeometry(profile, 48), suit, [0, 0, 0], [1, 1, 0.59]);
-  const emblem = new THREE.Mesh(new THREE.PlaneGeometry(B ? 0.25 : 0.19, B ? 0.14 : 0.18),
-    new THREE.MeshStandardMaterial({ map: emblemTexture(B ? 'bat' : 's'), alphaTest: 0.5, roughness: 0.8 }));
-  emblem.position.set(0, 0.215, 0.162);
-  chest.add(emblem);
-  part(chest, new THREE.CylinderGeometry(0.061, 0.075, 0.13, 32), B ? dark : skin, [0, 0.39, 0]);
-  const head = joint(chest, [0, 0.44, 0]);
-  const eyes = [];
-  oval(head, B ? dark : skin, [0, 0.115, 0], [0.094, 0.123, 0.095]);
-  // The exposed jaw sits in front of the cowl, not on a coincident face.
-  if (B) oval(head, skin, [0, 0.047, 0.06], [0.064, 0.044, 0.043]);
-  const hair = mat(0x10131a, 0.8);
+  emblemGeo.computeVertexNormals();
+  skinSurface(hips, emblemGeo, new THREE.MeshStandardMaterial({ map: emblemTexture(B ? 'bat' : 's'), alphaTest: 0.3, roughness: 0.75 }), torsoWeights);
+
+  part(hips, surface([[-0.135, 0.06, 0.065], [-0.08, 0.158, 0.115], [0.015, 0.182, 0.124], [0.085, 0.164, 0.112]], p => p, 32), B ? dark : red);
+  part(hips, surface([[0.063, 0.171, 0.12], [0.071, 0.175, 0.125], [0.103, 0.169, 0.122], [0.11, 0.165, 0.116]], p => p, 12), yellow);
+  oval(hips, yellow, [0, 0.087, 0.127], [0.032, 0.024, 0.011]);
+  if (B) for (const s of [-1, 1]) for (const a of [0.5, 0.9, 1.3])
+    oval(hips, yellow, [s * Math.sin(a) * 0.174, 0.084, Math.cos(a) * 0.123], [0.024, 0.034, 0.018]);
+
+  // Planar jaw, cheekbones, recessed temples and an integrated nose replace the egg head.
+  const faceRows = [[0.002, 0.024, 0.026, 0.032], [0.019, 0.052, 0.052, 0.023],
+    [0.047, 0.071, 0.066, 0.01], [0.082, 0.079, 0.071, 0.003],
+    [0.115, 0.087, 0.077, 0], [0.149, 0.083, 0.077, -0.002],
+    [0.182, 0.084, 0.077, -0.006], [0.214, 0.071, 0.065, -0.009],
+    [0.237, 0.037, 0.036, -0.009], [0.245, 0.0001, 0.0001, -0.009]];
+  const faceSculpt = (p, a) => {
+    const front = Math.max(0, Math.cos(a));
+    p.x = Math.sign(p.x) * Math.pow(Math.abs(Math.sin(a)), 0.83) * contour(faceRows, p.y)[0];
+    p.z += front ** 5 * (0.025 * bump(p.x, 0, 0.014) * bump(p.y, 0.112, 0.032)
+      + 0.012 * bump(p.y, 0.032, 0.023) - 0.008 * bump(p.y, 0.068, 0.012));
+    p.z -= 0.008 * bump(Math.abs(p.x), 0.034, 0.021) * bump(p.y, 0.144, 0.014) * front;
+    return p;
+  };
+  const faceGeo = surface(faceRows, faceSculpt, 72);
   if (B) {
-    for (const s of [-1, 1])
-      part(head, new THREE.ConeGeometry(0.023, 0.13, 16), dark, [s * 0.061, 0.264, -0.012]);
+    // Color the exposed jaw on the cowl surface; there is no overlapping mouth patch.
+    const colors = [], pos = faceGeo.attributes.position;
+    const cowlColor = dark.color, skinColor = skin.color;
+    for (let i = 0; i < pos.count; i++) {
+      const jaw = pos.getY(i) < 0.082 && pos.getZ(i) > 0.045 && Math.abs(pos.getX(i)) < 0.062;
+      const c = jaw ? skinColor : cowlColor; colors.push(c.r, c.g, c.b);
+    }
+    faceGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    part(head, faceGeo, mat(0xffffff, 0.7, 0, { vertexColors: true }));
+    for (const s of [-1, 1]) {
+      const ear = surface([[0.19, 0.025, 0.022], [0.235, 0.018, 0.014], [0.30, 0.01, 0.007], [0.36, 0.0001, 0.0001]], p => { p.x += s * (0.064 + (p.y - 0.19) * 0.045); return p; }, 32, 24);
+      part(head, ear, dark, [0, 0, -0.017]);
+    }
   } else {
-    part(head, new THREE.SphereGeometry(1, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), hair,
-      [0, 0.165, -0.012], [0.096, 0.079, 0.09], [-0.16, 0, 0]);
-    oval(head, hair, [0.018, 0.217, 0.039], [0.07, 0.029, 0.057]);
-    for (const s of [-1, 1]) oval(head, skin, [s * 0.091, 0.118, 0], [0.015, 0.027, 0.02]);
+    part(head, faceGeo, skin);
+    const hair = mat(0x0c1018, 0.48);
+    const hairGeo = new THREE.SphereGeometry(1, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2);
+    const hp = hairGeo.attributes.position;
+    for (let i = 0; i < hp.count; i++) {
+      const x = hp.getX(i), y = hp.getY(i), z = hp.getZ(i);
+      const hairline = 0.167 + 0.016 * z - 0.018 * bump(x, -0.24, 0.22) * Math.max(0, z);
+      hp.setXYZ(i, x * 0.087, hairline + y * (0.085 + 0.012 * x), z * 0.081 - 0.008);
+    }
+    hairGeo.computeVertexNormals(); part(head, hairGeo, hair);
+    line(head, [[-0.027, 0.21, 0.06], [0.003, 0.2, 0.077], [0.017, 0.184, 0.078], [0.008, 0.169, 0.079], [-0.002, 0.174, 0.079]], 0.004, hair);
+    for (const s of [-1, 1]) oval(head, skin, [s * 0.085, 0.126, -0.004], [0.012, 0.026, 0.017]);
   }
-  oval(head, B ? dark : skin, [0, 0.108, 0.092], [0.015, 0.026, 0.022]);
-  part(head, new THREE.BoxGeometry(0.037, 0.004, 0.004), mat(0x74483e), [0, 0.048, 0.102]);
+  const eyes = [];
+  const brow = B ? dark : mat(0x241c1a, 0.9);
   for (const s of [-1, 1]) {
-    const eyeMaterial = new THREE.MeshStandardMaterial({ color: B ? 0xe9f0ff : 0xe4e8ea, roughness: 0.65, emissive: 0x000000 });
-    eyes.push(oval(head, eyeMaterial, [s * 0.036, 0.139, 0.087], [0.022, 0.009, 0.009]));
-    if (!B) oval(head, mat(0x234c82), [s * 0.036, 0.139, 0.096], [0.006, 0.007, 0.003]);
-    part(head, new THREE.BoxGeometry(0.044, 0.009, 0.012), B ? dark : hair,
-      [s * 0.037, 0.154, 0.087], [1, 1, 1], [0, 0, s * 0.12]);
+    eyes.push(oval(head, new THREE.MeshStandardMaterial({ color: B ? 0xe4ecf2 : 0xe1ddd4, roughness: 0.6, emissive: 0 }),
+      [s * 0.034, 0.143, 0.071], [0.018, 0.006, 0.006]));
+    if (!B) {
+      oval(head, mat(0x416b88), [s * 0.034, 0.143, 0.077], [0.0045, 0.005, 0.002]);
+      oval(head, dark, [s * 0.034, 0.143, 0.079], [0.002, 0.003, 0.001]);
+    }
+    line(head, [[s * 0.014, 0.156, 0.076], [s * 0.032, 0.16, 0.076], [s * 0.053, 0.158, 0.067]], B ? 0.006 : 0.0035, brow);
   }
-  const arms = {};
+  line(head, [[-0.025, 0.061, 0.075], [-0.009, 0.063, 0.079], [0, 0.061, 0.08], [0.011, 0.063, 0.079], [0.025, 0.061, 0.075]], 0.0018, mat(0x754b43, 0.9));
+
+  const arms = {}, legs = {};
   for (const [side, s] of [['L', 1], ['R', -1]]) {
     const sh = joint(chest, [s * 0.25, 0.24, 0]);
-    limb(sh, 0.32, 0.081, suit);
     const el = joint(sh, [0, -0.32, 0]);
-    limb(el, 0.3, 0.061, B ? dark : suit);
-    if (B) for (let k = 0; k < 3; k++)
-      part(el, new THREE.ConeGeometry(0.014, 0.055, 4), dark,
-        [s * 0.067, -0.09 - k * 0.05, -0.012], [0.65, 1, 1], [0, 0, -s * 1.1]);
     const hand = joint(el, [0, -0.3, 0]);
-    oval(hand, B ? dark : skin, [0, -0.035, 0.006], [0.049, 0.063, 0.046]);
-    oval(hand, B ? dark : skin, [-s * 0.037, -0.024, 0.024], [0.02, 0.031, 0.023]);
+    const armRows = [[-0.63, 0.037, 0.036], [-0.57, 0.044, 0.041], [-0.49, 0.062, 0.053],
+      [-0.41, 0.076, 0.061], [-0.32, 0.053, 0.052], [-0.25, 0.07, 0.072],
+      [-0.16, 0.091, 0.083], [-0.065, 0.091, 0.089], [0.015, 0.103, 0.092],
+      [0.072, 0.068, 0.063], [0.101, 0.001, 0.001]];
+    const armGeo = surface(armRows, (p, a) => {
+      p.z += 0.014 * bump(p.y, -0.18, 0.075) * Math.cos(a) ** 3;
+      p.x += s * 0.017 * bump(p.y, 0.005, 0.06);
+      return p;
+    }, 80, 40);
+    armGeo.clearGroups();
+    const cuffRing = Math.floor((-0.40 + 0.63) / 0.731 * 80);
+    armGeo.addGroup(0, cuffRing * 40 * 6, B ? 1 : 0);
+    armGeo.addGroup(cuffRing * 40 * 6, (80 - cuffRing) * 40 * 6, 0);
+    skinSurface(sh, armGeo, [suit, dark], p => {
+      const lower = 1 - blend(-0.38, -0.26, p.y), shoulder = blend(0.015, 0.095, p.y) * 0.7;
+      return [[el, lower], [sh, (1 - lower) * (1 - shoulder)], [chest, (1 - lower) * shoulder]];
+    });
+    if (B) for (let k = 0; k < 3; k++)
+      part(el, new THREE.ConeGeometry(0.012, 0.06, 4), dark, [s * 0.072, -0.11 - k * 0.05, -0.02], [0.6, 1, 1], [0, 0, -s * 1.1]);
+    const handMat = B ? dark : skin;
+    part(hand, surface([[-0.095, 0.025, 0.028, 0.014], [-0.078, 0.044, 0.037, 0.012],
+      [-0.035, 0.044, 0.031, 0.006], [0.005, 0.035, 0.03, 0]], p => p, 32, 32), handMat);
+    for (let k = 0; k < 4; k++) oval(hand, handMat, [(k - 1.5) * 0.019, -0.072, 0.039], [0.011, 0.016, 0.012]);
+    oval(hand, handMat, [-s * 0.034, -0.036, 0.028], [0.018, 0.031, 0.021]);
     arms[side] = { sh, el, hand, s };
-  }
-  const legs = {};
-  for (const [side, s] of [['L', 1], ['R', -1]]) {
+
     const th = joint(hips, [s * 0.1, -0.04, 0]);
-    limb(th, 0.46, 0.09, suit);
     const kn = joint(th, [0, -0.46, 0]);
-    // Suit and boot occupy separate sections instead of overlapping shells.
-    limb(kn, 0.18, 0.064, suit);
-    part(kn, new THREE.CylinderGeometry(0.069, 0.051, 0.3, 32), boot, [0, -0.32, 0]);
     const an = joint(kn, [0, -0.46, 0]);
-    oval(an, boot, [0, -0.026, 0.065], [0.061, 0.065, 0.135]);
+    const legRows = [[-0.94, 0.044, 0.044], [-0.85, 0.047, 0.047], [-0.73, 0.068, 0.064],
+      [-0.62, 0.081, 0.075], [-0.54, 0.067, 0.06], [-0.46, 0.059, 0.062],
+      [-0.37, 0.078, 0.077], [-0.25, 0.10, 0.094], [-0.12, 0.113, 0.10],
+      [-0.025, 0.105, 0.099], [0.075, 0.058, 0.062], [0.10, 0.001, 0.001]];
+    const legGeo = surface(legRows, (p, a) => {
+      p.x += s * 0.012 * bump(p.y, -0.2, 0.15);
+      p.z += 0.012 * bump(p.y, -0.29, 0.14) * Math.max(0, Math.cos(a));
+      p.z -= 0.017 * bump(p.y, -0.65, 0.09);
+      return p;
+    }, 96, 40);
+    legGeo.clearGroups();
+    const bootRing = Math.floor((-0.61 + 0.94) / 1.04 * 96);
+    legGeo.addGroup(0, bootRing * 40 * 6, 1);
+    legGeo.addGroup(bootRing * 40 * 6, (96 - bootRing) * 40 * 6, 0);
+    skinSurface(th, legGeo, [suit, boot], p => {
+      const lower = 1 - blend(-0.52, -0.40, p.y), pelvis = blend(-0.015, 0.10, p.y) * 0.7;
+      return [[kn, lower], [th, (1 - lower) * (1 - pelvis)], [hips, (1 - lower) * pelvis]];
+    });
+    const footGeo = new THREE.SphereGeometry(1, 40, 24);
+    const fp = footGeo.attributes.position;
+    for (let i = 0; i < fp.count; i++) {
+      const x = fp.getX(i), y = fp.getY(i), z = fp.getZ(i);
+      fp.setXYZ(i, x * (0.057 + 0.007 * z), Math.max(-0.071, y * 0.055 - 0.025), z * 0.126 + 0.06);
+    }
+    footGeo.computeVertexNormals(); part(an, footGeo, boot);
     legs[side] = { th, kn, an, s };
+  }
+  root.updateMatrixWorld(true);
+  const bones = [];
+  root.traverse(o => { if (o.isBone) bones.push(o); });
+  const skeleton = new THREE.Skeleton(bones);
+  for (const { parent, geometry, material, weights } of skins) {
+    const indices = [], values = [], pos = geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const p = new THREE.Vector3().fromBufferAttribute(pos, i), ws = weights(p);
+      for (let k = 0; k < 4; k++) { indices.push(ws[k] ? bones.indexOf(ws[k][0]) : 0); values.push(ws[k] ? ws[k][1] : 0); }
+    }
+    geometry.applyMatrix4(parent.matrixWorld);
+    geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(indices, 4));
+    geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(values, 4));
+    const mesh = new THREE.SkinnedMesh(geometry, material);
+    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    root.add(mesh); mesh.bind(skeleton);
   }
   return { kind, root, hips, spine, chest, head, arms, legs, eyes };
 }
