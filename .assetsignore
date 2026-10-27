@@ -12,3 +12,5 @@ models/README.md
 package.json
 package-lock.json
 serve.sh
+_x.html
+_x.js
