@@ -187,6 +187,10 @@ const BLOW = { hp: 30, lunge: 8, reach: 1.15, win: 0.5, rec: 0.9, pause: 0.16, c
 // blown back `kb` and stunned `stun` s, the breaker is invulnerable for `inv` s and drops to his feet. Not during supers,
 // Fatal Blows or fatalities. cpu: chance per combo hit that the CPU breaks.
 const BREAK = { cost: 50, hits: 2, inv: 0.4, kb: 7, stun: 0.6, pose: 0.3, cpu: 0.12 };
+// MK/SF wake-up options while lying after a knockdown (down in (0.3, open]): hold away = back roll (`dist` m over `roll` s,
+// still invulnerable, ends on one knee for `kneel` s); jump = quick rise (straight to the kneel for `quick` s).
+// cpu: chances of [roll, quick rise], else a normal (delayed) get-up.
+const WAKE = { open: 0.8, dist: 2.2, roll: 0.45, kneel: 0.15, quick: 0.2, cpu: [0.35, 0.35] };
 // Power-ups: a glowing orb drops into the arena now and then (first at `first` s, then every `every` s if none is out);
 // walk through it to collect. rage: 1.5x damage for `time` s (red aura); meter: +50 super meter; heal: +15 HP.
 const ORB = { first: 8, every: 11, life: 9, y: 1.0, r: 0.75, fall: 1.2 };
@@ -231,7 +235,7 @@ export class Game {
     this.round = 1; this.wins = { bat: 0, sup: 0 }; this.clock = ROUND_TIME; this.fightT = 0; this.matchOver = false; this.winner = null;
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
       ko: false, cd: 0, down: 0, meter: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
-      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, brk: 0, blowUsed: false, blowSaid: false,
+      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, brk: 0, rollA: null, blowUsed: false, blowSaid: false,
       ai: { t: 0, mx: 0, mz: 0, block: 0, crouch: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0, hx: 0, hy: 0, squash: 0 });
     this.F = { bat: mk(bat, 'bat', -7.4, Math.PI / 2), sup: mk(sup, 'sup', 2.2, -Math.PI / 2) };
     this.F.sup.y = 26; this.F.sup.cur = T(POSES.fly, { pitch: 0.35 });
@@ -321,7 +325,7 @@ export class Game {
   press(f, btn, mod = false) {
     if (this.state !== 'fight' || f.ko || f.dazed) return;
     if (btn === 'S') return this.canFatal(f) ? this.fatality(f) : mod && f.meter >= 100 ? this.superMove(f) : this.special(f);
-    if (btn === 'A') return this.jump(f, f.inX, f.inZ);
+    if (btn === 'A') return f.down > 0 ? this.wake(f, 'quick') : this.jump(f, f.inX, f.inZ);
     // dragon punch (toward, then crouch + toward + punch) = rising uppercut; quarter circle forward + punch = projectile
     if (btn === 'J' && f.tow > 0.6 && f.cNow && f.cT0 >= f.fwdT && f.cT0 - f.fwdT < DP && this.fightT - f.cT0 < DP && this.rise(f)) return;
     if (btn === 'J' && f.tow > 0.6 && this.fightT - f.downT < QCF && this.shoot(f)) return;
@@ -672,6 +676,18 @@ export class Game {
     this.showCombo('BREAKER!', f.key); this.updateBars();
     return true;
   }
+  // Wake-up options (see WAKE): back roll away from the foe, or a quick rise in place. Once per knockdown.
+  wake(f, kind) {
+    if (this.state !== 'fight' || f.ko || f.dazed || f.rollA || f.down <= 0.3 || f.down > WAKE.open) return false;
+    const { fx } = this.ctx;
+    if (kind === 'roll') {
+      const o = f === this.me ? this.cpu : this.me, d = Math.hypot(f.x - o.x, f.z - o.z) || 1;
+      f.rollA = { t: 0, nx: (f.x - o.x) / d, nz: (f.z - o.z) / d }; f.down = WAKE.roll + WAKE.kneel; f.kx = f.kz = 0;
+      this.showCombo('TECH ROLL', f.key);
+    } else { f.down = WAKE.quick; this.showCombo('QUICK RISE', f.key); }
+    fx.dustBurst(f.x, 0, f.z, 20, 1.4);
+    return true;
+  }
 
   reaches(f, o, M, d) {
     if (o.ko || o.down > 0) return false;
@@ -816,7 +832,7 @@ export class Game {
   nextRound() {
     this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.winner = null; this.koCam = null; this.kick = null; this.finish = null; this.shots = []; this.orb = null; this.orbT = ORB.first;
     for (const [f, x] of [[this.F.bat, -2.2], [this.F.sup, 2.2]]) {
-      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, dazed: false, downT: -9, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, frz: 0, brk: 0, cur: T(POSES.guard) });
+      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, dazed: false, downT: -9, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, frz: 0, brk: 0, rollA: null, cur: T(POSES.guard) });
       f.yaw = x < 0 ? Math.PI / 2 : -Math.PI / 2;
     }
     this.ctx.batCape.reset(); this.ctx.supCape.reset();
@@ -904,7 +920,7 @@ export class Game {
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
     if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN',
-      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
+      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }
   }
@@ -937,6 +953,7 @@ export class Game {
     else if (cTap) { if (tapT > PARRY.lock) f.parL = this.fightT; f.parTap = this.fightT; }
     f.tapS = s; f.tow = tow;
     if (f.stun > 0 && tow > 0.6 && this.blockHeld()) this.breaker(f);
+    if (f.down > 0 && tow < -0.6) this.wake(f, 'roll');
     if (tow > 0.6 && !ch) f.fwdT = this.fightT;
     this.walk(f, f.inX, f.inZ, dt);
   }
@@ -955,6 +972,9 @@ export class Game {
     }
     // one breaker roll per combo hit taken
     if (f.stun > 0 && A.brkN !== o.hits && this.canBreak(f)) { A.brkN = o.hits; if (rng() < BREAK.cpu) this.breaker(f); }
+    // one wake-up choice per knockdown: back roll, quick rise, or stay down for the full count (delayed wake-up)
+    if (f.down <= 0) A.wk = null;
+    else if (A.wk == null && f.down > 0.3 && f.down < 0.7) { const r = rng(); A.wk = r < WAKE.cpu[0] ? 'roll' : r < WAKE.cpu[0] + WAKE.cpu[1] ? 'quick' : ''; if (A.wk) this.wake(f, A.wk); }
     f.block = A.block > 0 && this.free(f);
     f.crouch = A.crouch > 0 && this.canCrouch(f);
     // keep strings going once the first hit is out
@@ -1048,9 +1068,16 @@ export class Game {
     f.x += f.kx * dt; f.z += f.kz * dt;
     const damp = Math.exp(-dt * (f.y > 0 ? 0.8 : 5)); f.kx *= damp; f.kz *= damp;
     f.stun -= dt; f.down -= dt;
+    const R = f.rollA;
+    if (R) { // back roll: fast start, easing out, dust kicked up along the way
+      R.t += dt; const v = 2 * WAKE.dist / WAKE.roll * Math.max(0, 1 - R.t / WAKE.roll);
+      f.x += R.nx * v * dt; f.z += R.nz * v * dt;
+      if (this.ctx.rng() < 0.4) fx.dustBurst(f.x, 0, f.z, 3, 0.8);
+      if (R.t >= WAKE.roll) { f.rollA = null; f.cur.pitch += Math.PI * 2; } // one full turn: unwind the angle, not the body
+    }
     if (f.heldBy && !(f.heldBy.act && f.heldBy.act.type === 'throw')) f.heldBy = null;
     if (f.bufT > 0 && (f.bufT -= dt) <= 0) f.buf = null;
-    if (!f.ko && !f.launched && f.down <= 0) f.yaw += wrap(face([f.x, 0, f.z], [o.x, 0, o.z]) - f.yaw) * Math.min(1, dt * 12);
+    if (!f.ko && !f.launched && (f.down <= 0 || f.rollA)) f.yaw += wrap(face([f.x, 0, f.z], [o.x, 0, o.z]) - f.yaw) * Math.min(1, dt * 12);
     const a = f.act;
     if (a) {
       a.t += dt;
@@ -1177,6 +1204,10 @@ export class Game {
     if (f.ko) return T(POSES.down, { pitch: -1.5 });
     if (this.state === 'over' && f === this.winner && this.overT > 1.4) return T(POSES.heroic);
     if (this.state === 'ready') return this.idle(f);
+    if (f.rollA) { // back roll: balled up, chin tucked, hips carried up over the head so it clears the floor
+      const u = clamp(f.rollA.t / WAKE.roll, 0, 1);
+      return T(POSES.tuck, { h: 0.55 + 0.32 * Math.sin(Math.PI * u) ** 2, lean: 0.85, pitch: -1.5 - u * (Math.PI * 2 - 1.5) });
+    }
     if (f.down > 0) return f.down > 0.3 ? T(POSES.down, { pitch: -1.5 }) : T(POSES.kneel);
     if (f.launched && f.y > 0.05) return T(MP.air, { pitch: -0.5 });
     const a = f.act;
