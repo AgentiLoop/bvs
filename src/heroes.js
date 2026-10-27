@@ -465,13 +465,45 @@ export function makeHero(kind) {
       p.y += 0.006 * blend(0.0, 0.045, -s * p.x) * fingers;                      // pinky side shorter than the index side
       return p;
     }, 48, 48);
-    part(hand, fistGeo, handMat);
+    // The sculpted fist and an articulated open hand share the hand bone; shapeHand shows one or the other.
+    const fistG = new THREE.Group(), openG = new THREE.Group();
+    hand.add(fistG, openG); openG.visible = false;
+    part(fistG, fistGeo, handMat);
     // Thumb on the lateral (+s) side: with the palm at +z it used to sit medially, a mirror-image hand on each arm.
-    oval(hand, handMat, [s * 0.036, -0.045, 0.026], [0.015, 0.026, 0.02]);    // thenar pad at the thumb base
-    line(hand, [[s * 0.044, -0.045, 0.03], [s * 0.04, -0.072, 0.058], [s * 0.016, -0.084, 0.07],
+    oval(fistG, handMat, [s * 0.036, -0.045, 0.026], [0.015, 0.026, 0.02]);    // thenar pad at the thumb base
+    line(fistG, [[s * 0.044, -0.045, 0.03], [s * 0.04, -0.072, 0.058], [s * 0.016, -0.084, 0.07],
       [-s * 0.008, -0.086, 0.068]], 0.0105, handMat);                         // thumb across the fingers
-    oval(hand, handMat, [-s * 0.008, -0.086, 0.068], [0.0105, 0.0105, 0.0105]); // rounded thumb tip
-    arms[side] = { sh, el, hand, s };
+    oval(fistG, handMat, [-s * 0.008, -0.086, 0.068], [0.0105, 0.0105, 0.0105]); // rounded thumb tip
+    // Open hand for palm strikes, grips, claps and limp KO hands: a flat, boxy palm (thicker at the heel,
+    // knuckle line slanting up to the pinky) with four three-jointed fingers and a three-segment thumb.
+    const palmRows = [[-0.093, 0.001, 0.001, 0], [-0.089, 0.03, 0.011, 0], [-0.08, 0.042, 0.015, 0], [-0.045, 0.043, 0.017, 0.001],
+      [-0.012, 0.04, 0.019, 0.002], [0.008, 0.033, 0.016, 0], [0.016, 0.001, 0.001, 0]];
+    const palmGeo = surface(palmRows, (p, a) => {
+      const [rx, rz, off] = contour(palmRows, p.y), sq = (v) => Math.sign(v) * Math.abs(v) ** 0.6;
+      p.x = rx * sq(Math.sin(a)); p.z = off + rz * sq(Math.cos(a));
+      p.y += 0.008 * blend(0.0, 0.04, -s * p.x) * blend(-0.05, -0.08, p.y);  // pinky side of the knuckle line sits higher
+      p.z += 0.004 * bump(p.y, -0.02, 0.02) * Math.max(0, Math.cos(a)) * (1 - blend(-0.01, 0.03, s * p.x)); // hypothenar heel
+      return p;
+    }, 32, 32);
+    part(openG, palmGeo, handMat);
+    oval(openG, handMat, [s * 0.028, -0.03, 0.012], [0.017, 0.03, 0.014]); // thenar pad
+    const seg = (r, L) => new THREE.CapsuleGeometry(r, L, 4, 10).translate(0, -L / 2, 0);
+    const fingers = [];
+    // index (thumb side) .. pinky: x, knuckle height, length scale, radius
+    for (const [fx, fy, fl, fr] of [[0.0315, -0.084, 0.93, 0.0098], [0.0105, -0.087, 1, 0.0098], [-0.0105, -0.084, 0.96, 0.0092], [-0.0315, -0.077, 0.78, 0.0082]]) {
+      const L = [0.042, 0.027, 0.02].map(v => v * fl);
+      const mcp = new THREE.Group(); mcp.position.set(s * fx, fy, 0); openG.add(mcp);
+      part(mcp, seg(fr, L[0]), handMat);
+      const pip = new THREE.Group(); pip.position.y = -L[0]; mcp.add(pip);
+      part(pip, seg(fr * 0.93, L[1]), handMat);
+      const dip = new THREE.Group(); dip.position.y = -L[1]; pip.add(dip);
+      part(dip, seg(fr * 0.86, L[2]), handMat);
+      const tip = new THREE.Object3D(); tip.position.y = -L[2]; dip.add(tip);
+      fingers.push({ mcp, pip, dip, tip, spread: s * fx * 3.2 });
+    }
+    const thumbL = [0.036, 0.032, 0.026], thumb = [0.0118, 0.0106, 0.0096].map((r, k) => part(openG, seg(r, thumbL[k]), handMat));
+    const thumbTip = new THREE.Object3D(); openG.add(thumbTip);
+    arms[side] = { sh, el, hand, s, grip: { fistG, openG, fingers, thumb, thumbL, thumbTip, tips: [thumbTip, ...fingers.map(f => f.tip)], o: -1 } };
 
     const th = joint(hips, [s * 0.1, -0.04, 0]);
     const kn = joint(th, [0, -0.46, 0]);
@@ -616,7 +648,13 @@ function setBoneDir(bone, dirWorld) {
   bone.parent.getWorldQuaternion(_qa).invert();
   _tmp.copy(dirWorld).applyQuaternion(_qa).normalize();
   bone.quaternion.setFromUnitVectors(DOWN, _tmp);
-  bone.updateMatrixWorld(true);
+  updateBones(bone);
+}
+// World matrices of a bone and the bones below it only: the hands carry ~40 finger / mesh nodes that the IK
+// iterations don't need (the renderer refreshes them every frame).
+function updateBones(b) {
+  b.updateMatrix(); b.matrixWorld.multiplyMatrices(b.parent.matrixWorld, b.matrix);
+  for (const c of b.children) if (c.isBone) updateBones(c);
 }
 
 function solveIK(upper, lower, L1, L2, target, pole) {
@@ -756,13 +794,17 @@ const _hx = new THREE.Vector3(), _hy = new THREE.Vector3(), _hz = new THREE.Vect
 // the middle of the fist, the thumb across its palm side, then the corners of the fist.
 const FIST_PTS = [[0, -0.055, 0.015, 0.05], [0.03, -0.07, 0.06, 0.012], [-0.008, -0.086, 0.068, 0.012]];
 for (const x of [-0.035, 0.035]) for (const y of [-0.015, -0.1]) for (const z of [-0.03, 0.04]) FIST_PTS.push([x, y, z, 0.012]);
-function orientHand(a, qRoot) {
+// w = wrist extension 0..1 (palm strikes): the hand bends back up to 66 deg so the heel of the palm leads
+// and the fingers point up (a palm-down extended arm turns into a palm-forward strike).
+const WRIST_EXT = 1.15, _XH = new THREE.Vector3(1, 0, 0);
+function orientHand(a, qRoot, w = 0) {
   a.el.getWorldPosition(_hy); a.hand.getWorldPosition(_hf); a.sh.getWorldPosition(_hx);
   const ext = _hx.distanceTo(_hf) / 0.62;
   _hy.sub(_hf).normalize(); // hand +y runs back up the forearm
   _hr.copy(qRoot).invert();
   _hf.copy(_hy).negate().applyQuaternion(_hr); // forearm direction in the body frame
-  const k = blend(0.8, 0.97, ext) * blend(0.2, 0.7, _hf.z) * (1 - blend(0.25, 0.6, _hf.y)); // uppercuts stay palm-in
+  // uppercuts stay palm-in; w < 0 keeps the palm turned in too (Superman's thunderclap to the ears)
+  const k = blend(0.8, 0.97, ext) * blend(0.2, 0.7, _hf.z) * (1 - blend(0.25, 0.6, _hf.y)) * (w < 0 ? 1 + Math.max(-1, w) : 1);
   _hz.set(-a.s * (1 - k), -k, -(0.25 + 0.6 * Math.max(0, _hf.y))).applyQuaternion(qRoot);
   _hz.addScaledVector(_hy, -_hz.dot(_hy));
   if (_hz.lengthSq() < 1e-6) { _hz.set(0, -1, 0).applyQuaternion(qRoot); _hz.addScaledVector(_hy, -_hz.dot(_hy)); } // forearm along the preferred palm line
@@ -771,7 +813,38 @@ function orientHand(a, qRoot) {
   _hq.setFromRotationMatrix(_hm.makeBasis(_hx, _hy, _hz));
   a.el.getWorldQuaternion(_hr).invert();
   a.hand.quaternion.copy(_hr).multiply(_hq);
-  a.hand.updateMatrixWorld(true);
+  if (w > 0) a.hand.quaternion.multiply(_hq.setFromAxisAngle(_XH, Math.min(1, w) * WRIST_EXT));
+  a.hand.updateMatrix(); a.hand.matrixWorld.multiplyMatrices(a.el.matrixWorld, a.hand.matrix); // the fingers update with the next full pass
+}
+// Hand shape: o = 0 is the sculpted fist; above OPEN_MIN the articulated hand replaces it, its fingers curling
+// less as o rises (0.4-0.5 = a hooked grip / limp KO hand, 1 = flat with the fingers slightly spread). Each
+// finger flexes at all three joints together (MCP 86, PIP 97, DIP 60 deg fully curled), the ring and pinky a
+// little more than the index in a half-closed hand (the natural cascade), and the thumb swings from beside
+// the index (open) to across the curled fingers (closed).
+const OPEN_MIN = 0.06, CURL = [1.5, 1.7, 1.05], CASCADE = [0, 0.15, 0.35, 0.6], _DNH = new THREE.Vector3(0, -1, 0);
+const THUMB_OPEN = [[0.55, -0.8, 0.22], [0.35, -0.93, 0.08], [0.25, -0.97, 0]].map(v => new THREE.Vector3(...v).normalize());
+const THUMB_SHUT = [[0.35, -0.6, 0.45], [-0.3, -0.45, 0.72], [-0.95, -0.24, 0.18]].map(v => new THREE.Vector3(...v).normalize());
+const _tp = new THREE.Vector3(), _td = new THREE.Vector3();
+function shapeHand(a, o) {
+  const g = a.grip; if (!g) return;
+  o = Math.max(0, Math.min(1, o || 0));
+  if (Math.abs(o - g.o) < 1e-4) return;
+  g.o = o;
+  g.fistG.visible = o < OPEN_MIN; g.openG.visible = !g.fistG.visible;
+  if (!g.openG.visible) return;
+  const c = 1 - o;
+  g.fingers.forEach((f, i) => {
+    const k = Math.min(1, c + CASCADE[i] * c * (1 - c));
+    f.mcp.rotation.set(-CURL[0] * k, 0, f.spread * o);
+    f.pip.rotation.x = -CURL[1] * k; f.dip.rotation.x = -CURL[2] * k;
+  });
+  _tp.set(a.s * 0.032, -0.018, 0.01);
+  g.thumb.forEach((m, k) => {
+    _td.copy(THUMB_OPEN[k]).lerp(THUMB_SHUT[k], c); _td.x *= a.s; _td.normalize();
+    m.position.copy(_tp); m.quaternion.setFromUnitVectors(_DNH, _td);
+    _tp.addScaledVector(_td, g.thumbL[k]);
+  });
+  g.thumbTip.position.copy(_tp);
 }
 function posePass(H, s, t, ground, raise) {
   H.root.position.set(s.p[0], s.p[1] + raise, s.p[2]);
@@ -829,19 +902,26 @@ function posePass(H, s, t, ground, raise) {
       solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A));
     }
     }
-    orientHand(a, _qb);
+    const w = side === 'L' ? s.lw : s.rw, gp = a.grip;
+    shapeHand(a, side === 'L' ? s.lo : s.ro);
+    orientHand(a, _qb, w);
     // The torso checks above only see the wrist; the fist reaches 14 cm past it, and with the palm turned in
     // toward the body (guard, tucked jumps) its palm side and thumb sank up to 5 cm into the chest.
+    // An open hand also checks its fingertips and thumb tip.
     for (let it = 0; it < 3; it++) {
       let moved = false;
       for (const [x, y, z, r] of FIST_PTS) {
         _C.set(a.s * x, y, z); a.hand.localToWorld(_C); _F.copy(_C);
         if (pushOutOfTorso(H, _C, r) || pushOutOfHead(H, _C, r)) { _T.add(_C.sub(_F)); moved = true; break; }
       }
+      if (!moved && gp && gp.openG.visible) for (const tip of gp.tips) {
+        tip.getWorldPosition(_C); _F.copy(_C);
+        if (pushOutOfTorso(H, _C, 0.012) || pushOutOfHead(H, _C, 0.012)) { _T.add(_C.sub(_F)); moved = true; break; }
+      }
       if (!moved) break;
       a.el.getWorldPosition(_C); a.sh.getWorldPosition(_A);
       solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A));
-      orientHand(a, _qb);
+      orientHand(a, _qb, w);
     }
   }
   for (const [side, tg, lift, dz, p] of [['L', s.lf, Math.max(0, cw), sw, 0], ['R', s.rf, Math.max(0, -cw), -sw, 0.5]]) {
