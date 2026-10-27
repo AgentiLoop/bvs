@@ -193,7 +193,14 @@ export function makeHero(kind) {
   emblemGeo.computeVertexNormals();
   skinSurface(hips, emblemGeo, new THREE.MeshStandardMaterial({ map: emblemTexture(B ? 'bat' : 's'), alphaTest: 0.3, roughness: 0.75 }), torsoWeights);
 
-  part(hips, surface([[-0.095, 0.05, 0.05], [-0.06, 0.142, 0.104], [0.015, 0.162, 0.114], [0.085, 0.15, 0.106]], p => p, 32), B ? dark : red);
+  // Trunks are skinned: the leg openings follow the thighs (weights fade in below the belt), so a
+  // lifted thigh carries the trunks with it instead of punching suit-coloured patches through them.
+  const arms = {}, legs = {};
+  skinSurface(hips, surface([[-0.095, 0.05, 0.05], [-0.06, 0.142, 0.104], [0.015, 0.162, 0.114], [0.085, 0.15, 0.106]], p => p, 32),
+    B ? dark : red, p => {
+      const lower = (1 - blend(-0.075, 0.05, p.y)) * 1.0, l = blend(-0.06, 0.06, p.x);
+      return [[hips, 1 - lower], [legs.L.th, lower * l], [legs.R.th, lower * (1 - l)]];
+    });
   part(hips, surface([[0.063, 0.153, 0.108], [0.071, 0.158, 0.113], [0.103, 0.153, 0.11], [0.11, 0.148, 0.105]], p => p, 12), yellow);
   {
     // Belt buckle: a flat bevelled rounded-rectangle plate (Superman's gold oval-cornered buckle,
@@ -331,7 +338,6 @@ export function makeHero(kind) {
   line(head, [[-0.016, 0.0605], [0, 0.0615], [0.016, 0.0605]].map(onFace(0.0004)),
     B ? 0.0016 : 0.0011, mat(B ? 0x754b43 : 0x9a5f52, 0.9));
 
-  const arms = {}, legs = {};
   for (const [side, s] of [['L', 1], ['R', -1]]) {
     const sh = joint(chest, [s * 0.262, 0.232, 0]);
     const el = joint(sh, [0, -0.32, 0]);
