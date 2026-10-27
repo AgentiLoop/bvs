@@ -3,8 +3,18 @@ import * as THREE from 'three';
 
 const DOWN = new THREE.Vector3(0, -1, 0);
 
+// Cool rim light (Fresnel) so the heroes' silhouettes pop off the night scene like comic-book art,
+// which also keeps Batman's dark suit and cowl readable.
+const rim = (m) => {
+  m.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>',
+      '#include <lights_fragment_end>\n  reflectedLight.directSpecular += vec3(0.22, 0.28, 0.4) * pow(1.0 - saturate(abs(dot(normal, normalize(vViewPosition)))), 3.0);');
+  };
+  m.customProgramCacheKey = () => 'hero-rim';
+  return m;
+};
 const mat = (color, roughness = 0.6, metalness = 0, extra = {}) =>
-  new THREE.MeshStandardMaterial({ color, roughness, metalness, ...extra });
+  rim(new THREE.MeshStandardMaterial({ color, roughness, metalness, ...extra }));
 
 function part(parent, geo, material, pos = [0, 0, 0], scale = [1, 1, 1], rot = [0, 0, 0]) {
   const m = new THREE.Mesh(geo, material);
