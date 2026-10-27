@@ -164,8 +164,13 @@ export function makeHero(kind) {
   const chestDepth = (x, y) => {
     const [rx, rz] = contour(torsoRows, y);
     const base = rz * Math.sqrt(Math.max(0, 1 - (x / rx) ** 2));
-    const pec = 0.06 * bump(Math.abs(x), 0.11, 0.075) * bump(y, 0.57, 0.065)
-      - 0.012 * bump(y, 0.505, 0.012) * bump(Math.abs(x), 0.11, 0.07); // hard lower pec edge
+    // Pecs are broad flat plates, not round domes: a plateau from the sternum out toward the armpit,
+    // wedge-shaped in profile (thin under the clavicle, thickest at the bottom) with a squared lower
+    // edge that slants up toward the armpit and undercuts sharply.
+    const ax = Math.abs(x), edge = 0.505 + 0.3 * Math.max(0, ax - 0.08), top = 0.66 - ax * 0.1;
+    const plate = blend(0.004, 0.028, ax) * (1 - blend(0.15, 0.225, ax)) * (0.85 + 0.15 * bump(ax, 0.09, 0.07));
+    const wedge = 0.45 + 0.55 * (1 - blend(edge, top, y));
+    const pec = 0.04 * plate * wedge * blend(edge - 0.012, edge + 0.004, y) * (1 - blend(top - 0.05, top, y));
     const lineaAlba = -0.007 * bump(x, 0, 0.01) * blend(0.15, 0.2, y) * (1 - blend(0.44, 0.5, y));
     const abs = [0.21, 0.285, 0.36, 0.427].reduce((v, cy) => v + 0.016 * bump(Math.abs(x), 0.047, 0.035) * bump(y, cy, 0.028), 0);
     const sternum = -0.007 * bump(x, 0, 0.017) * bump(y, 0.52, 0.12);
@@ -381,20 +386,33 @@ export function makeHero(kind) {
         part(el, finGeo, dark, [s * 0.058, -0.1 - k * 0.045, -0.012], [1, 1, 1], [0, s > 0 ? 0 : Math.PI, 0]);
     }
     const handMat = B ? dark : skin;
-    // Closed at both ends so the fist never reads as a hollow ring.
-    part(hand, surface([[-0.104, 0.001, 0.001, 0.016], [-0.095, 0.025, 0.028, 0.014], [-0.078, 0.044, 0.037, 0.012],
-      [-0.035, 0.044, 0.031, 0.006], [0.005, 0.035, 0.03, 0], [0.016, 0.001, 0.001, 0]], p => p, 40, 32), handMat);
-    // Clenched fist built from finger segments instead of four knuckle balls: each finger's first
-    // phalanx juts forward from the knuckle, the second curls down, and the thumb wraps across the front.
-    const seg = new THREE.CapsuleGeometry(1, 1, 6, 12);
-    const phal = (pos, r, len, rot) => part(hand, seg, handMat, pos, [r, len / 2, r], rot);
-    for (let k = 0; k < 4; k++) {
-      const x = (k - 1.5) * 0.019, tip = k === 0 || k === 3 ? 0.9 : 1; // outer fingers a touch smaller
-      phal([x, -0.07, 0.044], 0.0095 * tip, 0.016, [Math.PI / 2, 0, 0]);
-      phal([x, -0.087, 0.056], 0.0088 * tip, 0.014, [0.15, 0, 0]);
-    }
-    oval(hand, handMat, [-s * 0.036, -0.05, 0.03], [0.016, 0.026, 0.019]);          // thumb base
-    phal([-s * 0.019, -0.097, 0.066], 0.0092, 0.024, [0, 0, s * (Math.PI / 2 - 0.25)]); // thumb over the fingers
+    // One continuous, squarish fist instead of a palm with eight loose capsules (which read as a bunch of
+    // grapes). Palm side is +z, the punching face is -y. The curled fingers are carved into the skin:
+    // grooves between them, a crease where the fingertips tuck into the palm, and four knuckle ridges
+    // along the back edge. The thumb is one tapered digit lying across the index and middle fingers.
+    const fistRows = [[-0.118, 0.001, 0.001, 0.02], [-0.113, 0.034, 0.03, 0.021], [-0.104, 0.045, 0.042, 0.022],
+      [-0.085, 0.047, 0.044, 0.022], [-0.06, 0.046, 0.04, 0.016], [-0.035, 0.044, 0.031, 0.006],
+      [0.005, 0.035, 0.03, 0], [0.016, 0.001, 0.001, 0]];
+    const knuckleX = [-1.5, -0.5, 0.5, 1.5].map(k => k * 0.0215);
+    const fistGeo = surface(fistRows, (p, a) => {
+      const [rx, rz, off] = contour(fistRows, p.y), sn = Math.sin(a), cs = Math.cos(a);
+      const sq = (v) => Math.sign(v) * Math.abs(v) ** 0.55; // superellipse: boxy fist, rounded corners
+      p.x = rx * sq(sn); p.z = off + rz * sq(cs);
+      const fingers = 1 - blend(-0.068, -0.056, p.y);
+      const groove = [-0.0215, 0, 0.0215].reduce((v, b) => v + bump(p.x, b, 0.004), 0);
+      p.z -= 0.005 * groove * fingers * Math.max(0, cs);                       // gaps between curled fingers
+      p.y += 0.004 * groove * blend(-0.1, -0.114, p.y);                          // ...continuing over the punch face
+      p.z -= 0.007 * bump(p.y, -0.062, 0.005) * Math.max(0, cs) ** 2;            // fingertips tucked into the palm
+      const ridge = knuckleX.reduce((v, b) => v + bump(p.x, b, 0.008), 0);
+      p.z -= 0.006 * ridge * bump(p.y, -0.1, 0.011) * Math.max(0, -cs);          // knuckles on the back edge
+      p.y += 0.006 * blend(0.0, 0.045, s * p.x) * fingers;                       // pinky side shorter than the index side
+      return p;
+    }, 48, 48);
+    part(hand, fistGeo, handMat);
+    oval(hand, handMat, [-s * 0.036, -0.045, 0.026], [0.015, 0.026, 0.02]);   // thenar pad at the thumb base
+    line(hand, [[-s * 0.044, -0.045, 0.03], [-s * 0.04, -0.072, 0.058], [-s * 0.016, -0.084, 0.07],
+      [s * 0.008, -0.086, 0.068]], 0.0105, handMat);                          // thumb across the fingers
+    oval(hand, handMat, [s * 0.008, -0.086, 0.068], [0.0105, 0.0105, 0.0105]); // rounded thumb tip
     arms[side] = { sh, el, hand, s };
 
     const th = joint(hips, [s * 0.1, -0.04, 0]);
