@@ -35,17 +35,27 @@ const MP = {
   lift:    { ...G, h: 0.98, lean: -0.2, lh: [0.18, 1.15, 0.4], rh: [-0.18, 1.15, 0.4] },
   slam:    { ...G, h: 0.66, lean: 0.8, lh: [0.18, 0.25, 0.75], rh: [-0.18, 0.25, 0.75] },
   whiff:   { ...G, lean: 0.55, lh: [0.25, 0.5, 0.75], rh: [-0.25, 0.5, 0.75] },
+  // crouching: knees deep, hips low, guard tucked in front of the face
+  crouch:  { ...G, h: 0.54, lean: 0.55, lh: [0.12, 0.42, 0.38], rh: [-0.12, 0.36, 0.3], lf: [0.22, -0.47, 0.36], rf: [-0.22, -0.47, -0.3] },
+  cblock:  { ...G, h: 0.52, lean: 0.45, lh: [0.1, 0.52, 0.3], rh: [-0.1, 0.5, 0.28], lf: [0.22, -0.46, 0.36], rf: [-0.22, -0.46, -0.3] },
+  cjab:    { ...G, h: 0.54, lean: 0.55, tw: 0.25, lh: [0.04, 0.36, 0.92], rh: [-0.12, 0.36, 0.3], lf: [0.22, -0.47, 0.36], rf: [-0.22, -0.47, -0.3] },
+  ckickUp: { ...G, h: 0.5, lean: 0.5, lh: [0.12, 0.4, 0.38], rh: [-0.12, 0.34, 0.3], lf: [0.22, -0.43, 0.36], rf: [-0.2, -0.42, 0.18] },
+  ckick:   { ...G, h: 0.48, lean: 0.35, tw: -0.4, lh: [0.3, 0.05, 0.3], rh: [-0.12, 0.3, 0.3], lf: [0.24, -0.42, 0.3], rf: [-0.12, -0.4, 0.8] },
 };
 // keys: [time, pose]; hit: active frame; cancel: earliest chain into `next` (J punch / K kick); reach: horizontal range;
 // kb: knockback m/s; up: launch m/s (<0 spikes airborne targets down); at: striking limb; blast: hit-explosion size.
+// Height (SF/MK mix-ups): hi = whiffs over a crouching foe; low = must be blocked crouching; air/over = overhead,
+// must be blocked standing; everything else is a mid (either block works). crouch = performed from the crouch.
 const MOVES = {
-  jab:     { dur: 0.28, hit: 0.09, cancel: 0.13, reach: 1.25, dmg: 4, kb: 1.2, stun: 0.28, lunge: 1.5, at: 'lh', blast: 0.35, next: { J: 'cross', K: 'front' }, keys: [[0, 'guard'], [0.03, 'jab'], [0.18, 'guard']] },
-  cross:   { dur: 0.34, hit: 0.11, cancel: 0.16, reach: 1.35, dmg: 6, kb: 1.8, stun: 0.32, lunge: 2.5, at: 'rh', blast: 0.5, next: { J: 'hook', K: 'round' }, keys: [[0, 'windup'], [0.06, 'cross'], [0.24, 'guard']] },
-  hook:    { dur: 0.42, hit: 0.15, cancel: 0.21, reach: 1.25, dmg: 8, kb: 2.6, stun: 0.42, lunge: 2, at: 'rh', blast: 0.65, next: { J: 'upper', K: 'round' }, keys: [[0, 'hookUp'], [0.08, 'hook'], [0.3, 'guard']] },
+  jab:     { hi: true, dur: 0.28, hit: 0.09, cancel: 0.13, reach: 1.25, dmg: 4, kb: 1.2, stun: 0.28, lunge: 1.5, at: 'lh', blast: 0.35, next: { J: 'cross', K: 'front' }, keys: [[0, 'guard'], [0.03, 'jab'], [0.18, 'guard']] },
+  cross:   { hi: true, dur: 0.34, hit: 0.11, cancel: 0.16, reach: 1.35, dmg: 6, kb: 1.8, stun: 0.32, lunge: 2.5, at: 'rh', blast: 0.5, next: { J: 'hook', K: 'round' }, keys: [[0, 'windup'], [0.06, 'cross'], [0.24, 'guard']] },
+  hook:    { hi: true, dur: 0.42, hit: 0.15, cancel: 0.21, reach: 1.25, dmg: 8, kb: 2.6, stun: 0.42, lunge: 2, at: 'rh', blast: 0.65, next: { J: 'upper', K: 'round' }, keys: [[0, 'hookUp'], [0.08, 'hook'], [0.3, 'guard']] },
   upper:   { dur: 0.55, hit: 0.16, reach: 1.2, dmg: 11, kb: 1.6, up: 7, stun: 0.6, lunge: 2.5, at: 'rh', blast: 1, heavy: true, keys: [[0, 'dip'], [0.1, 'upper'], [0.42, 'guard']] },
   front:   { dur: 0.5, hit: 0.2, cancel: 0.27, reach: 1.55, dmg: 9, kb: 3.4, stun: 0.45, lunge: 1.2, at: 'rf', blast: 0.75, next: { K: 'round', J: 'hook' }, keys: [[0, 'chamber'], [0.12, 'front'], [0.38, 'guard']] },
-  round:   { dur: 0.62, hit: 0.24, reach: 1.6, dmg: 13, kb: 6.5, up: 2.5, stun: 0.7, lunge: 1.5, at: 'rf', blast: 1.1, heavy: true, keys: [[0, 'roundUp'], [0.14, 'round'], [0.46, 'guard']] },
-  sweep:   { dur: 0.6, hit: 0.2, reach: 1.6, dmg: 8, kb: 1.5, up: 3.2, stun: 0.6, lunge: 0.8, at: 'rf', blast: 0.6, heavy: true, trip: true, keys: [[0, 'dip'], [0.1, 'sweep'], [0.45, 'guard']] },
+  round:   { hi: true, dur: 0.62, hit: 0.24, reach: 1.6, dmg: 13, kb: 6.5, up: 2.5, stun: 0.7, lunge: 1.5, at: 'rf', blast: 1.1, heavy: true, keys: [[0, 'roundUp'], [0.14, 'round'], [0.46, 'guard']] },
+  sweep:   { low: true, dur: 0.6, hit: 0.2, reach: 1.6, dmg: 8, kb: 1.5, up: 3.2, stun: 0.6, lunge: 0.8, at: 'rf', blast: 0.6, heavy: true, trip: true, keys: [[0, 'dip'], [0.1, 'sweep'], [0.45, 'guard']] },
+  cjab:    { crouch: true, dur: 0.24, hit: 0.07, cancel: 0.11, reach: 1.15, dmg: 3, kb: 0.8, stun: 0.26, at: 'lh', blast: 0.3, next: { J: 'cjab', K: 'ckick' }, keys: [[0, 'crouch'], [0.02, 'cjab'], [0.15, 'crouch']] },
+  ckick:   { crouch: true, low: true, dur: 0.4, hit: 0.12, cancel: 0.2, reach: 1.45, dmg: 5, kb: 1.4, stun: 0.34, at: 'rf', blast: 0.45, next: { K: 'sweep', J: 'cjab' }, keys: [[0, 'ckickUp'], [0.05, 'ckick'], [0.28, 'crouch']] },
   dive:    { air: true, dur: 0.45, hit: 0.12, reach: 1.4, dmg: 9, kb: 3, up: -4, stun: 0.5, at: 'rh', blast: 0.8, heavy: true, keys: [[0, 'tuck'], [0.06, 'dive']] },
   airkick: { air: true, dur: 0.5, hit: 0.14, reach: 1.6, dmg: 10, kb: 5, up: 1.5, stun: 0.55, at: 'rf', blast: 0.9, heavy: true, keys: [[0, 'tuck'], [0.08, 'airkick']] },
 };
@@ -63,7 +73,7 @@ const STYLE = {
   sup: { hz: 0.8, bob: 0.018, dh: 0.03, dl: -0.08, fist: 0.012, off: 1.3 },
 };
 const ROUND_TIME = 60, WINS = 2;
-const FLYKICK = { dmg: 16, kb: 6, up: 3, stun: 0.7, heavy: true, at: 'rf', blast: 1.3 };
+const FLYKICK = { over: true, dmg: 16, kb: 6, up: 3, stun: 0.7, heavy: true, at: 'rf', blast: 1.3 };
 // Throws (punch+kick together, or U, at close range): unblockable, beaten only by a tech (throw back while held).
 // Batman hip-tosses the foe over his shoulder behind him; Superman lifts the foe overhead and slams him down.
 const THROW = { reach: 1.15, grab: 0.1, rel: 0.5, dur: 0.75, tech: 0.28 };
@@ -100,8 +110,8 @@ export class Game {
     this.round = 1; this.wins = { bat: 0, sup: 0 }; this.clock = ROUND_TIME; this.fightT = 0; this.matchOver = false; this.winner = null;
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
       ko: false, cd: 0, down: 0, meter: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
-      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0,
-      ai: { t: 0, mx: 0, mz: 0, block: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0, hx: 0, hy: 0, squash: 0 });
+      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, crouch: false,
+      ai: { t: 0, mx: 0, mz: 0, block: 0, crouch: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0, hx: 0, hy: 0, squash: 0 });
     this.F = { bat: mk(bat, 'bat', -7.4, Math.PI / 2), sup: mk(sup, 'sup', 2.2, -Math.PI / 2) };
     this.F.sup.y = 26; this.F.sup.cur = T(POSES.fly, { pitch: 0.35 });
     this.me = this.F[choice]; this.cpu = this.F[choice === 'bat' ? 'sup' : 'bat'];
@@ -143,9 +153,10 @@ export class Game {
     if (!list.length) { this.pad = null; this.padNow = []; return; }
     const n = Math.max(...list.map((g) => g.buttons.length));
     this.padNow = Array.from({ length: n }, (_, i) => list.some((g) => g.buttons[i] && (g.buttons[i].pressed || g.buttons[i].value > 0.5)));
-    let axes = [0, 0];
+    let axes = [0, 0], rs = 0;
     for (const g of list) if (g.axes.length >= 2 && Math.hypot(g.axes[0], g.axes[1]) > Math.hypot(axes[0], axes[1])) axes = [g.axes[0], g.axes[1]];
-    this.pad = { axes };
+    for (const g of list) if (g.axes.length >= 4) rs = Math.max(rs, g.axes[3]);
+    this.pad = { axes, rs };
   }
   padHit(i) { return !!this.padNow[i] && !this.padPrev[i]; }
   // Title screen: X / d-pad left = Batman, B / d-pad right = Superman.
@@ -168,6 +179,12 @@ export class Game {
     return true;
   }
   blockHeld() { return this.keys.has('shift') || [4, 5, 6, 7].some((i) => this.padNow[i]); }
+  // Crouch: C, or right stick down / L3 (left stick + d-pad already walk in depth).
+  crouchHeld() { return this.keys.has('c') || !!this.padNow[10] || !!(this.pad && this.pad.rs > 0.5); }
+  canCrouch(f) {
+    const M = f.act && MOVES[f.act.type];
+    return !f.ko && f.y <= 0.001 && f.stun <= 0 && f.down <= 0 && !f.launched && !f.heldBy && (!f.act || !!(M && M.crouch));
+  }
   rumble(strong, ms) {
     for (const g of this.pads || []) {
       const a = g.vibrationActuator;
@@ -198,7 +215,7 @@ export class Game {
     if (!a) {
       if (f.stun > 0 || f.down > 0 || f.launched) return;
       if (f.y > 0.3) name = f.buf === 'J' ? 'dive' : 'airkick';
-      else if (f.y <= 0.001) name = f.bufMod ? (f.buf === 'J' ? 'upper' : 'sweep') : (f.buf === 'J' ? 'jab' : 'front');
+      else if (f.y <= 0.001) name = f.bufMod ? (f.buf === 'J' ? 'upper' : 'sweep') : f.crouch ? (f.buf === 'J' ? 'cjab' : 'ckick') : (f.buf === 'J' ? 'jab' : 'front');
     } else if (M && M.next && a.done && a.t >= M.cancel) name = M.next[f.buf];
     if (name) { f.buf = null; this.begin(f, name); }
   }
@@ -209,7 +226,7 @@ export class Game {
   }
   // Double-tap toward = dash (cancellable into attacks), away = backdash (short hop, briefly invulnerable).
   dash(f, dir) {
-    if (!this.free(f) || f.block) return;
+    if (!this.free(f) || f.block || f.crouch) return;
     f.act = { type: 'dash', t: 0, dir, go: false };
   }
   // Grab attempt; while being held, the same input techs (breaks) the throw inside the tech window.
@@ -303,7 +320,8 @@ export class Game {
   reaches(f, o, M, d) {
     if (o.ko || o.down > 0) return false;
     if (M.air) return d < M.reach && Math.abs(o.y - f.y) < 1.2;
-    if (M.trip) return d < M.reach && o.y < 0.15;
+    if (M.low) return d < M.reach && o.y < 0.15;
+    if (M.hi && o.crouch && o.y <= 0.001) return false; // ducked under
     return d < M.reach && o.y < (M.at[1] === 'f' || M.up > 5 ? 1.6 : 1.2);
   }
   contact(att, def, M) {
@@ -318,7 +336,8 @@ export class Game {
     if (def.act && def.act.type === 'dash' && def.act.dir < 0 && def.act.t < DASH.invuln) return; // backdash invulnerability
     const dx = def.x - att.x, dz = def.z - att.z, d = Math.hypot(dx, dz) || 1, nx = dx / d, nz = dz / d;
     const mine = def === this.me || att === this.me;
-    if (def.block && !def.act && def.stun <= 0 && def.y <= 0.001 && !M.trip) {
+    const guarding = def.block && !def.act && def.stun <= 0 && def.y <= 0.001, over = M.air || M.over;
+    if (guarding && (def.crouch ? !over : !M.low)) {
       def.hp = Math.max(1, def.hp - M.dmg * 0.15);
       att.meter = Math.min(100, att.meter + 2); def.meter = Math.min(100, def.meter + 4);
       def.kx += nx * M.kb * 0.45; def.kz += nz * M.kb * 0.45; att.kx -= nx * 0.6; att.kz -= nz * 0.6;
@@ -354,6 +373,7 @@ export class Game {
     if (!(att.act && att.act.type === 'super')) { att.meter = Math.min(100, att.meter + dmg * 1.4); def.meter = Math.min(100, def.meter + dmg * 0.8); }
     this.updateBars();
     if (att.hits >= 2) this.showCombo(`${att.hits} HIT COMBO`, att.key);
+    else if (guarding) this.showCombo(def.crouch ? 'OVERHEAD!' : 'LOW!', att.key); // guard broken by the wrong height
     if (def.hp <= 0) {
       def.ko = true; def.act = null; def.launched = true; def.kx *= 1.6; def.kz *= 1.6; def.vy = Math.max(def.vy, 4); def.y = Math.max(def.y, 0.001);
       this.endRound(att, 'K.O.');
@@ -407,7 +427,7 @@ export class Game {
   nextRound() {
     this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.winner = null;
     for (const [f, x] of [[this.F.bat, -2.2], [this.F.sup, 2.2]]) {
-      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, cur: T(POSES.guard) });
+      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, cur: T(POSES.guard) });
       f.yaw = x < 0 ? Math.PI / 2 : -Math.PI / 2;
     }
     this.ctx.batCape.reset(); this.ctx.supCape.reset();
@@ -440,7 +460,7 @@ export class Game {
           this.endRound(bat.hp === sup.hp ? null : bat.hp > sup.hp ? bat : sup, 'TIME');
         }
       }
-      else { this.me.block = this.cpu.block = false; }
+      else { this.me.block = this.cpu.block = this.me.crouch = this.cpu.crouch = false; }
       this.pending = [];
       for (const [f, o] of [[this.me, this.cpu], [this.cpu, this.me]]) this.physics(f, o, sdt);
       // beam ends if heat vision was interrupted (hit / KO clears act without clearing the beam)
@@ -487,7 +507,7 @@ export class Game {
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
     if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN',
-      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · BEST OF 3 ROUNDS');
+      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · BEST OF 3 ROUNDS');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }
   }
@@ -498,6 +518,7 @@ export class Game {
     let iy = (K.has('w') || K.has('arrowup') || b[12] ? 1 : 0) - (K.has('s') || K.has('arrowdown') || b[13] ? 1 : 0);
     if (p && p.axes.length >= 2 && Math.hypot(p.axes[0], p.axes[1]) > 0.25) { ix += p.axes[0]; iy -= p.axes[1]; }
     f.block = this.blockHeld() && this.free(f);
+    f.crouch = this.crouchHeld() && this.canCrouch(f);
     // screen-relative: right = camera right on the ground, up = into the screen
     const fx = this.camLook.x - this.camPos.x, fz = this.camLook.z - this.camPos.z, fl = Math.hypot(fx, fz) || 1;
     const rx = -fz / fl, rz = fx / fl;
@@ -515,8 +536,9 @@ export class Game {
   ai(dt) {
     const f = this.cpu, o = this.me, A = f.ai, rng = this.ctx.rng;
     const d = Math.hypot(o.x - f.x, o.z - f.z), tx = (o.x - f.x) / (d || 1), tz = (o.z - f.z) / (d || 1);
-    A.t -= dt; A.block -= dt;
+    A.t -= dt; A.block -= dt; A.crouch -= dt;
     f.block = A.block > 0 && this.free(f);
+    f.crouch = A.crouch > 0 && this.canCrouch(f);
     // keep strings going once the first hit is out
     if (f.act && MOVES[f.act.type] && f.act.done && A.chain > 0 && !f.buf) { A.chain--; f.buf = rng() < 0.6 ? 'J' : 'K'; f.bufT = 0.3; f.bufMod = false; }
     if (f.heldBy && A.tech > 0 && (A.tech -= dt) <= 0) this.throwStart(f);
@@ -526,7 +548,13 @@ export class Game {
       const threat = o.act && d < 2;
       if (f.meter >= 100 && d < 3.2 && this.free(f) && !o.launched && rng() < 0.35) this.superMove(f);
       else if (threat && rng() < 0.15 && this.free(f)) this.dash(f, -1);
-      else if (threat && rng() < 0.4) A.block = 0.45;
+      else if (threat && rng() < 0.4) {
+        // read the attack's height (right 75% of the time): lows crouch-blocked, overheads stand-blocked, highs ducked
+        const OM = MOVES[o.act.type], low = !!(OM && OM.low), over = o.y > 0.3 || !!(OM && OM.air) || o.act.type === 'flykick';
+        const read = rng() < 0.75;
+        A.block = 0.45; A.crouch = (low ? read : over ? !read : rng() < 0.4) ? 0.45 : 0;
+        if (OM && OM.hi && read && rng() < 0.35) { A.block = 0; A.crouch = 0.4; } // duck under it
+      }
       else if (d < 1.1 && this.free(f) && (o.block || rng() < 0.12)) this.throwStart(f);
       else if (d > 2.6 && d < 5 && rng() < 0.22 && this.free(f)) this.dash(f, 1);
       else if (o.launched && d < 1.4 && this.free(f)) { A.chain = 1; this.press(f, 'J'); }
@@ -535,7 +563,9 @@ export class Game {
       else if (d > 1.15) { A.mx = tx; A.mz = tz; if (rng() < 0.25) { A.mx += -tz * 0.7; A.mz += tx * 0.7; } }
       else if (rng() < 0.75 && this.free(f)) {
         const r = rng(); A.chain = Math.floor(rng() * 3);
-        if (r < 0.14) this.begin(f, 'upper'); else if (r < 0.26) this.begin(f, 'sweep'); else this.press(f, r < 0.65 ? 'J' : 'K');
+        if (r < 0.14) this.begin(f, 'upper'); else if (r < 0.26) this.begin(f, 'sweep');
+        else if (r < 0.38) { A.crouch = 0.3; f.crouch = this.canCrouch(f); this.press(f, rng() < 0.6 ? 'K' : 'J'); }
+        else this.press(f, r < 0.68 ? 'J' : 'K');
       } else { A.mx = -tx; A.mz = -tz; }
     }
     if (!f.block) this.walk(f, A.mx, A.mz, dt);
@@ -544,7 +574,7 @@ export class Game {
   walk(f, mx, mz, dt) {
     const m = Math.hypot(mx, mz);
     f.moving = 0;
-    if (!this.free(f) || f.block || m < 0.01) return;
+    if (!this.free(f) || f.block || f.crouch || m < 0.01) return;
     const sp = 2.6 / Math.max(1, m);
     f.x += mx * sp * dt; f.z += mz * sp * dt; f.moving = Math.min(1, m);
   }
@@ -703,6 +733,7 @@ export class Game {
     if (a && a.type === 'heat') return T(POSES.heat);
     if (f.stun > 0) return T(POSES[f.heavy ? 'hit' : 'flinch']);
     if (f.y > 0.05) return T(POSES.tuck);
+    if (f.crouch) { const b = this.breath(f); return T(f.block ? MP.cblock : MP.crouch, { lean: (f.block ? MP.cblock : MP.crouch).lean + b * 0.015 }); }
     if (f.block) { const b = this.breath(f); return T(POSES.guard, { ...BLOCK, lean: BLOCK.lean + b * 0.01 }); }
     return this.idle(f);
   }
