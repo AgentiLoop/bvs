@@ -298,8 +298,9 @@ export function makeHero(kind) {
     if (B) for (let k = 0; k < 3; k++)
       part(el, new THREE.ConeGeometry(0.012, 0.06, 4), dark, [s * 0.072, -0.11 - k * 0.05, -0.02], [0.6, 1, 1], [0, 0, -s * 1.1]);
     const handMat = B ? dark : skin;
-    part(hand, surface([[-0.095, 0.025, 0.028, 0.014], [-0.078, 0.044, 0.037, 0.012],
-      [-0.035, 0.044, 0.031, 0.006], [0.005, 0.035, 0.03, 0]], p => p, 32, 32), handMat);
+    // Closed at both ends so the fist never reads as a hollow ring.
+    part(hand, surface([[-0.104, 0.001, 0.001, 0.016], [-0.095, 0.025, 0.028, 0.014], [-0.078, 0.044, 0.037, 0.012],
+      [-0.035, 0.044, 0.031, 0.006], [0.005, 0.035, 0.03, 0], [0.016, 0.001, 0.001, 0]], p => p, 40, 32), handMat);
     for (let k = 0; k < 4; k++) oval(hand, handMat, [(k - 1.5) * 0.019, -0.072, 0.039], [0.011, 0.016, 0.012]);
     oval(hand, handMat, [-s * 0.034, -0.036, 0.028], [0.018, 0.031, 0.021]);
     arms[side] = { sh, el, hand, s };
