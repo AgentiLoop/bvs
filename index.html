@@ -48,6 +48,11 @@
   .hp i { display: block; height: 100%; width: 100%; transition: width .15s; }
   #hpBatWrap { left: 4vw; } #hpBat i { background: linear-gradient(#ffd23a, #d79a10); }
   #hpSupWrap { right: 4vw; text-align: right; } #hpSup i { background: linear-gradient(#3a7bff, #c21a1a); margin-left: auto; }
+  .hp b.mt { height: .8vh; width: 24vw; } #hpSupWrap b.mt { margin-left: auto; }
+  .mt i { background: linear-gradient(#9ff, #39f); transition: width .1s; } .mt.full i { background: linear-gradient(#fff, #f6c400); animation: pulse2 .4s infinite alternate; }
+  @keyframes pulse2 { to { filter: brightness(1.8); } }
+  #timer { position: absolute; top: 2.2vh; left: 0; right: 0; text-align: center; font-size: 3vw; font-weight: 900; }
+  .pips { color: #f6c400; letter-spacing: .1em; }
   #banner { position: fixed; left: 0; right: 0; top: 34vh; text-align: center; font-size: 6vw; font-weight: 900; letter-spacing: .12em; opacity: 0; transition: opacity .25s; }
   #combo { position: absolute; left: 4vw; right: 4vw; top: 12vh; font-size: 2.6vw; font-weight: 900; letter-spacing: .12em; opacity: 0; transition: opacity .3s; }
   #banner small { display: block; font: 1.2vw monospace; letter-spacing: .25em; margin-top: 1em; color: #ccd; }
@@ -62,8 +67,9 @@
 <div id="hud">Models: "Batman" by Salstar123, "Superman" by shreyhaldkar0 (Sketchfab, CC-BY-4.0) · P pixel-art · [ ] pixel size · C free camera · SPACE pause · R restart</div>
 <div id="play"><button data-hero="bat">B · PLAY AS BATMAN</button><button data-hero="sup">S · PLAY AS SUPERMAN</button><small>GAMEPAD: X BATMAN · B SUPERMAN</small></div>
 <div id="game">
-  <div class="hp" id="hpBatWrap"><span id="tagBat">BATMAN</span><b id="hpBat"><i></i></b></div>
-  <div class="hp" id="hpSupWrap"><span id="tagSup">SUPERMAN</span><b id="hpSup"><i></i></b></div>
+  <div class="hp" id="hpBatWrap"><span id="tagBat">BATMAN</span><b id="hpBat"><i></i></b><b class="mt" id="mtBat"><i></i></b></div>
+  <div class="hp" id="hpSupWrap"><span id="tagSup">SUPERMAN</span><b id="hpSup"><i></i></b><b class="mt" id="mtSup"><i></i></b></div>
+  <div id="timer">60</div>
   <div id="combo"></div>
   <div id="banner"></div>
 </div>

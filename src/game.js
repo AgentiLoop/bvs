@@ -28,6 +28,7 @@ const MP = {
   dive:    { ...P.tuck, h: 0.55, lean: 0.75, lh: [0.3, 0.3, 0.1], rh: [-0.04, 0.12, 0.95] },
   airkick: { h: 0.62, lean: -0.3, roll: 0, lh: [0.3, 0.4, -0.1], rh: [-0.25, 0.35, 0.1], lf: [0.14, -0.4, 0.2], rf: [-0.06, -0.3, 0.82] },
   air:     { ...P.hit, h: 0.6 },
+  rush:    { ...P.charge, lean: 0.75, gait: 1 },
 };
 // keys: [time, pose]; hit: active frame; cancel: earliest chain into `next` (J punch / K kick); reach: horizontal range;
 // kb: knockback m/s; up: launch m/s (<0 spikes airborne targets down); at: striking limb; blast: hit-explosion size.
@@ -42,6 +43,13 @@ const MOVES = {
   dive:    { air: true, dur: 0.45, hit: 0.12, reach: 1.4, dmg: 9, kb: 3, up: -4, stun: 0.5, at: 'rh', blast: 0.8, heavy: true, keys: [[0, 'tuck'], [0.06, 'dive']] },
   airkick: { air: true, dur: 0.5, hit: 0.14, reach: 1.6, dmg: 10, kb: 5, up: 1.5, stun: 0.55, at: 'rf', blast: 0.9, heavy: true, keys: [[0, 'tuck'], [0.08, 'airkick']] },
 };
+// Supers (block + special with a full meter): an unblockable armoured rush; if it connects the opponent is pinned
+// through a scripted string, then a launching finisher, while the camera orbits the pair.
+const SUPERS = {
+  bat: { name: 'DARK KNIGHT RUSH', seq: ['jab', 'cross', 'front', 'hook', 'jab', 'cross'], fin: 'round', finish: { dmg: 16, kb: 8, up: 5, stun: 1, heavy: true, at: 'rf', blast: 2.2 } },
+  sup: { name: 'KRYPTONIAN FURY', seq: ['cross', 'hook', 'jab', 'cross', 'hook'], fin: 'upper', finish: { dmg: 18, kb: 4, up: 10, stun: 1, heavy: true, at: 'rh', blast: 2.4 } },
+};
+const ROUND_TIME = 60, WINS = 2;
 const FLYKICK = { dmg: 16, kb: 6, up: 3, stun: 0.7, heavy: true, at: 'rf', blast: 1.3 };
 const HEATKO = { dmg: 0.01, kb: 2, up: 2, stun: 0.5, heavy: true, blast: 1 };
 const LIMB = { lh: (H) => H.arms.L.hand, rh: (H) => H.arms.R.hand, lf: (H) => H.legs.L.an, rf: (H) => H.legs.R.an };
@@ -60,15 +68,17 @@ export class Game {
       hud: document.getElementById('game'), banner: document.getElementById('banner'), combo: document.getElementById('combo'),
       bars: { bat: document.querySelector('#hpBat i'), sup: document.querySelector('#hpSup i') },
       tags: { bat: document.getElementById('tagBat'), sup: document.getElementById('tagSup') },
+      meters: { bat: document.getElementById('mtBat'), sup: document.getElementById('mtSup') }, timer: document.getElementById('timer'),
     };
   }
 
   start(choice) {
     const { bat, sup } = this.ctx;
     this.active = true; this.choice = choice; this.t = 0; this.state = 'enter'; this.overT = 0; this.ts = 1; this.landed = false; this.shownWin = false;
-    this.hitstop = 0; this.comboT = 0; this.pending = [];
+    this.hitstop = 0; this.comboT = 0; this.pending = []; this.cine = null;
+    this.round = 1; this.wins = { bat: 0, sup: 0 }; this.clock = ROUND_TIME; this.fightT = 0; this.matchOver = false; this.winner = null;
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
-      ko: false, cd: 0, down: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
+      ko: false, cd: 0, down: 0, meter: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
       ai: { t: 0, mx: 0, mz: 0, block: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0 });
     this.F = { bat: mk(bat, 'bat', -7.4, Math.PI / 2), sup: mk(sup, 'sup', 2.2, -Math.PI / 2) };
     this.F.sup.y = 26; this.F.sup.cur = T(POSES.fly, { pitch: 0.35 });
@@ -78,8 +88,7 @@ export class Game {
     this.pose(0);
     this.ctx.batCape.reset(); this.ctx.supCape.reset();
     this.ui.hud.style.display = 'block';
-    this.ui.tags.bat.textContent = choice === 'bat' ? 'BATMAN · YOU' : 'BATMAN · CPU';
-    this.ui.tags.sup.textContent = choice === 'sup' ? 'SUPERMAN · YOU' : 'SUPERMAN · CPU';
+    this.updateTags();
     this.ui.combo.style.opacity = 0;
     this.say('');
     this.updateBars();
@@ -93,11 +102,12 @@ export class Game {
   keydown(e) {
     const k = e.key.toLowerCase();
     this.keys.add(k);
-    if (this.state === 'over' && this.overT > 1.5 && (k === 'enter' || k === 'r')) { this.ctx.restart(this.choice); return; }
+    if (this.matchOver && this.overT > 1.5 && (k === 'enter' || k === 'r')) { this.ctx.restart(this.choice); return; }
     if (e.repeat) return;
     if (k === 'j') this.press(this.me, 'J', this.blockHeld());
     else if (k === 'k') this.press(this.me, 'K', this.blockHeld());
-    else if (k === 'l') this.press(this.me, 'S');
+    else if (k === 'l') this.press(this.me, 'S', this.blockHeld());
+    else if (k === 'i') this.press(this.me, 'S', true);
     else if (k === ' ') this.press(this.me, 'A');
   }
   keyup(e) { this.keys.delete(e.key.toLowerCase()); }
@@ -127,10 +137,10 @@ export class Game {
     this.readPad();
     if (!this.pad) return true;
     if (this.padHit(8)) { this.ctx.quit(); return false; }
-    if (this.state === 'over' && this.overT > 1.5 && (this.padHit(9) || this.padHit(0))) { this.ctx.restart(this.choice); return true; }
+    if (this.matchOver && this.overT > 1.5 && (this.padHit(9) || this.padHit(0))) { this.ctx.restart(this.choice); return true; }
     if (this.padHit(2)) this.press(this.me, 'J', this.blockHeld());
     if (this.padHit(3)) this.press(this.me, 'K', this.blockHeld());
-    if (this.padHit(1)) this.press(this.me, 'S');
+    if (this.padHit(1)) this.press(this.me, 'S', this.blockHeld());
     if (this.padHit(0)) this.press(this.me, 'A');
     return true;
   }
@@ -146,7 +156,7 @@ export class Game {
   free(f) { return !f.act && f.stun <= 0 && !f.ko && f.y <= 0.001 && f.down <= 0 && !f.launched; }
   press(f, btn, mod = false) {
     if (this.state !== 'fight' || f.ko) return;
-    if (btn === 'S') return this.special(f);
+    if (btn === 'S') return mod && f.meter >= 100 ? this.superMove(f) : this.special(f);
     if (btn === 'A') return this.jump(f, f.inX, f.inZ);
     f.buf = btn; f.bufT = 0.3; f.bufMod = mod;
     this.tryStart(f);
@@ -176,6 +186,53 @@ export class Game {
     f.act = { type: f.key === 'bat' ? 'flykick' : 'heat', t: 0, done: false };
   }
 
+  superMove(f) {
+    if (!this.free(f)) return;
+    const S = SUPERS[f.key];
+    f.meter = 0; f.block = false; f.hits = 0;
+    f.act = { type: 'super', t: 0, phase: 'rush', k: 0, kt: 0, hit: false, done: false };
+    // super flash: everything freezes for a beat, the screen whites out and the camera starts its orbit
+    this.hitstop = Math.max(this.hitstop, 0.3);
+    const c = f.H.chest.getWorldPosition(new THREE.Vector3()), { fx } = this.ctx;
+    fx.flash(0.45); fx.waves.spawn(c.x, c.y, c.z, 2.5, f.key === 'bat' ? 0xffd23a : 0x6fa8ff, 0.6); fx.sparkBurst(c.x, c.y, c.z, 60, 4, 0xffffff);
+    this.cine = { f, t: 0, a0: Math.atan2(this.camN.x, this.camN.y), end: Infinity };
+    this.showCombo(S.name, f.key);
+    if (f === this.me || f === this.cpu) this.rumble(0.6, 200);
+    this.updateBars();
+  }
+  // Scripted super after the rush. Returns false when the act is over.
+  superStep(f, o, a, dt) {
+    const S = SUPERS[f.key], { fx } = this.ctx;
+    const d = Math.hypot(o.x - f.x, o.z - f.z);
+    if (a.phase === 'rush') {
+      if (d > 1.05) { const s = Math.min(9 * dt, d - 1.05); f.x += (o.x - f.x) / d * s; f.z += (o.z - f.z) / d * s; }
+      if (d <= 1.15 && !o.ko && o.down <= 0 && o.y < 1.2) { a.phase = 'seq'; a.k = 0; a.kt = 0; a.hit = false; fx.impact(o.x, 1, o.z, 0.3); }
+      else if (a.t > 0.7) { this.endCine(0.3); return false; } // whiffed
+      return true;
+    }
+    const name = a.phase === 'seq' ? S.seq[a.k] : S.fin, M = MOVES[name];
+    a.kt += dt;
+    if (a.phase === 'seq') {
+      // pin the victim in front of the attacker for the whole string
+      o.x = f.x + Math.sin(f.yaw) * 1.0; o.z = f.z + Math.cos(f.yaw) * 1.0; o.y = 0; o.vy = 0; o.kx = o.kz = 0;
+      o.launched = false; o.act = null; o.stun = Math.max(o.stun, 0.4); o.block = false;
+    }
+    if (!a.hit && a.kt >= M.hit) {
+      a.hit = true;
+      const fin = a.phase === 'fin', HM = fin ? S.finish : { ...M, kb: 0.4, up: 0 };
+      const at = this.contact(f, o, HM);
+      this.hurt(o, f, HM, at);
+      if (fin) { fx.waves.spawn(at.x, at.y, at.z, 5, 0xffffff, 1); fx.dustBurst(o.x, 0, o.z, 80, 4); fx.flash(0.5); this.hitstop = Math.max(this.hitstop, 0.25); this.endCine(1.4); }
+      if (o.ko) { this.endCine(1.4); return false; }
+    }
+    if (a.kt >= (a.phase === 'seq' ? M.hit + 0.09 : M.dur)) {
+      if (a.phase === 'fin') return false;
+      a.k++; a.kt = 0; a.hit = false;
+      if (a.k >= S.seq.length) a.phase = 'fin';
+    }
+    return true;
+  }
+  endCine(after) { if (this.cine) this.cine.end = Math.min(this.cine.end, this.cine.t + after); }
   reaches(f, o, M, d) {
     if (o.ko || o.down > 0) return false;
     if (M.air) return d < M.reach && Math.abs(o.y - f.y) < 1.2;
@@ -190,10 +247,12 @@ export class Game {
   hurt(def, att, M, at, trade = false) {
     const { fx } = this.ctx;
     if (def.ko || def.down > 0) return;
+    if (def.act && def.act.type === 'super') { this.ctx.fx.sparkBurst(at.x, at.y, at.z, 10, 2, 0xffffff); return; } // armoured
     const dx = def.x - att.x, dz = def.z - att.z, d = Math.hypot(dx, dz) || 1, nx = dx / d, nz = dz / d;
     const mine = def === this.me || att === this.me;
     if (def.block && !def.act && def.stun <= 0 && def.y <= 0.001 && !M.trip) {
       def.hp = Math.max(1, def.hp - M.dmg * 0.15);
+      att.meter = Math.min(100, att.meter + 2); def.meter = Math.min(100, def.meter + 4);
       def.kx += nx * M.kb * 0.45; def.kz += nz * M.kb * 0.45; att.kx -= nx * 0.6; att.kz -= nz * 0.6;
       fx.sparkBurst(at.x, at.y, at.z, 14, 3, 0xbfd8ff);
       fx.blast(at.x, at.y, at.z, 0.3, 0.3, 0x6fa8ff);
@@ -223,16 +282,16 @@ export class Game {
     this.hitstop = Math.max(this.hitstop, M.heavy ? 0.12 : 0.06);
     if (mine) this.rumble(M.heavy ? 0.9 : 0.45, M.heavy ? 220 : 110);
     def.hp = Math.max(0, def.hp - dmg);
+    if (!(att.act && att.act.type === 'super')) { att.meter = Math.min(100, att.meter + dmg * 1.4); def.meter = Math.min(100, def.meter + dmg * 0.8); }
     this.updateBars();
     if (att.hits >= 2) this.showCombo(`${att.hits} HIT COMBO`, att.key);
     if (def.hp <= 0) {
       def.ko = true; def.act = null; def.launched = true; def.kx *= 1.6; def.kz *= 1.6; def.vy = Math.max(def.vy, 4); def.y = Math.max(def.y, 0.001);
-      this.state = 'over'; this.overT = 0; this.winner = att;
+      this.endRound(att, 'K.O.');
       fx.flash(0.6); fx.impact(at.x, at.y, at.z, 0.6); fx.waves.spawn(at.x, at.y, at.z, 4, 0xffffff, 1);
       fx.sparkBurst(at.x, at.y, at.z, 120, 7, 0xffffff); fx.blast(at.x, at.y, at.z, 2, 0.9);
       this.hitstop = 0.2;
       if (mine) this.rumble(1, 500);
-      this.say('K.O.');
     }
   }
 
@@ -255,7 +314,37 @@ export class Game {
     c.style.color = side === 'bat' ? '#ffd23a' : side === 'sup' ? '#6fa8ff' : '#fff';
   }
 
-  updateBars() { for (const k of ['bat', 'sup']) this.ui.bars[k].style.width = this.F[k].hp + '%'; }
+  updateBars() {
+    for (const k of ['bat', 'sup']) {
+      this.ui.bars[k].style.width = this.F[k].hp + '%';
+      const m = this.ui.meters[k]; m.firstChild.style.width = this.F[k].meter + '%'; m.classList.toggle('full', this.F[k].meter >= 100);
+    }
+  }
+  updateTags() {
+    for (const k of ['bat', 'sup']) {
+      const pips = '●'.repeat(this.wins[k]) + '○'.repeat(WINS - this.wins[k]);
+      const who = `${k === 'bat' ? 'BATMAN' : 'SUPERMAN'} · ${this.choice === k ? 'YOU' : 'CPU'}`;
+      this.ui.tags[k].innerHTML = k === 'bat' ? `${who} <span class="pips">${pips}</span>` : `<span class="pips">${pips}</span> ${who}`;
+    }
+  }
+  // Round over (KO or time). winner null = draw. First to WINS rounds takes the match.
+  endRound(winner, text) {
+    this.state = 'over'; this.overT = 0; this.winner = winner; this.shownWin = false;
+    if (winner) this.wins[winner.key]++;
+    this.matchOver = Object.values(this.wins).some((w) => w >= WINS);
+    this.updateTags();
+    this.say(text, this.matchOver ? '' : winner ? `${winner.key === 'bat' ? 'BATMAN' : 'SUPERMAN'} TAKES ROUND ${this.round}` : 'NO WINNER');
+  }
+  nextRound() {
+    this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.winner = null;
+    for (const [f, x] of [[this.F.bat, -2.2], [this.F.sup, 2.2]]) {
+      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, cur: T(POSES.guard) });
+      f.yaw = x < 0 ? Math.PI / 2 : -Math.PI / 2;
+    }
+    this.ctx.batCape.reset(); this.ctx.supCape.reset();
+    this.updateBars();
+    this.say(`ROUND ${this.round}`);
+  }
 
   // ---------- per fixed step ----------
   step(dt) {
@@ -267,9 +356,21 @@ export class Game {
     const sdt = dt * this.ts;
     this.t += sdt;
     if (this.state === 'enter') this.entrance(sdt);
-    else {
+    else if (this.state === 'ready') {
+      this.readyT += sdt;
+      if (this.readyT > 1.2) this.say('FIGHT!');
+      if (this.readyT > 1.7) { this.state = 'fight'; this.fightT = 0; }
+    } else {
       for (const f of [this.me, this.cpu]) f.cd = Math.max(0, f.cd - sdt);
-      if (this.state === 'fight') { this.player(sdt); this.ai(sdt); }
+      if (this.state === 'fight') {
+        this.player(sdt); this.ai(sdt);
+        this.fightT += sdt;
+        if (!this.cine) this.clock = Math.max(0, this.clock - sdt);
+        if (this.clock <= 0) {
+          const { bat, sup } = this.F;
+          this.endRound(bat.hp === sup.hp ? null : bat.hp > sup.hp ? bat : sup, 'TIME');
+        }
+      }
       else { this.me.block = this.cpu.block = false; }
       this.pending = [];
       for (const [f, o] of [[this.me, this.cpu], [this.cpu, this.me]]) this.physics(f, o, sdt);
@@ -277,13 +378,15 @@ export class Game {
       if (![this.me, this.cpu].some((f) => f.act && f.act.type === 'heat')) this.heat = null;
       this.resolve();
       this.separate();
-      if (this.state === 'fight' && this.t > ENTER_END + 1) this.say('');
-      if (this.state === 'over' && this.overT > 1.5 && !this.shownWin) {
+      if (this.state === 'fight' && this.fightT > 1 && this.fightT < 1.2) this.say('');
+      if (this.state === 'over' && !this.matchOver && this.overT > 2.8) this.nextRound();
+      else if (this.state === 'over' && this.matchOver && this.overT > 1.5 && !this.shownWin) {
         this.shownWin = true;
         const w = this.winner.key === 'bat' ? 'BATMAN' : 'SUPERMAN';
         this.say(`${w} WINS`, this.winner === this.me ? 'YOU WIN · ENTER / START REMATCH · ESC / BACK MENU' : 'YOU LOSE · ENTER / START REMATCH · ESC / BACK MENU');
       }
     }
+    this.ui.timer.textContent = Math.ceil(this.clock);
     this.pose(sdt);
     this.camera(dt);
     return sdt;
@@ -315,9 +418,9 @@ export class Game {
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
     if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN',
-      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL');
+      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · BEST OF 3 ROUNDS');
     else if (t >= 2.6) this.say('FIGHT!');
-    if (t >= ENTER_END) this.state = 'fight';
+    if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }
   }
 
   player(dt) {
@@ -344,7 +447,8 @@ export class Game {
     if (A.t <= 0) {
       A.t = 0.2 + rng() * 0.3; A.mx = A.mz = 0;
       const threat = o.act && d < 2;
-      if (threat && rng() < 0.4) A.block = 0.45;
+      if (f.meter >= 100 && d < 3.2 && this.free(f) && !o.launched && rng() < 0.35) this.superMove(f);
+      else if (threat && rng() < 0.4) A.block = 0.45;
       else if (o.launched && d < 1.4 && this.free(f)) { A.chain = 1; this.press(f, 'J'); }
       else if (d > 3 && f.cd <= 0 && rng() < 0.3) this.special(f);
       else if (d > 2 && d < 3.6 && rng() < 0.15 && this.free(f)) { this.jump(f, tx, tz); A.air = true; }
@@ -405,6 +509,8 @@ export class Game {
         if (M.lunge && a.t < M.hit && d > 0.85) { f.x += Math.sin(f.yaw) * M.lunge * dt; f.z += Math.cos(f.yaw) * M.lunge * dt; }
         if (!a.done && a.t >= M.hit) { a.done = true; if (this.state === 'fight' && this.reaches(f, o, M, d)) this.pending.push({ att: f, def: o, M }); }
         if (a.t >= M.dur) f.act = null;
+      } else if (a.type === 'super') {
+        if (!this.superStep(f, o, a, dt)) f.act = null;
       } else if (a.type === 'flykick') {
         const u = clamp(a.t / 0.75, 0, 1);
         if (u > 0.15 && u < 0.8 && d > 0.9) { const s = Math.min(8 * dt, d - 0.9); f.x += (o.x - f.x) / d * s; f.z += (o.z - f.z) / d * s; }
@@ -459,12 +565,20 @@ export class Game {
     }
     if (f.ko) return T(POSES.down, { pitch: -1.5 });
     if (this.state === 'over' && f === this.winner && this.overT > 1.4) return T(POSES.heroic);
+    if (this.state === 'ready') return T(POSES.guard);
     if (f.down > 0) return f.down > 0.3 ? T(POSES.down, { pitch: -1.5 }) : T(POSES.kneel);
     if (f.launched && f.y > 0.05) return T(MP.air, { pitch: -0.5 });
     const a = f.act;
     if (a && MOVES[a.type]) {
       let n = null;
       for (const [t, p] of MOVES[a.type].keys) if (a.t >= t) n = p;
+      return T(MP[n] || POSES[n]);
+    }
+    if (a && a.type === 'super') {
+      if (a.phase === 'rush') return T(MP.rush);
+      const S = SUPERS[f.key], name = a.phase === 'seq' ? S.seq[a.k] : S.fin;
+      let n = null;
+      for (const [t, p] of MOVES[name].keys) if (a.kt >= t * (a.phase === 'seq' ? 0.8 : 1)) n = p;
       return T(MP[n] || POSES[n]);
     }
     if (a && a.type === 'flykick') { const u = a.t / 0.75; return u < 0.15 ? T(POSES.tuck) : T(POSES.flykick, { h: 0.75 }); }
@@ -494,6 +608,16 @@ export class Game {
     const n = new THREE.Vector2(-dz / dl, dx / dl);
     if (n.dot(this.camN) < 0) n.negate();
     this.camN.lerp(n, Math.min(1, dt * 2)).normalize();
+    if (this.cine) {
+      // super cinematic: orbit the pair (real time, so it keeps turning through hitstop)
+      const c = this.cine; c.t += dt;
+      const ang = c.a0 + c.t * 1.5 * (c.f.key === 'bat' ? 1 : -1), r = 3.2 + 0.6 * Math.sin(c.t * 2);
+      const cp = new THREE.Vector3(mid.x + Math.sin(ang) * r, 1.3 + 0.4 * Math.sin(c.t * 1.3), mid.z + Math.cos(ang) * r);
+      const k = Math.min(1, dt * 6);
+      this.camPos.lerp(cp, k); this.camLook.lerp(new THREE.Vector3(mid.x, Math.max(1, mid.y), mid.z), k);
+      if (c.t >= c.end || c.t > 6) this.cine = null;
+      return;
+    }
     const dist = 3.4 + sep * 0.8;
     const pos = new THREE.Vector3(mid.x + this.camN.x * dist, Math.max(1.4, mid.y * 0.6 + 0.9 + sep * 0.12), mid.z + this.camN.y * dist);
     mid.y = Math.max(1.0, mid.y);
