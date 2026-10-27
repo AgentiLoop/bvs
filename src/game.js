@@ -213,6 +213,10 @@ const BREAK = { cost: 50, hits: 2, inv: 0.4, kb: 7, stun: 0.6, pose: 0.3, cpu: 0
 // MK/SF wake-up options while lying after a knockdown (down in (0.3, open]): hold away = back roll (`dist` m over `roll` s,
 // still invulnerable, ends on one knee for `kneel` s); jump = quick rise (straight to the kneel for `quick` s).
 // cpu: chances of [roll, quick rise], else a normal (delayed) get-up.
+// SF2 dizzy: clean hits fill a hidden stun gauge (damage, x1.5 on counters); it drains `decay`/s once `idle` s pass without
+// a clean hit. Full (`max`) = DIZZY: once he is back on his feet he stands helpless, stars round his head, for `time` s
+// (each button mashed takes `mash` s off). The next clean hit wakes him; the gauge then starts again from empty.
+const DIZZY = { max: 50, decay: 9, idle: 1.4, time: 2.2, mash: 0.1, cpuMash: 0.35, stars: 0.07, col: 0xffe14a };
 const WAKE = { open: 0.8, dist: 2.2, roll: 0.45, kneel: 0.15, quick: 0.2, cpu: [0.35, 0.35] };
 // MK / Tekken 3D sidestep: double-tap into or out of the screen = a quick step round the foe (`ang` rad of arc over `dur` s,
 // the camera swings round with the pair). Straight strikes (moves without `track`) whiff inside the `evade` window and
@@ -319,7 +323,7 @@ export class Game {
     this.round = 1; this.wins = { bat: 0, sup: 0 }; this.clock = ROUND_TIME; this.fightT = 0; this.matchOver = false; this.winner = null;
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
       ko: false, cd: 0, down: 0, meter: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
-      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, lastLat: 0, lastLatT: -1, latS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, brk: 0, rollA: null, blowUsed: false, blowSaid: false, krush: {}, scars: [], wear: 0, gcd: 0,
+      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, lastLat: 0, lastLatT: -1, latS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, brk: 0, rollA: null, blowUsed: false, blowSaid: false, krush: {}, scars: [], wear: 0, gcd: 0, stunG: 0, dizzy: 0, dizzyP: false, hitT: -9,
       ai: { t: 0, mx: 0, mz: 0, block: 0, crouch: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0, hx: 0, hy: 0, wince: 0, blinkT: 2, fx: { eye: 1, ang: 0.3, pain: 0, mouth: 0 }, squash: 0, gph: 0, gdx: 0, gdz: 1, gpx: null, gpz: null });
     this.F = { bat: mk(bat, 'bat', -7.4, Math.PI / 2), sup: mk(sup, 'sup', 2.2, -Math.PI / 2) };
     this.F.sup.y = 26; this.F.sup.cur = T(POSES.fly, { pitch: 0.35 });
@@ -412,7 +416,7 @@ export class Game {
   }
 
   // ---------- moves ----------
-  free(f) { return !f.act && f.stun <= 0 && !f.ko && f.y <= 0.001 && f.down <= 0 && !f.launched; }
+  free(f) { return !f.act && !(f.dizzy > 0) && f.stun <= 0 && !f.ko && f.y <= 0.001 && f.down <= 0 && !f.launched; }
   // SF special cancel (see CANCEL): mid-normal that already connected, still grounded and in control.
   cancelable(f) {
     const a = f.act, M = a && MOVES[a.type];
@@ -429,6 +433,7 @@ export class Game {
   }
   press(f, btn, mod = false) {
     if (this.state !== 'fight' || f.ko || f.dazed) return;
+    if (f.dizzy > 0) { f.dizzy -= DIZZY.mash; return; } // mash out of the dizzy
     if (btn === 'S') return this.canFatal(f) ? this.fatality(f) : mod && f.meter >= 100 ? this.superMove(f) : this.special(f);
     if (btn === 'A') return f.down > 0 ? this.wake(f, 'quick') : this.jump(f, f.inX, f.inZ);
     // dragon punch (toward, then crouch + toward + punch) = rising uppercut; quarter circle forward + punch = projectile
@@ -1036,7 +1041,7 @@ export class Game {
   // SF3 parry: a fresh tap toward (crouch for lows) inside PARRY.win before the blow lands, standing on the ground and
   // not attacking, stunned or held. The CPU parries a share of the hits it is idle for.
   canParry(def, M) {
-    if (this.state !== 'fight' || !PARRYABLE.has(M) || def.act || def.stun > 0 || def.y > 0.001 || def.heldBy || def.dazed || def.launched) return false;
+    if (this.state !== 'fight' || !PARRYABLE.has(M) || def.act || def.stun > 0 || def.y > 0.001 || def.heldBy || def.dazed || def.dizzy > 0 || def.launched) return false;
     if (def === this.cpu) return this.ctx.rng() < PARRY.cpu;
     return this.fightT - (M.low ? def.parL : def.parT) < PARRY.win;
   }
@@ -1076,6 +1081,31 @@ export class Game {
     return k && COUNTER[k];
   }
 
+  // SF2 stun gauge (see DIZZY): a clean hit wakes a dizzy fighter, otherwise fills the gauge; full = dizzy pending.
+  dizzyHit(def, dmg, CK) {
+    def.hitT = this.fightT;
+    if (def.dizzy > 0) { def.dizzy = 0; def.stunG = 0; return; }
+    if (def.dizzyP || def.hp <= 0 || this.finish) return;
+    def.stunG += dmg * (CK ? 1.5 : 1);
+    if (def.stunG >= DIZZY.max) def.dizzyP = true;
+  }
+  // Per step: drain the gauge, turn a pending dizzy on once he is back on his feet, count it down, spin the stars.
+  dizzyStep(f, dt) {
+    if (f.ko || f.dazed || this.finish) { f.dizzy = 0; f.dizzyP = false; return; }
+    if (!f.dizzyP && !(f.dizzy > 0) && this.fightT - f.hitT > DIZZY.idle) f.stunG = Math.max(0, f.stunG - DIZZY.decay * dt);
+    if (f.dizzyP && f.stun <= 0 && f.down <= 0 && !f.launched && !f.heldBy && f.y <= 0.001 && !f.rollA) {
+      f.dizzyP = false; f.dizzy = DIZZY.time; f.stunG = 0; f.act = null; f.buf = null; f.block = f.crouch = false;
+      f.dizzyN = (f.dizzyN || 0) + 1; this.showCombo('DIZZY!', f.key === 'bat' ? 'sup' : 'bat');
+    }
+    if (!(f.dizzy > 0)) return;
+    f.dizzy -= dt;
+    f.starT = (f.starT || 0) - dt;
+    if (f.starT <= 0) { // three stars orbiting above the head
+      f.starT = DIZZY.stars;
+      const h = f.H.head.getWorldPosition(new THREE.Vector3()), a0 = this.t * 6;
+      for (let i = 0; i < 3; i++) { const a = a0 + i * 2.094; this.ctx.fx.sparkBurst(h.x + Math.cos(a) * 0.32, h.y + 0.3, h.z + Math.sin(a) * 0.32, 1, 0.15, DIZZY.col); }
+    }
+  }
   hurt(def, att, M, at, trade = false) {
     const { fx } = this.ctx;
     if (def.ko || def.down > 0 || def.brk > 0) return;
@@ -1134,6 +1164,7 @@ export class Game {
     if (M.heavy || att.hits >= 3) this.camKick(at, M.heavy ? 1 : 0.5, M.at === 'lh' ? -1 : 1);
     if (mine) this.rumble(M.heavy ? 0.9 : 0.45, M.heavy ? 220 : 110);
     def.hp = Math.max(0, def.hp - dmg);
+    this.dizzyHit(def, dmg, CK);
     this.scar(def, att, M, dmg, at);
     if (!(att.act && (att.act.type === 'super' || att.act.type === 'blow'))) { att.meter = Math.min(100, att.meter + dmg * 1.4); def.meter = Math.min(100, def.meter + dmg * 0.8); }
     this.updateBars();
@@ -1255,7 +1286,7 @@ export class Game {
   nextRound() {
     this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.xray = null; this.winner = null; this.koCam = null; this.kick = null; this.finish = null; this.shots = []; this.grap = null; this.orb = null; this.orbT = ORB.first; this.resetProps();
     for (const [f, x] of [[this.F.bat, -2.2], [this.F.sup, 2.2]]) {
-      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, dazed: false, downT: -9, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, frz: 0, brk: 0, rollA: null, gcd: 0, wince: 0, cur: T(POSES.guard) });
+      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, dazed: false, downT: -9, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, frz: 0, brk: 0, rollA: null, gcd: 0, wince: 0, stunG: 0, dizzy: 0, dizzyP: false, hitT: -9, cur: T(POSES.guard) });
       f.yaw = x < 0 ? Math.PI / 2 : -Math.PI / 2;
     }
     this.ctx.batCape.reset(); this.ctx.supCape.reset();
@@ -1280,6 +1311,7 @@ export class Game {
     } else {
       for (const f of [this.me, this.cpu]) { f.cd = Math.max(0, f.cd - sdt); f.gcd = Math.max(0, f.gcd - sdt); }
       if (this.state === 'fight') {
+        for (const f of [this.me, this.cpu]) this.dizzyStep(f, sdt);
         this.player(sdt); this.ai(sdt);
         this.fightT += sdt;
         if (!this.cine && !this.finish) this.clock = Math.max(0, this.clock - sdt);
@@ -1352,7 +1384,7 @@ export class Game {
 
   player(dt) {
     const f = this.me, K = this.keys, p = this.pad, b = this.padNow;
-    if (f.dazed) { f.block = f.crouch = false; f.moving = 0; return; }
+    if (f.dazed || f.dizzy > 0) { f.block = f.crouch = false; f.moving = 0; return; }
     let ix = (K.has('d') || K.has('arrowright') || b[15] ? 1 : 0) - (K.has('a') || K.has('arrowleft') || b[14] ? 1 : 0);
     let iy = (K.has('w') || K.has('arrowup') || b[12] ? 1 : 0) - (K.has('s') || K.has('arrowdown') || b[13] ? 1 : 0);
     if (p && p.axes.length >= 2 && Math.hypot(p.axes[0], p.axes[1]) > 0.25) { ix += p.axes[0]; iy -= p.axes[1]; }
@@ -1394,6 +1426,7 @@ export class Game {
     const d = Math.hypot(o.x - f.x, o.z - f.z), tx = (o.x - f.x) / (d || 1), tz = (o.z - f.z) / (d || 1);
     A.t -= dt; A.block -= dt; A.crouch -= dt;
     if (f.dazed) { f.block = f.crouch = false; f.moving = 0; return; }
+    if (f.dizzy > 0) { f.block = f.crouch = false; f.moving = 0; f.dizzy -= DIZZY.cpuMash * dt; return; } // CPU mashes out
     if (this.finish && this.finish.att === f) {
       // CPU closes in and usually performs its fatality after a beat, otherwise just knocks him out
       f.block = f.crouch = false;
@@ -1726,7 +1759,7 @@ export class Game {
     if (f.launched && f.y > 0.05) return T(MP.air, { pitch: -0.5 });
     const a = f.act;
     // dazed at 0 HP: guard dropped, swaying on loose knees
-    if (f.dazed && !a && f.stun <= 0) {
+    if ((f.dazed || f.dizzy > 0) && !a && f.stun <= 0) {
       const t = this.t;
       return T(G, { h: G.h - 0.08, lean: 0.3 + Math.sin(t * 1.9) * 0.08, roll: Math.sin(t * 1.3) * 0.14, tw: Math.sin(t * 0.9) * 0.2,
         lh: [0.26, 0.12 + Math.sin(t * 2.1) * 0.04, 0.12], rh: [-0.26, 0.1, 0.14] });
@@ -1808,10 +1841,10 @@ export class Game {
     if (f.blinkT < -EXPR.blink) f.blinkT = 1.8 + 3.2 * ((Math.sin(this.t * 91.7 + (f.key === 'bat' ? 1 : 7)) * 43758.5) % 1 + 1) % 1;
     const blink = f.blinkT < 0 && f.H.face?.blinks && a?.type !== 'heat' ? Math.sin(-f.blinkT / EXPR.blink * Math.PI) : 0;
     const eff = !a ? 0 : EXPR.effort[a.type] ?? (MOVES[a.type] ? (MOVES[a.type].heavy ? 0.8 : 0.35) : 0);
-    const pain = Math.max(f.wince, f.dazed ? 0.6 : 0, f.down > 0 ? 0.45 : 0);
+    const pain = Math.max(f.wince, f.dazed || f.dizzy > 0 ? 0.6 : 0, f.down > 0 ? 0.45 : 0);
     const pant = tired * 0.45 * Math.max(0, this.breath(f)) / (1 + tired * 1.5);
     const tg = f.ko ? { eye: 0, ang: 0, pain: 0.2, mouth: 0.35 }
-      : { eye: 1 - 0.8 * pain - 0.25 * eff - (f.dazed ? 0.35 : 0), ang: clamp(0.3 + 0.6 * eff + (f.rage > 0 ? 0.5 : 0) - 0.9 * pain, 0, 1),
+      : { eye: 1 - 0.8 * pain - 0.25 * eff - (f.dazed || f.dizzy > 0 ? 0.35 : 0), ang: clamp(0.3 + 0.6 * eff + (f.rage > 0 ? 0.5 : 0) - 0.9 * pain, 0, 1),
         pain, mouth: Math.max(eff >= 0.5 ? eff * 0.8 : eff * 0.4, pain * 0.75, pant) };
     const k = dt ? 1 - Math.exp(-dt * EXPR.k) : 1;
     for (const n in tg) x[n] += (tg[n] - x[n]) * k;
