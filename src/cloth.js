@@ -94,6 +94,7 @@ export class Cape {
       _v.copy(c); this.hero.chest.localToWorld(_v);
       this.pos.set([_v.x, _v.y, _v.z], k * 3); this.prev.set([_v.x, _v.y, _v.z], k * 3);
     });
+    this.anchor = null;
     this.updateMesh();
   }
 
@@ -106,6 +107,16 @@ export class Cape {
     // it. Also collide against the torso's real elliptical cross-section in the bone frame that drives it.
     const sec = this.hero.torsoSection;
     if (sec) this.prepSection();
+    // Carry the cloth along with most of the body's motion (local-frame simulation). Superman's 20 m/s
+    // dive and sudden stop used to whip his cape over his head, where it stayed draped on his chest for 11 s.
+    this.hero.chest.getWorldPosition(_a);
+    if (this.anchor) {
+      _b.subVectors(_a, this.anchor).multiplyScalar(0.9);
+      for (let o = cols * 3; o < n * 3; o += 3) {
+        P[o] += _b.x; P[o + 1] += _b.y; P[o + 2] += _b.z; Q[o] += _b.x; Q[o + 1] += _b.y; Q[o + 2] += _b.z;
+      }
+    } else this.anchor = new THREE.Vector3();
+    this.anchor.copy(_a);
     const dt2 = dt * dt, damp = 0.982;
     for (let k = 0; k < n; k++) {
       const o = k * 3;
