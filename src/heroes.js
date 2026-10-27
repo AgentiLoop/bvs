@@ -381,8 +381,20 @@ export function makeHero(kind) {
   for (const m of inked) {
     const g = m.geometry;
     if (!g.boundingSphere) g.computeBoundingSphere();
-    if (!g.attributes.normal || g.boundingSphere.radius * Math.max(...m.scale.toArray()) < 0.05) continue;
-    const o = m.isSkinnedMesh ? new THREE.SkinnedMesh(g, ink) : new THREE.Mesh(g, ink);
+    if (!g.attributes.normal || g.type === 'PlaneGeometry' || g.boundingSphere.radius * Math.max(...m.scale.toArray()) < 0.05) continue;
+    // Average normals over coincident vertices (UV seams, poles) so the pushed-out hull stays closed
+    // instead of tearing open into cracks along seams.
+    const og = g.clone(), P = og.attributes.position, N = og.attributes.normal, acc = new Map();
+    const key = i => `${Math.round(P.getX(i) * 1e4)},${Math.round(P.getY(i) * 1e4)},${Math.round(P.getZ(i) * 1e4)}`;
+    for (let i = 0; i < P.count; i++) {
+      const k = key(i), v = acc.get(k) || acc.set(k, new THREE.Vector3()).get(k);
+      v.x += N.getX(i); v.y += N.getY(i); v.z += N.getZ(i);
+    }
+    for (let i = 0; i < P.count; i++) {
+      const v = acc.get(key(i)); if (v.lengthSq() < 1e-12) continue;
+      const u = v.clone().normalize(); N.setXYZ(i, u.x, u.y, u.z);
+    }
+    const o = m.isSkinnedMesh ? new THREE.SkinnedMesh(og, ink) : new THREE.Mesh(og, ink);
     o.frustumCulled = false;
     if (m.isSkinnedMesh) { root.add(o); o.bind(m.skeleton, m.bindMatrix); }
     else { o.position.copy(m.position); o.quaternion.copy(m.quaternion); o.scale.copy(m.scale); m.parent.add(o); }
