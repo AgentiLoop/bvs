@@ -523,8 +523,21 @@ function solveIK(upper, lower, L1, L2, target, pole) {
 const SOLE = 0.076;
 const BOOT_CORNERS = [[0, -0.074, -0.058], [0, -0.074, 0.178], [0.042, -0.074, 0.06], [-0.042, -0.074, 0.06], [0, 0.021, 0.178], [0, 0.021, -0.058]]
   .map(p => new THREE.Vector3(...p));
+// Contact radii of the joints that touch the roof in kneels, landings and lying poses.
+const CONTACT = [['legs', 'kn', 0.062], ['arms', 'el', 0.055], ['arms', 'hand', 0.07]];
 export function applyPose(H, s, t, ground = 0) {
-  H.root.position.set(s.p[0], s.p[1], s.p[2]);
+  posePass(H, s, t, ground, 0);
+  // Knees, elbows and fists used to go up to 5 cm through the roof (Superman's landing kneel, Batman lying
+  // down). Lift the body by the deepest contact deficit and re-solve with the feet held where they were.
+  let deficit = 0;
+  for (const [group, j, r] of CONTACT) for (const side of ['L', 'R']) {
+    H[group][side][j].getWorldPosition(_P);
+    if (_P.y > ground - 0.6) deficit = Math.max(deficit, ground + r - _P.y);
+  }
+  if (deficit > 0.002) posePass(H, s, t, ground, deficit);
+}
+function posePass(H, s, t, ground, raise) {
+  H.root.position.set(s.p[0], s.p[1] + raise, s.p[2]);
   H.root.rotation.set(s.pitch, s.yaw, s.roll, 'YXZ');
   H.spine.rotation.set(s.lean * 0.45, 0, s.roll * 0.3);
   H.chest.rotation.set(s.lean * 0.55 + Math.sin(t * 2.1) * 0.012, 0, 0);
@@ -539,6 +552,7 @@ export function applyPose(H, s, t, ground = 0) {
   for (const [side, tg, , , dz] of limbs) {
     const a = H.arms[side];
     _T.set(tg[0], tg[1], tg[2] + dz); H.root.localToWorld(_T);
+    if (_T.y > ground - 0.6) _T.y = Math.max(_T.y, ground + 0.07); // fists rest on the roof, not in it
     _P.set(a.s * 0.5, 0.2, -0.6); H.root.localToWorld(_P);
     solveIK(a.sh, a.el, 0.32, 0.30, _T, _P);
   }
@@ -546,6 +560,7 @@ export function applyPose(H, s, t, ground = 0) {
   for (const [side, tg, lift, dz] of [['L', s.lf, Math.max(0, cw), sw], ['R', s.rf, Math.max(0, -cw), -sw]]) {
     const l = H.legs[side];
     _T.set(tg[0], tg[1] + lift * 0.18 * g, tg[2] + dz * 0.32 * g); H.root.localToWorld(_T);
+    _T.y -= raise; // body-lift pass: feet stay planted where the first pass put them
     // Keep the boot sole on top of the roof (ankle sits 7.4 cm above the sole) instead of sinking into it;
     // targets far below (falling off the roof) are left alone.
     if (_T.y < ground + SOLE && _T.y > ground - 0.6) _T.y = ground + SOLE;
