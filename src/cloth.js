@@ -64,9 +64,17 @@ export class Cape {
       index.push(a, c, b, b, c, d);
     }
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    // Ink outline on the free edges (sides + hem, not the neck): the outermost render row/column is
+    // near-black, matching the inked body hulls without any extra geometry that could tear.
+    const col = [];
+    for (let j = 0; j < RR; j++) for (let i = 0; i < RC; i++) {
+      const e = j === RR - 1 || i === 0 || i === RC - 1 ? 0.06 : 1;
+      col.push(e, e, e);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     geo.setIndex(index);
     this.geo = geo;
-    this.mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 0.8, side: THREE.DoubleSide }));
+    this.mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 0.8, side: THREE.DoubleSide, vertexColors: true }));
     this.mesh.castShadow = true; this.mesh.receiveShadow = true; this.mesh.frustumCulled = false;
   }
 
