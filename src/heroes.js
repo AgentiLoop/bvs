@@ -195,7 +195,18 @@ export function makeHero(kind) {
 
   part(hips, surface([[-0.095, 0.05, 0.05], [-0.06, 0.142, 0.104], [0.015, 0.162, 0.114], [0.085, 0.15, 0.106]], p => p, 32), B ? dark : red);
   part(hips, surface([[0.063, 0.153, 0.108], [0.071, 0.158, 0.113], [0.103, 0.153, 0.11], [0.11, 0.148, 0.105]], p => p, 12), yellow);
-  oval(hips, yellow, [0, 0.087, 0.114], [0.03, 0.024, 0.011]);
+  {
+    // Belt buckle: a flat bevelled rounded-rectangle plate (Superman's gold oval-cornered buckle,
+    // Batman's centre plate) instead of a squashed sphere.
+    const bk = new THREE.Shape(), w = 0.03, h = 0.022, r = 0.009;
+    bk.moveTo(-w + r, -h); bk.lineTo(w - r, -h); bk.quadraticCurveTo(w, -h, w, -h + r); bk.lineTo(w, h - r);
+    bk.quadraticCurveTo(w, h, w - r, h); bk.lineTo(-w + r, h); bk.quadraticCurveTo(-w, h, -w, h - r);
+    bk.lineTo(-w, -h + r); bk.quadraticCurveTo(-w, -h, -w + r, -h);
+    const buckleGeo = new THREE.ExtrudeGeometry(bk, { depth: 0.004, bevelEnabled: true, bevelThickness: 0.003,
+      bevelSize: 0.003, bevelSegments: 3, curveSegments: 6 });
+    buckleGeo.center();
+    part(hips, buckleGeo, yellow, [0, 0.087, 0.117]);
+  }
   if (B) {
     // Utility-belt pouches: bevelled capsule-cornered boxes sitting flush on the belt, instead of blobs.
     const pr = new THREE.Shape(), w = 0.021, h = 0.025, r = 0.008;
