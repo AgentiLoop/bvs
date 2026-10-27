@@ -118,10 +118,11 @@ export const BAT = buildTrack([
 ]);
 
 export const SUP = buildTrack([
-  { t: 0, pose: 'fly', p: [3.5, 40, -2], yaw: SY },
-  { t: 2.6, pose: 'fly', p: [3.5, 40, -2] },
-  { t: 4.3, pose: 'fly', p: [2.6, 5, -0.2], e: 'in' },
-  { t: 5.0, pose: 'land', g: [2.5, 0, 0], e: 'in' },
+  { t: 0, pose: 'fly', p: [3.5, 40, -2], yaw: SY, pitch: 0.5, rh: [-0.12, 0.6, 0.45] },
+  { t: 2.6, pose: 'fly', p: [3.5, 40, -2], pitch: 0.5, rh: [-0.12, 0.6, 0.45] },
+  // Dives in chest-first with a fist leading, then swings feet-down for the landing.
+  { t: 4.3, pose: 'fly', p: [2.6, 5, -0.2], pitch: 0.35, rh: [-0.12, 0.6, 0.45], e: 'in' },
+  { t: 5.0, pose: 'land', g: [2.5, 0, 0], pitch: 0, e: 'in' },
   { t: 6.0, pose: 'land', g: [2.5, 0, 0] },
   { t: 6.8, pose: 'heroic', g: [2.5, 0, 0] },
   { t: 7.5, pose: 'heroic', g: [2.4, 0, 0] },
