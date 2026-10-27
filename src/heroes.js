@@ -308,31 +308,34 @@ export function makeHero(kind) {
     const th = joint(hips, [s * 0.1, -0.04, 0]);
     const kn = joint(th, [0, -0.46, 0]);
     const an = joint(kn, [0, -0.46, 0]);
-    const legRows = [[-0.94, 0.045, 0.045], [-0.85, 0.05, 0.05], [-0.73, 0.076, 0.072],
-      [-0.62, 0.088, 0.085], [-0.54, 0.068, 0.066], [-0.46, 0.06, 0.062],
-      [-0.37, 0.084, 0.082], [-0.25, 0.108, 0.1], [-0.12, 0.118, 0.108],
-      [-0.025, 0.108, 0.104], [0.06, 0.066, 0.07], [0.09, 0.001, 0.001]];
+    // Athletic leg: thick thigh tapering hard into a narrow knee, a high calf peak set to the back,
+    // and a slim ankle. The [y, rx, rz, zOffset] offset pushes the calf behind the shin.
+    const legRows = [[-0.94, 0.033, 0.036, 0.004], [-0.87, 0.036, 0.04, 0.0], [-0.78, 0.05, 0.056, -0.01],
+      [-0.68, 0.063, 0.068, -0.016], [-0.59, 0.06, 0.06, -0.01], [-0.5, 0.05, 0.05, 0.002],
+      [-0.44, 0.054, 0.056, 0.006], [-0.34, 0.074, 0.078, 0.006], [-0.2, 0.092, 0.094, 0.002],
+      [-0.06, 0.102, 0.1, 0], [0.04, 0.09, 0.09, 0], [0.09, 0.001, 0.001, 0]];
     const legGeo = surface(legRows, (p, a) => {
-      p.x += s * 0.01 * bump(p.y, -0.2, 0.15);
-      p.z += 0.018 * bump(p.y, -0.29, 0.12) * Math.max(0, Math.cos(a)); // quad sweep
-      p.x -= s * 0.012 * bump(p.y, -0.4, 0.05) * Math.max(0, Math.cos(a)); // teardrop vastus
-      p.z -= 0.017 * bump(p.y, -0.65, 0.09);
+      p.x += s * 0.008 * bump(p.y, -0.2, 0.15);
+      p.z += 0.014 * bump(p.y, -0.27, 0.1) * Math.max(0, Math.cos(a)); // quad sweep
+      p.x -= s * 0.01 * bump(p.y, -0.42, 0.04) * Math.max(0, Math.cos(a)); // teardrop vastus
+      p.z += 0.005 * bump(p.y, -0.49, 0.02) * Math.max(0, Math.cos(a)) ** 4; // kneecap
       return p;
-    }, 96, 40);
+    }, 112, 40);
     legGeo.clearGroups();
-    const bootRing = Math.floor((-0.61 + 0.94) / 1.04 * 96);
+    const bootRing = Math.floor((-0.6 + 0.94) / 1.03 * 112);
     legGeo.addGroup(0, bootRing * 40 * 6, 1);
-    legGeo.addGroup(bootRing * 40 * 6, (96 - bootRing) * 40 * 6, 0);
+    legGeo.addGroup(bootRing * 40 * 6, (112 - bootRing) * 40 * 6, 0);
     skinSurface(th, legGeo, [suit, boot], p => {
       const lower = 1 - blend(-0.52, -0.40, p.y), pelvis = blend(-0.015, 0.10, p.y) * 0.7;
       return [[kn, lower], [th, (1 - lower) * (1 - pelvis)], [hips, (1 - lower) * pelvis]];
     });
-    const footGeo = new THREE.SphereGeometry(1, 40, 24);
-    const fp = footGeo.attributes.position;
-    for (let i = 0; i < fp.count; i++) {
-      const x = fp.getX(i), y = fp.getY(i), z = fp.getZ(i);
-      fp.setXYZ(i, x * (0.057 + 0.007 * z), Math.max(-0.071, y * 0.055 - 0.025), z * 0.126 + 0.06);
-    }
+    // Boot foot: heel, high instep and a tapered toe on a flat sole, built along its length
+    // ([length, halfWidth, halfHeight, -centreY]) and turned to point forward.
+    const footGeo = surface([[-0.058, 0.001, 0.001, 0.04], [-0.05, 0.03, 0.03, 0.04], [-0.03, 0.038, 0.042, 0.03],
+      [0.0, 0.04, 0.046, 0.026], [0.04, 0.042, 0.036, 0.04], [0.09, 0.041, 0.024, 0.052],
+      [0.135, 0.033, 0.017, 0.058], [0.165, 0.019, 0.012, 0.061], [0.178, 0.001, 0.001, 0.063]],
+    p => { p.z = Math.min(p.z, 0.074); return p; }, 48, 32);
+    footGeo.rotateX(Math.PI / 2);
     footGeo.computeVertexNormals(); part(an, footGeo, boot);
     legs[side] = { th, kn, an, s };
   }
