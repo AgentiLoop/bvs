@@ -1,0 +1,14 @@
+.git
+.gitignore
+.assetsignore
+.agent
+.wrangler
+.DS_Store
+node_modules
+deploy
+models/_test
+README.md
+models/README.md
+package.json
+package-lock.json
+serve.sh

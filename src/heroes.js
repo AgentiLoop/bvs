@@ -5,10 +5,13 @@ const DOWN = new THREE.Vector3(0, -1, 0);
 
 // Cool rim light (Fresnel) so the heroes' silhouettes pop off the night scene like comic-book art,
 // which also keeps Batman's dark suit and cowl readable.
+// rimAmt is set to 0 by main.js in comic mode, where the light rim reads as a glowing halo inside the ink line.
+export const rimAmt = { value: 1 };
 const rim = (m) => {
   m.onBeforeCompile = (sh) => {
-    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>',
-      '#include <lights_fragment_end>\n  reflectedLight.directSpecular += vec3(0.22, 0.28, 0.4) * pow(1.0 - saturate(abs(dot(normal, normalize(vViewPosition)))), 3.0);');
+    sh.uniforms.rimAmt = rimAmt;
+    sh.fragmentShader = 'uniform float rimAmt;\n' + sh.fragmentShader.replace('#include <lights_fragment_end>',
+      '#include <lights_fragment_end>\n  reflectedLight.directSpecular += rimAmt * vec3(0.22, 0.28, 0.4) * pow(1.0 - saturate(abs(dot(normal, normalize(vViewPosition)))), 3.0);');
   };
   m.customProgramCacheKey = () => 'hero-rim';
   return m;

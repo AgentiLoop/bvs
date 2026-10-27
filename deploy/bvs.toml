@@ -1,0 +1,9 @@
+# The animation: the repo root served as-is (no build step), like ct.gokart.games.
+name = "bvs"
+compatibility_date = "2026-09-01"
+workers_dev = true
+routes = [
+  { pattern = "bvs.agentiloop.ai", custom_domain = true },
+]
+[assets]
+directory = ".."

@@ -1,7 +1,7 @@
 // Batman v Superman — real-time three.js, every pixel from code. No video encoder: the browser IS the renderer.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { makeHero, applyPose } from './heroes.js';
+import { makeHero, applyPose, rimAmt } from './heroes.js';
 import { Cape } from './cloth.js';
 import { Debris, Particles, Shockwaves, Decals } from './fx.js';
 import { buildWorld, groundAt } from './world.js';
@@ -13,8 +13,8 @@ const qs = new URLSearchParams(location.search);
 const SEED = +(qs.get('seed') || 1337);
 const DT = 1 / 60;
 const LOOP_END = 21.5; // real seconds
-let pixelMode = qs.get('pixel') === '1';
-let PIX = +(qs.get('px') || 4);
+let pixelMode = qs.get('pixel') === '1', comicMode = !qs.has('pixel') || qs.get('pixel') === '2'; // comic by default; ?pixel=0 normal. P cycles: normal → pixel-art → comic → normal
+let PIX = +(qs.get('px') || 4), CPIX = 1; // pixel size for pixel-art / comic modes (- / + keys)
 let paused = false, freeCam = false;
 
 // ---------- renderer ----------
@@ -53,34 +53,31 @@ const post = new THREE.ShaderMaterial({
     void main(){
       vec3 c = grade(vUv);
       if (comic > 0.5) {
-        vec2 px = 1.0 / res, fc = gl_FragCoord.xy;
-        // ink lines: depth discontinuities + colour edges (Sobel on luma), drawn ~2px thick
+        vec2 px = 1.6 / res, fc = gl_FragCoord.xy;
+        // ink lines: silhouettes from depth + only strong colour edges (Sobel on luma), ~1.6px, soft
         float d0 = lin(vUv), e = 0.0;
         for (int i = 0; i < 4; i++) {
-          vec2 o = (i == 0 ? vec2(2.,0.) : i == 1 ? vec2(-2.,0.) : i == 2 ? vec2(0.,2.) : vec2(0.,-2.)) * px;
-          if (lin(vUv + o) - d0 > 0.04 * d0 + 0.06) e = 1.0;
+          vec2 o = (i == 0 ? vec2(1.,0.) : i == 1 ? vec2(-1.,0.) : i == 2 ? vec2(0.,1.) : vec2(0.,-1.)) * px;
+          e = max(e, smoothstep(0.05 * d0 + 0.08, 0.08 * d0 + 0.2, lin(vUv + o) - d0));
         }
         float l00 = lum(grade(vUv + vec2(-px.x, -px.y))), l10 = lum(grade(vUv + vec2(0., -px.y))), l20 = lum(grade(vUv + vec2(px.x, -px.y)));
         float l01 = lum(grade(vUv + vec2(-px.x, 0.))), l21 = lum(grade(vUv + vec2(px.x, 0.)));
         float l02 = lum(grade(vUv + vec2(-px.x, px.y))), l12 = lum(grade(vUv + vec2(0., px.y))), l22 = lum(grade(vUv + vec2(px.x, px.y)));
         float gx = (l20 + 2.*l21 + l22) - (l00 + 2.*l01 + l02), gy = (l02 + 2.*l12 + l22) - (l00 + 2.*l10 + l20);
-        e = max(e, smoothstep(0.18, 0.35, length(vec2(gx, gy))));
-        // pop-art colour: lift the night, punch saturation, posterize into flat print tones
-        c = pow(c, vec3(0.7)) * 1.25;
+        e = max(e, 0.7 * smoothstep(0.27, 0.5, length(vec2(gx, gy))));
+        // cel shading: keep the scene's hues, gently lift + saturate, then snap brightness into soft bands
+        c = pow(c, vec3(0.82)) * 1.12;
         float L = lum(c);
-        c = clamp(mix(vec3(L), c, 2.2), 0.0, 1.0);
-        c = floor(c * 4.0 + 0.5) / 4.0;
-        // CMYK screens on paper
-        float k = 1.0 - max(c.r, max(c.g, c.b));
-        vec3 cmy = (1.0 - c - k) / max(1.0 - k, 1e-3);
-        float cell = 7.0;
-        vec3 paper = vec3(0.98, 0.95, 0.86), col = paper;
-        col *= 1.0 - dots(fc, 0.2618, cell, cmy.x) * vec3(1.0, 0.25, 0.0);   // cyan 15°
-        col *= 1.0 - dots(fc, 1.3090, cell, cmy.y) * vec3(0.0, 0.9, 0.35);   // magenta 75°
-        col *= 1.0 - dots(fc, 0.0,    cell, cmy.z) * vec3(0.0, 0.05, 0.9);   // yellow 0°
-        col *= 1.0 - dots(fc, 0.7854, cell * 0.8, k * 0.9);                   // key 45°
-        col *= step(0.12, L) * 0.85 + 0.15;                                  // solid black shadows
-        c = mix(col, vec3(0.04, 0.03, 0.05), e);                             // ink outline
+        c = clamp(mix(vec3(L), c, 1.5), 0.0, 1.0);
+        float b = L * 4.0, Lq = (floor(b) + smoothstep(0.38, 0.62, fract(b))) / 4.0;
+        c *= (Lq + 0.04) / (L + 0.04);
+        // Ben-Day dots only in the shadows/midtones, as a light overlay rather than replacing the colour
+        float ink = smoothstep(0.6, 0.08, Lq) * 0.75;
+        c *= 1.0 - 0.42 * dots(fc, 0.7854, 5.0, ink);
+        // paper: faint warm tint + grain, then soft ink outline
+        float grain = fract(sin(dot(floor(fc), vec2(12.9898, 78.233))) * 43758.5453);
+        c = mix(c, c * vec3(1.0, 0.97, 0.9) + 0.03, 0.55) * (0.96 + 0.04 * grain);
+        c = mix(c, vec3(0.05, 0.04, 0.06), e * 0.9);
       } else {
         c *= vec3(0.96, 1.0, 1.07);                     // cool night grade
       }
@@ -104,7 +101,7 @@ postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), post));
 const postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
 function resize() {
-  const s = pixelMode ? PIX : 1;
+  const s = pixelMode ? PIX : comicMode ? CPIX : 1;
   const w = Math.max(1, Math.floor(innerWidth / s)), h = Math.max(1, Math.floor(innerHeight / s));
   renderer.setSize(w, h, false);
   if (rt) rt.dispose();
@@ -114,6 +111,8 @@ function resize() {
   post.uniforms.tDepth.value = rt.depthTexture;
   post.uniforms.res.value.set(w, h);
   post.uniforms.pixel.value = pixelMode ? 1 : 0;
+  post.uniforms.comic.value = comicMode ? 1 : 0;
+  rimAmt.value = comicMode ? 0 : 1;
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
 }
@@ -131,7 +130,7 @@ for (const k of (qs.get('off') || '').split(',')) { // debug: ?off=rain,spot,fog
 const bat = makeHero('batman'), sup = makeHero('superman');
 scene.add(bat.root, sup.root);
 // Clean procedural heroes by default; imported models remain available through explicit URLs.
-document.getElementById('hud').textContent = 'Procedural Batman & Superman · P pixel-art · [ ] pixel size · C free camera · SPACE pause · R restart';
+document.getElementById('hud').textContent = 'Procedural Batman & Superman · P pixel-art / comic · - + pixel size · C free camera · SPACE pause · R restart';
 window.__fan = {};
 const DEFAULT_CAPE = { bat: 'Cube_2', sup: null }; // Batman's cape shares a shell with the cowl, so name it
 const DEFAULT_YAW = { bat: 0, sup: -Math.PI / 2 }; // verified facing for the bundled models (auto-detect is fooled by capes)
@@ -383,9 +382,9 @@ function render() {
 // ---------- input ----------
 addEventListener('keydown', (e) => {
   if (e.code === 'Space') paused = !paused;
-  else if (e.key === 'p' || e.key === 'P') { pixelMode = !pixelMode; resize(); }
-  else if (e.key === '[') { PIX = Math.max(1, PIX - 1); resize(); }
-  else if (e.key === ']') { PIX = Math.min(8, PIX + 1); resize(); }
+  else if (e.key === 'p' || e.key === 'P') { if (pixelMode) { pixelMode = false; comicMode = true; } else if (comicMode) comicMode = false; else pixelMode = true; resize(); }
+  else if (e.key === '-' || e.key === '_') { if (comicMode) CPIX = Math.max(1, CPIX - 1); else PIX = Math.max(1, PIX - 1); resize(); }
+  else if (e.key === '=' || e.key === '+') { if (comicMode) CPIX = Math.min(8, CPIX + 1); else PIX = Math.min(8, PIX + 1); resize(); }
   else if (e.key === 'r' || e.key === 'R') reset();
   else if (e.key === 'c' || e.key === 'C') { freeCam = !freeCam; controls.enabled = freeCam; }
 });
