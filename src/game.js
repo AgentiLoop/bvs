@@ -95,6 +95,7 @@ export class Game {
     this.keys = new Set();
     this.pad = null; this.padNow = []; this.padPrev = [];
     this.camPos = new THREE.Vector3(0, 3, 11); this.camLook = new THREE.Vector3(0, 2, 0); this.camN = new THREE.Vector2(0, 1);
+    this.camOff = new THREE.Vector3(); this.camRoll = 0; // transient hit punch-in / dutch tilt on top of camPos
     this.ui = {
       hud: document.getElementById('game'), banner: document.getElementById('banner'), combo: document.getElementById('combo'),
       bars: { bat: document.querySelector('#hpBat i'), sup: document.querySelector('#hpSup i') },
@@ -106,7 +107,7 @@ export class Game {
   start(choice) {
     const { bat, sup } = this.ctx;
     this.active = true; this.choice = choice; this.t = 0; this.state = 'enter'; this.overT = 0; this.ts = 1; this.landed = false; this.shownWin = false;
-    this.hitstop = 0; this.comboT = 0; this.pending = []; this.cine = null;
+    this.hitstop = 0; this.comboT = 0; this.pending = []; this.cine = null; this.kick = null; this.koCam = null; this.camRoll = 0;
     this.round = 1; this.wins = { bat: 0, sup: 0 }; this.clock = ROUND_TIME; this.fightT = 0; this.matchOver = false; this.winner = null;
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
       ko: false, cd: 0, down: 0, meter: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
@@ -368,6 +369,7 @@ export class Game {
     if (M.heavy) { fx.waves.spawn(at.x, at.y, at.z, 1.6 * size, 0xffffff, 0.5); fx.flash(0.15); }
     if (M.trip) fx.dustBurst(def.x, 0, def.z, 30, 2);
     this.hitstop = Math.max(this.hitstop, M.heavy ? 0.12 : 0.06);
+    if (M.heavy || att.hits >= 3) this.camKick(at, M.heavy ? 1 : 0.5, M.at === 'lh' ? -1 : 1);
     if (mine) this.rumble(M.heavy ? 0.9 : 0.45, M.heavy ? 220 : 110);
     def.hp = Math.max(0, def.hp - dmg);
     if (!(att.act && att.act.type === 'super')) { att.meter = Math.min(100, att.meter + dmg * 1.4); def.meter = Math.min(100, def.meter + dmg * 0.8); }
@@ -377,7 +379,10 @@ export class Game {
     if (def.hp <= 0) {
       def.ko = true; def.act = null; def.launched = true; def.kx *= 1.6; def.kz *= 1.6; def.vy = Math.max(def.vy, 4); def.y = Math.max(def.y, 0.001);
       this.endRound(att, 'K.O.');
-      fx.flash(0.6); fx.impact(at.x, at.y, at.z, 0.6); fx.waves.spawn(at.x, at.y, at.z, 4, 0xffffff, 1);
+      // MK-style KO camera: low slow-motion orbit round the falling body, then the winner's close-up
+      this.cine = null; this.camKick(at, 1.6, M.at === 'lh' ? -1 : 1);
+      this.koCam = { def, att, t: 0, a0: Math.atan2(this.camN.x, this.camN.y), side: att.key === 'bat' ? 1 : -1 };
+      fx.flash(0.6);
       fx.sparkBurst(at.x, at.y, at.z, 120, 7, 0xffffff); fx.blast(at.x, at.y, at.z, 2, 0.9);
       this.hitstop = 0.2;
       if (mine) this.rumble(1, 500);
@@ -425,7 +430,7 @@ export class Game {
     this.say(text, this.matchOver ? '' : winner ? `${winner.key === 'bat' ? 'BATMAN' : 'SUPERMAN'} TAKES ROUND ${this.round}` : 'NO WINNER');
   }
   nextRound() {
-    this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.winner = null;
+    this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.winner = null; this.koCam = null; this.kick = null;
     for (const [f, x] of [[this.F.bat, -2.2], [this.F.sup, 2.2]]) {
       Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, cur: T(POSES.guard) });
       f.yaw = x < 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -780,8 +785,42 @@ export class Game {
     }
   }
 
+  // Heavy hit: the camera lurches toward the impact and tilts with the blow, then settles (s = strength).
+  camKick(at, s, side) { if (!this.kick || s >= this.kick.s * this.env(this.kick.t)) this.kick = { at: at.clone(), t: 0, s, side }; }
+  env(t) { return t < 0.06 ? t / 0.06 : Math.exp(-(t - 0.06) * 5); }
   camera(dt) {
+    this.aim(dt);
+    // punch-in / tilt layered on whatever shot is running (real time, so it plays through hitstop)
+    const K = this.kick;
+    this.camOff.set(0, 0, 0); this.camRoll = 0;
+    if (K) {
+      K.t += dt;
+      const e = this.env(K.t) * K.s;
+      this.camOff.subVectors(K.at, this.camPos).multiplyScalar(0.12 * e);
+      this.camRoll = K.side * 0.035 * e;
+      if (K.t > 1.2) this.kick = null;
+    }
+    const C = this.koCam;
+    if (C && C.t < 1.6) this.camRoll += C.side * 0.07 * Math.sin(Math.PI * C.t / 1.6);
+  }
+  aim(dt) {
     const { bat, sup } = this.F;
+    if (this.koCam) {
+      // KO: low, slow orbit round the falling body during the slow-mo, then a low hero shot of the winner
+      const C = this.koCam, v = C.def, w = C.att; C.t += dt;
+      let cp, lk, k;
+      if (C.t < 1.6) {
+        const ang = C.a0 + C.side * (0.35 + C.t * 0.7), r = 2.6 - C.t * 0.3;
+        cp = new THREE.Vector3(v.x + Math.sin(ang) * r, 0.55 + v.y * 0.5, v.z + Math.cos(ang) * r);
+        lk = new THREE.Vector3(v.x, Math.max(0.5, v.y + 0.6), v.z); k = Math.min(1, dt * 5);
+      } else {
+        const ang = w.yaw + C.side * 0.45;
+        cp = new THREE.Vector3(w.x + Math.sin(ang) * 3, 0.85, w.z + Math.cos(ang) * 3);
+        lk = new THREE.Vector3(w.x, 1.35, w.z); k = Math.min(1, dt * 2.5);
+      }
+      this.camPos.lerp(cp, k); this.camLook.lerp(lk, k);
+      return;
+    }
     const a = new THREE.Vector3(bat.x, bat.y + 1, bat.z), b = new THREE.Vector3(sup.x, sup.y + 1, sup.z);
     const mid = a.clone().lerp(b, 0.5), sep = a.distanceTo(b);
     const dx = sup.x - bat.x, dz = sup.z - bat.z, dl = Math.hypot(dx, dz) || 1;

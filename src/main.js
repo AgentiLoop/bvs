@@ -377,7 +377,7 @@ function updateCamera() {
   if (freeCam) { controls.update(); return; }
   if (qs.get('cam')) { const c = qs.get('cam').split(',').map(Number); camera.position.set(c[0], c[1], c[2]); camera.lookAt(c[3], c[4], c[5]); return; }
   let pos, look;
-  if (game.active) { pos = game.camPos.toArray(); look = game.camLook.toArray(); }
+  if (game.active) { pos = game.camPos.clone().add(game.camOff).toArray(); look = game.camLook.toArray(); }
   else if (simT < SLOWMO) ({ pos, look } = sampleCam(simT, resolveLook));
   else {
     const a = (realT - SLOWMO) * 0.32;
@@ -387,6 +387,7 @@ function updateCamera() {
   const sh = shake * shake * 0.6, t = realT * 60;
   camera.position.set(pos[0] + Math.sin(t * 1.7) * sh, pos[1] + Math.sin(t * 2.3) * sh, pos[2] + Math.cos(t * 1.9) * sh);
   camera.lookAt(look[0], look[1], look[2]);
+  if (game.active && game.camRoll) camera.rotateZ(game.camRoll); // hit / KO dutch tilt
 }
 
 // ---------- visuals per frame ----------
