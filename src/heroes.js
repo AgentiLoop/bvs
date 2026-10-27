@@ -275,6 +275,18 @@ export function makeHero(kind) {
     return p;
   };
   const faceGeo = surface(faceRows, faceSculpt, 72);
+  // Front-surface depth of the sculpted face at (x, y): facial features are seated on it rather than
+  // placed at fixed depths that leave them floating in front of (or buried in) the face.
+  const fp = faceGeo.attributes.position;
+  const faceZ = (x, y) => {
+    let z = -1, r = 0.004;
+    while (z < 0 && r < 0.02) {
+      for (let i = 0; i < fp.count; i++) if (Math.hypot(fp.getX(i) - x, fp.getY(i) - y) < r) z = Math.max(z, fp.getZ(i));
+      r *= 1.6;
+    }
+    return z;
+  };
+  const onFace = (lift) => ([x, y]) => [x, y, faceZ(x, y) + lift];
   if (B) {
     // Color the exposed jaw on the cowl surface; there is no overlapping mouth patch.
     const colors = [], pos = faceGeo.attributes.position;
@@ -301,31 +313,22 @@ export function makeHero(kind) {
     part(head, faceGeo, mat(0xffffff, 0.75, 0, { vertexColors: true }));
     // Spit curl: each control point is dropped onto the sculpted forehead/pompadour surface (it used to
     // float ~1 cm in front of the head after the hair gained volume).
-    const fp = faceGeo.attributes.position;
-    const onSurface = ([x, y]) => {
-      let z = -1, r = 0.004;
-      while (z < 0 && r < 0.02) {
-        for (let i = 0; i < fp.count; i++) if (Math.hypot(fp.getX(i) - x, fp.getY(i) - y) < r) z = Math.max(z, fp.getZ(i));
-        r *= 1.6;
-      }
-      return [x, y, z + 0.0025];
-    };
-    line(head, [[-0.027, 0.21], [0.003, 0.2], [0.017, 0.184], [0.008, 0.169], [-0.002, 0.174]].map(onSurface), 0.004, hair);
+    line(head, [[-0.027, 0.21], [0.003, 0.2], [0.017, 0.184], [0.008, 0.169], [-0.002, 0.174]].map(onFace(0.0025)), 0.004, hair);
     for (const s of [-1, 1]) oval(head, skin, [s * 0.079, 0.126, -0.006], [0.008, 0.024, 0.015]); // ears tucked to the skull
   }
   const eyes = [];
   const brow = B ? dark : mat(0x241c1a, 0.9);
   for (const s of [-1, 1]) {
     eyes.push(oval(head, new THREE.MeshStandardMaterial({ color: B ? 0xe4ecf2 : 0xe1ddd4, roughness: 0.6, emissive: 0 }),
-      [s * 0.034, 0.143, 0.071], [0.018, 0.006, 0.006]));
+      [s * 0.034, 0.143, faceZ(s * 0.034, 0.143) - 0.002], [0.018, 0.006, 0.006])); // seated in the socket
     if (!B) {
-      oval(head, mat(0x416b88), [s * 0.034, 0.143, 0.077], [0.0045, 0.005, 0.002]);
-      oval(head, dark, [s * 0.034, 0.143, 0.079], [0.002, 0.003, 0.001]);
+      oval(head, mat(0x416b88), [s * 0.034, 0.143, faceZ(s * 0.034, 0.143) + 0.0025], [0.0045, 0.005, 0.002]);
+      oval(head, dark, [s * 0.034, 0.143, faceZ(s * 0.034, 0.143) + 0.0042], [0.002, 0.003, 0.001]);
     }
-    line(head, [[s * 0.014, 0.156, 0.076], [s * 0.032, 0.16, 0.076], [s * 0.053, 0.157, 0.067]], B ? 0.006 : 0.005, brow);
+    line(head, [[s * 0.014, 0.156], [s * 0.032, 0.16], [s * 0.053, 0.157]].map(onFace(B ? 0.002 : 0.0015)), B ? 0.006 : 0.005, brow);
   }
   // Closed, firm mouth: a thin line close to the lip colour so it reads as set lips, not an open shout.
-  line(head, [[-0.016, 0.0605, B ? 0.077 : 0.08], [0, 0.0615, B ? 0.08 : 0.0835], [0.016, 0.0605, B ? 0.077 : 0.08]],
+  line(head, [[-0.016, 0.0605], [0, 0.0615], [0.016, 0.0605]].map(onFace(0.0004)),
     B ? 0.0016 : 0.0011, mat(B ? 0x754b43 : 0x9a5f52, 0.9));
 
   const arms = {}, legs = {};
