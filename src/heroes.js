@@ -543,6 +543,7 @@ function solveIK(upper, lower, L1, L2, target, pole) {
 const _C = new THREE.Vector3();
 // Push a world point radially out of the torso's elliptical cross-section (plus margin), measured in the
 // chest's frame so it follows the lean. Returns true if it moved.
+const UPPER_R = 0.06; // clearance for the upper-arm midpoint against the torso
 function pushOutOfTorso(H, w, margin) {
   _C2.copy(w); H.chest.worldToLocal(_C2);
   const y = _C2.y + H.spine.position.y + H.chest.position.y;
@@ -606,6 +607,14 @@ function posePass(H, s, t, ground, raise) {
     if (pushOutOfTorso(H, _C, 0.06)) {
       a.sh.getWorldPosition(_A);
       solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A)); // pole through the pushed elbow
+    }
+    // Upper arm hugging the lats used to sink up to 4 cm into the side of the back (the arm looked thin and
+    // glued into the torso): swing the elbow out until the middle of the upper arm clears the body.
+    for (let it = 0; it < 2; it++) {
+      a.sh.getWorldPosition(_A); a.el.getWorldPosition(_C); _C.lerp(_A, 0.5); _F.copy(_C);
+      if (!pushOutOfTorso(H, _C, UPPER_R)) break;
+      a.el.getWorldPosition(_E); _E.add(_C.sub(_F).multiplyScalar(2));
+      solveIK(a.sh, a.el, 0.32, 0.30, _T, _E.sub(_A).multiplyScalar(4).add(_A));
     }
     // Forearm resting across the chest: if its middle is inside the torso, move the fist out by the same amount.
     for (let it = 0; it < 2; it++) for (const u of [0.35, 0.7]) {
