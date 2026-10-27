@@ -196,7 +196,8 @@ export function makeHero(kind) {
   // Trunks are skinned: the leg openings follow the thighs (weights fade in below the belt), so a
   // lifted thigh carries the trunks with it instead of punching suit-coloured patches through them.
   const arms = {}, legs = {};
-  skinSurface(hips, surface([[-0.095, 0.05, 0.05], [-0.06, 0.142, 0.104], [0.015, 0.162, 0.114], [0.085, 0.15, 0.106]], p => p, 32),
+  const trunkRows = [[-0.095, 0.05, 0.05], [-0.06, 0.175, 0.106], [0.015, 0.168, 0.114], [0.085, 0.15, 0.106]];
+  skinSurface(hips, surface(trunkRows, p => p, 32),
     B ? dark : red, p => {
       const lower = (1 - blend(-0.075, 0.05, p.y)) * 1.0, l = blend(-0.06, 0.06, p.x);
       return [[hips, 1 - lower], [legs.L.th, lower * l], [legs.R.th, lower * (1 - l)]];
@@ -355,6 +356,7 @@ export function makeHero(kind) {
       if (r > 1e-6) { p.x *= dip; p.z *= dip; }
       return p;
     }, 80, 40);
+    armGeo.userData.limb = true;
     armGeo.clearGroups();
     const cuffRing = Math.floor((-0.40 + 0.63) / 0.731 * 80);
     armGeo.addGroup(0, cuffRing * 40 * 6, B ? 1 : 0);
@@ -402,6 +404,9 @@ export function makeHero(kind) {
       [-0.06, 0.102, 0.1, 0], [0.04, 0.09, 0.09, 0], [0.09, 0.001, 0.001, 0]];
     const legGeo = surface(legRows, (p, a) => {
       p.x += s * 0.008 * bump(p.y, -0.2, 0.15);
+      // The outer upper thigh flared 5 cm wider than the hips (legs looked bolted on). Slim it so the
+      // hip line flows down into the thigh, which then tapers to the knee like a comic-book hero's.
+      p.x -= s * 0.03 * bump(p.y, -0.09, 0.15) * Math.max(0, s * Math.sin(a)) ** 1.5;
       p.z += 0.014 * bump(p.y, -0.27, 0.1) * Math.max(0, Math.cos(a)); // quad sweep
       p.x -= s * 0.01 * bump(p.y, -0.42, 0.04) * Math.max(0, Math.cos(a)); // teardrop vastus
       p.z += 0.005 * bump(p.y, -0.49, 0.02) * Math.max(0, Math.cos(a)) ** 4; // kneecap
@@ -413,6 +418,7 @@ export function makeHero(kind) {
       if (!B) p.y -= 0.03 * bump(p.y, -0.6, 0.04) * Math.max(0, Math.cos(a)) ** 3;
       return p;
     }, 112, 40);
+    legGeo.userData.limb = true;
     legGeo.clearGroups();
     const bootRing = Math.floor((-0.6 + 0.94) / 1.03 * 112);
     legGeo.addGroup(0, bootRing * 40 * 6, 1);
@@ -460,7 +466,8 @@ export function makeHero(kind) {
   const ink = new THREE.MeshBasicMaterial({ color: 0x050608, side: THREE.BackSide });
   ink.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader.replace('#include <skinning_vertex>',
-      '#include <skinning_vertex>\n#ifdef USE_SKINNING\n  transformed += normalize(objectNormal) * 0.0055;\n#else\n  transformed += normalize(normal) * 0.0055;\n#endif');
+      '#include <skinning_vertex>\n#ifdef USE_SKINNING\n  transformed += normalize(objectNormal) * 0.0055 * inkW;\n#else\n  transformed += normalize(normal) * 0.0055 * inkW;\n#endif');
+    sh.vertexShader = 'attribute float inkW;\n' + sh.vertexShader;
   };
   ink.customProgramCacheKey = () => 'hero-ink';
   const inked = [];
@@ -481,6 +488,17 @@ export function makeHero(kind) {
       const v = acc.get(key(i)); if (v.lengthSq() < 1e-12) continue;
       const u = v.clone().normalize(); N.setXYZ(i, u.x, u.y, u.z);
     }
+    // Where an arm or leg joins the body, its own outline used to draw a black ring around the joint
+    // (doll-like seams at the shoulders and hips). Fade the limb's ink to zero where it meets the
+    // torso/trunks so deltoids and thighs flow into the body like drawn anatomy.
+    const w = new Float32Array(P.count).fill(1);
+    if (g.userData.limb) for (let i = 0; i < P.count; i++) {
+      const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+      if (y < -0.2 || y > 0.8) continue;
+      const [rx, rz] = y < 0.06 ? contour(trunkRows, y) : contour(torsoRows, y);
+      w[i] = blend(1.02, 1.22, Math.hypot(x / rx, z / rz));
+    }
+    og.setAttribute('inkW', new THREE.BufferAttribute(w, 1));
     const o = m.isSkinnedMesh ? new THREE.SkinnedMesh(og, ink) : new THREE.Mesh(og, ink);
     o.frustumCulled = false;
     if (m.isSkinnedMesh) { root.add(o); o.bind(m.skeleton, m.bindMatrix); }
