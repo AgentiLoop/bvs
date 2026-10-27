@@ -549,7 +549,8 @@ function posePass(H, s, t, ground, raise) {
   H.hips.rotation.set(tilt, 0, 0);
   H.spine.rotation.set(s.lean * 0.6, 0, s.roll * 0.3);
   H.chest.rotation.set(s.lean * 0.75 + Math.sin(t * 2.1) * 0.012, 0, 0);
-  H.head.rotation.set(-s.lean * 0.95 - tilt, 0, 0);
+  // Chin tucked slightly in fighting stances (a glare from under the brow, not a raised chin).
+  H.head.rotation.set(-s.lean * 0.95 - tilt + Math.min(0.5, Math.max(0, s.lean)) * 0.25, 0, 0);
   H.root.updateMatrixWorld(true);
 
   const g = s.gait || 0, ph = t * Math.PI * 2 * 1.7, sw = Math.sin(ph), cw = Math.cos(ph);
