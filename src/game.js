@@ -29,6 +29,7 @@ const MP = {
   airkick: { h: 0.62, lean: -0.3, roll: 0, lh: [0.3, 0.4, -0.1], rh: [-0.25, 0.35, 0.1], lf: [0.14, -0.4, 0.2], rf: [-0.06, -0.3, 0.82] },
   air:     { ...P.hit, h: 0.6 },
   rush:    { ...P.charge, lean: 0.75, gait: 1 },
+  side:    { ...G, h: 0.72, lean: 0.3 },
   backdash:{ ...G, h: 0.8, lean: -0.25, lf: [0.12, -0.7, -0.1], rf: [-0.12, -0.75, 0.15] },
   grab:    { ...G, lean: 0.45, lh: [0.18, 0.62, 0.62], rh: [-0.18, 0.62, 0.62] },
   hipToss: { ...G, h: 0.72, lean: 0.75, tw: 1.1, roll: 0.15, lh: [0.25, 0.95, 0.1], rh: [-0.15, 1.05, 0.25] },
@@ -91,11 +92,11 @@ const REACT = { head: MP.hitHead, body: MP.hitBody, low: MP.hitLow };
 const MOVES = {
   jab:     { hi: true, dur: 0.28, hit: 0.09, cancel: 0.13, reach: 1.25, dmg: 4, kb: 1.2, stun: 0.28, lunge: 1.5, at: 'lh', blast: 0.35, next: { J: 'cross', K: 'front' }, keys: [[0, 'guard'], [0.03, 'jab'], [0.18, 'guard']] },
   cross:   { hi: true, dur: 0.34, hit: 0.11, cancel: 0.16, reach: 1.35, dmg: 6, kb: 1.8, stun: 0.32, lunge: 2.5, at: 'rh', blast: 0.5, next: { J: 'hook', K: 'round' }, keys: [[0, 'windup'], [0.06, 'cross'], [0.24, 'guard']] },
-  hook:    { hi: true, dur: 0.42, hit: 0.15, cancel: 0.21, reach: 1.25, dmg: 8, kb: 2.6, stun: 0.42, lunge: 2, at: 'rh', blast: 0.65, next: { J: 'upper', K: 'round' }, keys: [[0, 'hookUp'], [0.08, 'hook'], [0.3, 'guard']] },
+  hook:    { hi: true, track: true, dur: 0.42, hit: 0.15, cancel: 0.21, reach: 1.25, dmg: 8, kb: 2.6, stun: 0.42, lunge: 2, at: 'rh', blast: 0.65, next: { J: 'upper', K: 'round' }, keys: [[0, 'hookUp'], [0.08, 'hook'], [0.3, 'guard']] },
   upper:   { dur: 0.55, hit: 0.16, reach: 1.2, dmg: 11, kb: 1.6, up: 7, stun: 0.6, lunge: 2.5, at: 'rh', blast: 1, heavy: true, keys: [[0, 'dip'], [0.1, 'upper'], [0.42, 'guard']] },
   front:   { dur: 0.5, hit: 0.2, cancel: 0.27, reach: 1.55, dmg: 9, kb: 3.4, stun: 0.45, lunge: 1.2, at: 'rf', blast: 0.75, next: { K: 'round', J: 'hook' }, keys: [[0, 'chamber'], [0.12, 'front'], [0.38, 'guard']] },
-  round:   { hi: true, dur: 0.62, hit: 0.24, reach: 1.6, dmg: 13, kb: 6.5, up: 2.5, stun: 0.7, lunge: 1.5, at: 'rf', blast: 1.1, heavy: true, keys: [[0, 'roundUp'], [0.14, 'round'], [0.46, 'guard']] },
-  sweep:   { low: true, dur: 0.6, hit: 0.2, reach: 1.6, dmg: 8, kb: 1.5, up: 3.2, stun: 0.6, lunge: 0.8, at: 'rf', blast: 0.6, heavy: true, trip: true, keys: [[0, 'dip'], [0.1, 'sweep'], [0.45, 'guard']] },
+  round:   { hi: true, track: true, dur: 0.62, hit: 0.24, reach: 1.6, dmg: 13, kb: 6.5, up: 2.5, stun: 0.7, lunge: 1.5, at: 'rf', blast: 1.1, heavy: true, keys: [[0, 'roundUp'], [0.14, 'round'], [0.46, 'guard']] },
+  sweep:   { low: true, track: true, dur: 0.6, hit: 0.2, reach: 1.6, dmg: 8, kb: 1.5, up: 3.2, stun: 0.6, lunge: 0.8, at: 'rf', blast: 0.6, heavy: true, trip: true, keys: [[0, 'dip'], [0.1, 'sweep'], [0.45, 'guard']] },
   cjab:    { crouch: true, dur: 0.24, hit: 0.07, cancel: 0.11, reach: 1.15, dmg: 3, kb: 0.8, stun: 0.26, at: 'lh', blast: 0.3, next: { J: 'cjab', K: 'ckick' }, keys: [[0, 'crouch'], [0.02, 'cjab'], [0.15, 'crouch']] },
   ckick:   { crouch: true, low: true, dur: 0.4, hit: 0.12, cancel: 0.2, reach: 1.45, dmg: 5, kb: 1.4, stun: 0.34, at: 'rf', blast: 0.45, next: { K: 'sweep', J: 'cjab' }, keys: [[0, 'ckickUp'], [0.05, 'ckick'], [0.28, 'crouch']] },
   dive:    { air: true, dur: 0.45, hit: 0.12, reach: 1.4, dmg: 9, kb: 3, up: -4, stun: 0.5, at: 'rh', blast: 0.8, heavy: true, keys: [[0, 'tuck'], [0.06, 'dive']] },
@@ -191,6 +192,11 @@ const BREAK = { cost: 50, hits: 2, inv: 0.4, kb: 7, stun: 0.6, pose: 0.3, cpu: 0
 // still invulnerable, ends on one knee for `kneel` s); jump = quick rise (straight to the kneel for `quick` s).
 // cpu: chances of [roll, quick rise], else a normal (delayed) get-up.
 const WAKE = { open: 0.8, dist: 2.2, roll: 0.45, kneel: 0.15, quick: 0.2, cpu: [0.35, 0.35] };
+// MK / Tekken 3D sidestep: double-tap into or out of the screen = a quick step round the foe (`ang` rad of arc over `dur` s,
+// the camera swings round with the pair). Straight strikes (moves without `track`) whiff inside the `evade` window and
+// projectiles fly past; hooks, the roundhouse and the sweep track it. Cancels into attacks after `cancel` s.
+// cpu: chance to sidestep a straight attack it reads.
+const SIDE = { ang: 0.62, dur: 0.36, evade: [0.03, 0.28], cancel: 0.24, cpu: 0.2 };
 // Power-ups: a glowing orb drops into the arena now and then (first at `first` s, then every `every` s if none is out);
 // walk through it to collect. rage: 1.5x damage for `time` s (red aura); meter: +50 super meter; heal: +15 HP.
 const ORB = { first: 8, every: 11, life: 9, y: 1.0, r: 0.75, fall: 1.2 };
@@ -235,7 +241,7 @@ export class Game {
     this.round = 1; this.wins = { bat: 0, sup: 0 }; this.clock = ROUND_TIME; this.fightT = 0; this.matchOver = false; this.winner = null;
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
       ko: false, cd: 0, down: 0, meter: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
-      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, brk: 0, rollA: null, blowUsed: false, blowSaid: false,
+      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, lastLat: 0, lastLatT: -1, latS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, brk: 0, rollA: null, blowUsed: false, blowSaid: false,
       ai: { t: 0, mx: 0, mz: 0, block: 0, crouch: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0, hx: 0, hy: 0, squash: 0 });
     this.F = { bat: mk(bat, 'bat', -7.4, Math.PI / 2), sup: mk(sup, 'sup', 2.2, -Math.PI / 2) };
     this.F.sup.y = 26; this.F.sup.cur = T(POSES.fly, { pitch: 0.35 });
@@ -341,6 +347,7 @@ export class Game {
     if (!f.buf || f.ko) return;
     let a = f.act;
     if (a && a.type === 'dash' && a.dir > 0 && a.t > 0.12) f.act = a = null; // dash cancels into any attack
+    if (a && a.type === 'side' && a.t > SIDE.cancel) f.act = a = null; // so does the end of a sidestep
     const M = a && MOVES[a.type];
     let name = null;
     if (!a) {
@@ -360,6 +367,15 @@ export class Game {
     if (!this.free(f) || f.block || f.crouch) return;
     f.act = { type: 'dash', t: 0, dir, go: false };
   }
+  // 3D sidestep round the foe (s = +1 / -1 = arc direction; +1 steps to the fighter's left).
+  sidestep(f, s) {
+    if (!this.free(f) || f.block || f.crouch) return false;
+    f.act = { type: 'side', t: 0, s, e: 0 };
+    this.ctx.fx.dustBurst(f.x, 0, f.z, 8, 1);
+    return true;
+  }
+  evading(o) { const a = o.act; return !!a && a.type === 'side' && a.t >= SIDE.evade[0] && a.t <= SIDE.evade[1]; }
+  evaded(o) { const { fx } = this.ctx; fx.dustBurst(o.x, 0, o.z, 14, 1.2); this.showCombo('SIDESTEP!', o.key); }
   // Grab attempt; while being held, the same input techs (breaks) the throw inside the tech window.
   throwStart(f) {
     if (this.state !== 'fight' || f.ko || f.dazed) return;
@@ -691,6 +707,7 @@ export class Game {
 
   reaches(f, o, M, d) {
     if (o.ko || o.down > 0) return false;
+    if (!M.track && this.evading(o)) return false; // stepped off the line
     if (M.air) { const dy = f.y - o.y; return d < M.reach && dy > -0.8 && dy < 1.7; } // limb reaches down to a standing head
     if (M.low) return d < M.reach && o.y < 0.15;
     if (M.hi && o.crouch && o.y <= 0.001) return false; // ducked under
@@ -920,7 +937,7 @@ export class Game {
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
     if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN',
-      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
+      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>DOUBLE-TAP UP / DOWN = SIDESTEP · STRAIGHT HITS + PROJECTILES MISS, HOOKS / ROUNDHOUSE / SWEEP TRACK IT<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }
   }
@@ -952,6 +969,12 @@ export class Game {
     if (s === 1 && f.tapS !== 1) { if (tapT > PARRY.lock) f.parT = this.fightT; f.parTap = this.fightT; }
     else if (cTap) { if (tapT > PARRY.lock) f.parL = this.fightT; f.parTap = this.fightT; }
     f.tapS = s; f.tow = tow;
+    // double-tap into / out of the screen (sideways to the fight line) = sidestep
+    const lat = (f.inZ * (f.x - o.x) - f.inX * (f.z - o.z)) / od, ls = lat > 0.6 ? 1 : lat < -0.6 ? -1 : 0;
+    if (ls && ls !== f.latS) {
+      if (ls === f.lastLat && this.fightT - f.lastLatT < DASH.tap) { this.sidestep(f, ls); f.lastLat = 0; } else { f.lastLat = ls; f.lastLatT = this.fightT; }
+    }
+    f.latS = ls;
     if (f.stun > 0 && tow > 0.6 && this.blockHeld()) this.breaker(f);
     if (f.down > 0 && tow < -0.6) this.wake(f, 'roll');
     if (tow > 0.6 && !ch) f.fwdT = this.fightT;
@@ -986,7 +1009,8 @@ export class Game {
       if (s.f === f || s.seen || Math.hypot(s.x - f.x, s.z - f.z) > 4) continue;
       s.seen = true;
       const read = rng() < 0.6;
-      if (s.key === 'bat') { A.crouch = read || rng() < 0.3 ? 0.5 : 0; A.block = A.crouch ? 0 : 0.5; }
+      if (read && rng() < 0.25 && this.sidestep(f, rng() < 0.5 ? 1 : -1)) {} // step out of its path
+      else if (s.key === 'bat') { A.crouch = read || rng() < 0.3 ? 0.5 : 0; A.block = A.crouch ? 0 : 0.5; }
       else if (read && this.free(f) && rng() < 0.5) { this.jump(f, tx, tz); A.air = true; }
       else { A.block = 0.5; A.crouch = read ? 0.5 : 0; }
       A.t = Math.max(A.t, 0.3);
@@ -1000,6 +1024,7 @@ export class Game {
       if (this.canBlow(f) && d < 2.2 && !o.launched && o.down <= 0 && rng() < 0.3) this.blow(f);
       else if (f.meter >= 100 && d < 3.2 && this.free(f) && !o.launched && rng() < 0.35) this.superMove(f);
       else if (threat && d < 1.4 && rng() < 0.08 && this.free(f)) this.rise(f); // reversal through pressure
+      else if (threat && MOVES[o.act.type] && !MOVES[o.act.type].track && !o.act.done && rng() < SIDE.cpu && this.sidestep(f, rng() < 0.5 ? 1 : -1)) {} // step off the line
       else if (threat && rng() < 0.15 && this.free(f)) this.dash(f, -1);
       else if (threat && rng() < 0.4) {
         // read the attack's height (right 75% of the time): lows crouch-blocked, overheads stand-blocked, highs ducked
@@ -1017,6 +1042,7 @@ export class Game {
       else if (o.launched && d < 1.4 && this.free(f)) { A.chain = 1; this.press(f, 'J'); }
       else if (d > 3 && f.cd <= 0 && rng() < 0.3) this.special(f);
       else if (d > 2 && d < 3.6 && rng() < 0.15 && this.free(f)) { this.jump(f, tx, tz); A.air = true; }
+      else if (d > 1.6 && d < 3.5 && rng() < 0.05 && this.sidestep(f, rng() < 0.5 ? 1 : -1)) {} // circle in 3D
       else if (d > 1.15) { A.mx = tx; A.mz = tz; if (rng() < 0.25) { A.mx += -tz * 0.7; A.mz += tx * 0.7; } }
       else if (rng() < 0.75 && this.free(f)) {
         const r = rng(); A.chain = Math.floor(rng() * 3);
@@ -1087,7 +1113,11 @@ export class Game {
         if (M.lunge && a.t < M.hit && d > 0.85) { f.x += Math.sin(f.yaw) * M.lunge * dt; f.z += Math.cos(f.yaw) * M.lunge * dt; }
         // SF jump-ins: air attacks stay active from the hit frame until landing (one hit), so an early button connects on the way down
         if (M.air) { if (!a.done && a.t >= M.hit && this.state === 'fight' && this.reaches(f, o, M, d)) { a.done = true; this.pending.push({ att: f, def: o, M }); } }
-        else if (!a.done && a.t >= M.hit) { a.done = true; if (this.state === 'fight' && this.reaches(f, o, M, d)) this.pending.push({ att: f, def: o, M }); }
+        else if (!a.done && a.t >= M.hit) {
+          a.done = true;
+          if (this.state === 'fight' && this.reaches(f, o, M, d)) this.pending.push({ att: f, def: o, M });
+          else if (this.state === 'fight' && !M.track && this.evading(o) && d < M.reach + 0.6) this.evaded(o);
+        }
         if (a.t >= M.dur && !(M.air && f.y > 0)) f.act = null;
       } else if (a.type === 'super') {
         if (!this.superStep(f, o, a, dt)) f.act = null;
@@ -1095,6 +1125,14 @@ export class Game {
         if (!this.fatalStep(f, o, a)) f.act = null;
       } else if (a.type === 'blow') {
         if (!this.blowStep(f, o, a, dt)) { f.act = null; if (this.heat && a.beam) this.heat = null; }
+      } else if (a.type === 'side') {
+        // arc round the foe: rotate about him by the eased share of the step this frame (fast start, settling)
+        const u = Math.min(1, a.t / SIDE.dur), e = 1 - (1 - u) * (1 - u), th = a.s * SIDE.ang * (e - a.e);
+        a.e = e;
+        const rx = f.x - o.x, rz = f.z - o.z, c = Math.cos(th), sn = Math.sin(th);
+        f.x = o.x + rx * c - rz * sn; f.z = o.z + rx * sn + rz * c;
+        if (this.ctx.rng() < 0.3) fx.dustBurst(f.x, 0, f.z, 2, 0.6);
+        if (a.t >= SIDE.dur) f.act = null;
       } else if (a.type === 'dash') {
         if (!a.go) {
           a.go = true;
@@ -1243,6 +1281,10 @@ export class Game {
       return T(MP[n] || POSES[n]);
     }
     if (a && a.type === 'dash') return a.dir > 0 ? T(MP.rush, { gait: 0 }) : T(MP.backdash);
+    if (a && a.type === 'side') { // leaning into the step, feet trailing, then planting
+      const s = a.s * (1 - a.e * 0.6);
+      return T(MP.side, { roll: -0.22 * s, tw: 0.15 * s, lf: [0.2 - 0.14 * s, -0.68, 0.26], rf: [-0.2 - 0.14 * s, -0.7, -0.26] });
+    }
     if (a && a.type === 'throw') {
       if (!a.grab) return T(a.checked ? MP.whiff : MP.grab);
       let n = null;
