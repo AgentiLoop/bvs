@@ -477,10 +477,17 @@ export function makeHero(kind) {
     const an = joint(kn, [0, -0.46, 0]);
     // Athletic leg: thick thigh tapering hard into a narrow knee, a high calf peak set to the back,
     // and a slim ankle. The [y, rx, rz, zOffset] offset pushes the calf behind the shin.
+    // Hero legs: the mid-thigh and calf get extra mass on top of the athletic base. Superman is
+    // drawn as a powerhouse (full weight), Batman as a leaner athlete (60%). The hip line (trunks)
+    // and the knee / ankle stay as they were so the joints keep reading narrow.
+    const bulk = B ? 0.6 : 1;
     const legRows = [[-0.94, 0.033, 0.036, 0.004], [-0.87, 0.036, 0.04, 0.0], [-0.78, 0.05, 0.056, -0.01],
       [-0.68, 0.063, 0.068, -0.016], [-0.59, 0.06, 0.06, -0.01], [-0.5, 0.05, 0.05, 0.002],
       [-0.44, 0.054, 0.056, 0.006], [-0.34, 0.074, 0.078, 0.006], [-0.2, 0.092, 0.094, 0.002],
-      [-0.06, 0.102, 0.1, 0], [0.04, 0.09, 0.09, 0], [0.09, 0.001, 0.001, 0]];
+      [-0.06, 0.102, 0.1, 0], [0.04, 0.09, 0.09, 0], [0.09, 0.001, 0.001, 0]].map(([y, rx, rz, o]) => {
+      const thigh = 0.012 * bump(y, -0.27, 0.1), calf = 0.008 * bump(y, -0.68, 0.06);
+      return [y, rx + bulk * (thigh + calf), rz + bulk * (thigh + calf * 1.2), o - bulk * calf * 0.6];
+    });
     const legGeo = surface(legRows, (p, a) => {
       p.x += s * 0.008 * bump(p.y, -0.2, 0.15);
       // The outer upper thigh flared 5 cm wider than the hips (legs looked bolted on). Slim it so the
@@ -488,7 +495,13 @@ export function makeHero(kind) {
       p.x -= s * 0.03 * bump(p.y, -0.09, 0.15) * Math.max(0, s * Math.sin(a)) ** 1.5;
       p.x += s * 0.014 * bump(p.y, -0.26, 0.09) * Math.max(0, s * Math.sin(a)) ** 1.5; // outer-quad sweep below the hip
       p.z += 0.014 * bump(p.y, -0.27, 0.1) * Math.max(0, Math.cos(a)); // quad sweep
+      p.z += bulk * 0.008 * bump(p.y, -0.24, 0.08) * Math.max(0, Math.cos(a)) ** 3; // rectus femoris ridge down the front
       p.x -= s * 0.01 * bump(p.y, -0.42, 0.04) * Math.max(0, Math.cos(a)); // teardrop vastus
+      p.x -= s * bulk * 0.008 * bump(p.y, -0.4, 0.05) * Math.max(0, -s * Math.sin(a)) ** 1.5; // vastus medialis bulge, inner side above the knee
+      p.z -= 0.007 * bump(p.y, -0.3, 0.1) * Math.max(0, -Math.cos(a)) ** 2; // hamstrings round out the back of the thigh
+      // Calf diamond: the inner (medial) gastrocnemius head sits lower and fuller than the outer one.
+      const back = Math.max(0, -Math.cos(a)) ** 1.5;
+      p.z -= bulk * 0.006 * back * (bump(p.y, -0.66, 0.05) * Math.max(0, -s * Math.sin(a)) + bump(p.y, -0.63, 0.04) * Math.max(0, s * Math.sin(a)));
       p.z += 0.005 * bump(p.y, -0.49, 0.02) * Math.max(0, Math.cos(a)) ** 4; // kneecap
       // Boot cuff: a slight flared lip just below the boot top so the boot reads as a real boot, not paint.
       const cuff = 1 + 0.07 * bump(p.y, -0.612, 0.011);
