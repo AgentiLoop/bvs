@@ -352,7 +352,7 @@ export function makeHero(kind) {
       p.z += 0.02 * bump(p.y, -0.17, 0.065) * Math.cos(a) ** 3; // biceps peak
       p.x += s * 0.022 * bump(p.y, 0.0, 0.06);                                  // deltoid cap
       p.z -= 0.016 * bump(p.y, -0.17, 0.07) * Math.max(0, -Math.cos(a)) ** 2; // triceps horseshoe
-      p.x += s * 0.035 * bump(p.y, -0.12, 0.05) * Math.max(0, -s * Math.sin(a)) ** 2; // armpit: inner arm tapers into the lats
+      p.x += s * 0.045 * bump(p.y, -0.12, 0.05) * Math.max(0, -s * Math.sin(a)) ** 2; // armpit: inner arm tapers into the lats
       const r = Math.hypot(p.x, p.z), dip = 1 - 0.07 * bump(p.y, -0.075, 0.016);    // deltoid insertion groove
       if (r > 1e-6) { p.x *= dip; p.z *= dip; }
       return p;
