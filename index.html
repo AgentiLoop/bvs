@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Batman v Superman — every pixel from code (three.js)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: Georgia, 'Times New Roman', serif; }
+  canvas { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; image-rendering: crisp-edges; }
+  #title { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+           color: #f4f1ea; pointer-events: none; opacity: 0; text-shadow: 0 0 24px #000, 0 0 4px #000; letter-spacing: .12em; }
+  #title h1 { margin: 0; font-size: 7vw; font-weight: 900; }
+  #title h1 span { color: #c21a1a; font-size: .6em; vertical-align: middle; padding: 0 .3em; }
+  #title p { margin: .6em 0 0; font: 1.4vw/1.2 monospace; letter-spacing: .3em; color: #aab; }
+  #sub { position: fixed; left: 0; right: 0; bottom: 9vh; text-align: center; color: #dde; font: 1.6vw monospace;
+         letter-spacing: .35em; opacity: 0; pointer-events: none; text-shadow: 0 0 6px #000; }
+  #hud { position: fixed; left: 10px; bottom: 8px; color: #8890a0; font: 11px monospace; pointer-events: none; }
+  #err { position: fixed; top: 0; left: 0; color: #f55; font: 12px monospace; white-space: pre; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
+</script>
+</head>
+<body>
+<div id="title"><h1>BATMAN<span>v</span>SUPERMAN</h1><p>EVERY PIXEL FROM CODE · THREE.JS</p></div>
+<div id="sub"></div>
+<div id="hud">P pixel-art · [ ] pixel size · C free camera · SPACE pause · R restart</div>
+<div id="err"></div>
+<script>window.addEventListener('error', e => { document.getElementById('err').textContent += e.message + '\n'; });</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
