@@ -4,7 +4,7 @@ import * as THREE from 'three';
 const _v = new THREE.Vector3();
 
 const COLLIDERS = [
-  ['chest', [0.1, 0.17, 0], 0.17], ['chest', [-0.1, 0.17, 0], 0.17], ['chest', [0, 0.33, -0.02], 0.13],
+  ['chest', [0.11, 0.17, -0.01], 0.19], ['chest', [-0.11, 0.17, -0.01], 0.19], ['chest', [0, 0.33, -0.03], 0.15],
   ['spine', [0, 0.1, 0], 0.16], ['hips', [0, 0, 0], 0.2], ['head', [0, 0.11, 0], 0.13],
 ];
 
@@ -18,7 +18,7 @@ export class Cape {
     for (let j = 0; j < rows; j++) {
       const w = topW + (botW - topW) * Math.pow(j / (rows - 1), 0.8);
       for (let i = 0; i < cols; i++)
-        this.canon.push(new THREE.Vector3((i / (cols - 1) - 0.5) * w, 0.31 - (j * len) / (rows - 1), -0.13 - j * 0.04));
+        this.canon.push(new THREE.Vector3((i / (cols - 1) - 0.5) * w, 0.31 - (j * len) / (rows - 1), -0.17 - j * 0.04));
     }
     const idx = (i, j) => j * cols + i;
     this.cons = [];

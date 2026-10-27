@@ -61,103 +61,135 @@ function emblemTexture(kind) {
   return t;
 }
 
+// Lathe "muscle" from a [radius, y] profile (y increasing), so limbs taper and bulge instead of being tubes.
+function muscle(parent, prof, material, pos = [0, 0, 0], scale = [1, 1, 1], rot = [0, 0, 0], seg = 16) {
+  return part(parent, new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), seg), material, pos, scale, rot);
+}
+
+// Heroic proportions (~9 heads tall): small head, thick neck, broad delts + lats tapering to a narrow waist,
+// heavy pecs, six-pack, big arms and long powerful legs, square jaw.
 export function makeHero(kind) {
   const B = kind === 'batman';
-  const suit = B ? mat(0x3b3e46, 0.8, 0.1) : mat(0x1d4fd8, 0.45, 0.05);
-  const dark = mat(0x141518, 0.55, 0.2);
-  const red = mat(0xc21a1a, 0.5);
-  const skin = mat(0xdfa98a, 0.7);
-  const yellow = mat(0xf2c230, 0.35, 0.4);
-  const glove = B ? dark : skin;
+  const suit = B ? mat(0x4b4f58, 0.75, 0.15) : mat(0x1f56e0, 0.38, 0.08);
+  const dark = mat(0x0c0d10, 0.45, 0.3);
+  const red = mat(0xc4161c, 0.42, 0.05);
+  const skin = mat(0xe0a888, 0.65);
+  const yellow = mat(0xf2c230, 0.3, 0.5);
+  const glove = B ? dark : suit;
   const boot = B ? dark : red;
-  const trunks = B ? suit : red;
+  const trunks = B ? dark : red;
 
   const root = new THREE.Group();
   const hips = joint(root, [0, 0, 0]);
-  part(hips, new THREE.SphereGeometry(0.17, 20, 14), trunks, [0, 0, 0], [1.25, 0.85, 0.85]);
-  part(hips, new THREE.CylinderGeometry(0.2, 0.19, 0.07, 20), yellow, [0, 0.09, 0], [1, 1, 0.78]);
+  // pelvis + trunks
+  part(hips, new THREE.SphereGeometry(0.16, 22, 14), trunks, [0, -0.01, 0], [1.15, 0.8, 0.85]);
+  // belt
+  part(hips, new THREE.CylinderGeometry(0.168, 0.172, 0.06, 24), yellow, [0, 0.085, 0], [1, 1, 0.8]);
   if (B) {
-    for (const i of [-2, -1, 1, 2]) {
-      const a = i * 0.42;
-      part(hips, new THREE.BoxGeometry(0.05, 0.06, 0.035), yellow, [Math.sin(a) * 0.205, 0.085, Math.cos(a) * 0.16], [1, 1, 1], [0, a, 0]);
+    for (const i of [-3, -2, -1, 1, 2, 3]) {
+      const a = i * 0.36;
+      part(hips, new THREE.BoxGeometry(0.045, 0.06, 0.035), yellow, [Math.sin(a) * 0.17, 0.08, Math.cos(a) * 0.14], [1, 1, 1], [0, a, 0]);
     }
+    part(hips, new THREE.BoxGeometry(0.06, 0.045, 0.02), yellow, [0, 0.085, 0.142]);
   } else {
-    part(hips, new THREE.BoxGeometry(0.07, 0.055, 0.02), yellow, [0, 0.09, 0.155]);
+    part(hips, new THREE.BoxGeometry(0.07, 0.05, 0.02), yellow, [0, 0.085, 0.142]);
   }
 
+  // abdomen: narrow waist, obliques
   const spine = joint(hips, [0, 0.08, 0]);
-  part(spine, new THREE.CapsuleGeometry(0.14, 0.1, 6, 14), suit, [0, 0.12, 0], [1.1, 1, 0.8]);
-  // abs
-  for (const y of [0.06, 0.13]) for (const s of [1, -1])
-    part(spine, new THREE.SphereGeometry(0.045, 8, 6), suit, [s * 0.045, y, 0.1], [1, 0.8, 0.5]);
+  muscle(spine, [[0.001, -0.06], [0.15, -0.05], [0.142, 0.03], [0.14, 0.12], [0.155, 0.22], [0.17, 0.3], [0.001, 0.32]], suit, [0, 0, 0], [1, 1, 0.74], [0, 0, 0], 24);
+  // six-pack
+  for (const [y, w] of [[0.03, 0.04], [0.1, 0.042], [0.17, 0.044]]) for (const s of [1, -1])
+    part(spine, new THREE.SphereGeometry(0.036, 10, 8), suit, [s * w, y, 0.094], [1.05, 0.85, 0.45]);
 
+  // chest: big V-taper ribcage, pecs, lats, traps
   const chest = joint(spine, [0, 0.28, 0]);
-  const profile = [[0.001, -0.12], [0.16, -0.1], [0.18, 0], [0.21, 0.1], [0.245, 0.2], [0.25, 0.27], [0.21, 0.33], [0.1, 0.37], [0.001, 0.375]]
-    .map(([x, y]) => new THREE.Vector2(x, y));
-  part(chest, new THREE.LatheGeometry(profile, 24), suit, [0, 0, 0], [1, 1, 0.62]);
-  for (const s of [1, -1]) part(chest, new THREE.SphereGeometry(0.1, 14, 10), suit, [s * 0.088, 0.2, 0.095], [1.05, 0.75, 0.55]);
-  const em = new THREE.Mesh(new THREE.PlaneGeometry(B ? 0.21 : 0.17, B ? 0.13 : 0.16),
-    new THREE.MeshStandardMaterial({ map: emblemTexture(B ? 'bat' : 's'), alphaTest: 0.5, roughness: 0.5 }));
-  em.position.set(0, 0.205, 0.163); em.rotation.x = -0.12;
+  muscle(chest, [[0.001, -0.09], [0.17, -0.07], [0.2, 0.0], [0.25, 0.09], [0.285, 0.18], [0.29, 0.25], [0.25, 0.32], [0.14, 0.37], [0.001, 0.385]],
+    suit, [0, 0, 0], [1, 1, 0.6], [0, 0, 0], 28);
+  for (const s of [1, -1]) {
+    part(chest, new THREE.SphereGeometry(0.12, 18, 12), suit, [s * 0.098, 0.2, 0.095], [1.12, 0.72, 0.52], [0, 0, -s * 0.12]); // pecs
+    part(chest, new THREE.SphereGeometry(0.12, 14, 10), suit, [s * 0.17, 0.1, -0.03], [0.62, 1.35, 0.85], [0, 0, s * 0.35]);    // lats
+  }
+  part(chest, new THREE.SphereGeometry(0.12, 16, 10), suit, [0, 0.33, -0.03], [1.85, 0.55, 0.85]); // traps
+  const em = new THREE.Mesh(new THREE.PlaneGeometry(B ? 0.26 : 0.2, B ? 0.15 : 0.19),
+    new THREE.MeshStandardMaterial({ map: emblemTexture(B ? 'bat' : 's'), alphaTest: 0.5, roughness: 0.45 }));
+  em.position.set(0, B ? 0.21 : 0.2, 0.158); em.rotation.x = -0.1;
   chest.add(em);
-  // traps / neck
-  part(chest, new THREE.SphereGeometry(0.09, 12, 8), suit, [0, 0.33, -0.01], [1.6, 0.6, 0.9]);
-  part(chest, new THREE.CylinderGeometry(0.058, 0.066, 0.12, 12), B ? dark : skin, [0, 0.4, 0]);
+  // thick neck
+  part(chest, new THREE.CylinderGeometry(0.068, 0.085, 0.12, 14), B ? dark : skin, [0, 0.4, 0.005]);
 
   const head = joint(chest, [0, 0.44, 0]);
   const eyes = [];
   if (B) {
-    part(head, new THREE.SphereGeometry(0.116, 24, 18), dark, [0, 0.115, -0.005], [0.93, 1.08, 1]);
-    part(head, new THREE.SphereGeometry(0.095, 18, 12), skin, [0, 0.055, 0.03], [0.8, 0.6, 0.86]);
+    // cowl: dark skull down to the nose, open mouth/jaw, tall straight ears, scowling brow
+    part(head, new THREE.SphereGeometry(0.108, 24, 18), dark, [0, 0.125, -0.005], [0.92, 1.05, 1]);
+    part(head, new THREE.BoxGeometry(0.15, 0.08, 0.13), skin, [0, 0.045, 0.025]);                // square jaw
+    part(head, new THREE.BoxGeometry(0.11, 0.035, 0.11), skin, [0, 0.01, 0.035]);               // chin
+    part(head, new THREE.BoxGeometry(0.17, 0.06, 0.15), dark, [0, 0.1, 0.01]);                   // cowl cheeks
+    part(head, new THREE.BoxGeometry(0.05, 0.012, 0.012), dark, [0, 0.03, 0.105]);               // grim mouth line
+    part(head, new THREE.CylinderGeometry(0.1, 0.12, 0.08, 16), dark, [0, 0.0, -0.01]);          // cowl flares to neck
     for (const s of [1, -1]) {
-      part(head, new THREE.ConeGeometry(0.026, 0.13, 8), dark, [s * 0.056, 0.26, -0.01], [1, 1, 1], [0, 0, -s * 0.08]);
-      eyes.push(part(head, new THREE.BoxGeometry(0.038, 0.012, 0.01),
-        new THREE.MeshBasicMaterial({ color: 0xf4f4ff }), [s * 0.04, 0.128, 0.104], [1, 1, 1], [0, 0, s * 0.25]));
+      part(head, new THREE.ConeGeometry(0.024, 0.15, 6), dark, [s * 0.055, 0.29, -0.01], [1, 1, 0.8], [0, 0, -s * 0.05]);
+      part(head, new THREE.BoxGeometry(0.07, 0.022, 0.03), dark, [s * 0.036, 0.15, 0.092], [1, 1, 1], [0, 0, s * 0.3]); // brow
+      eyes.push(part(head, new THREE.BoxGeometry(0.04, 0.011, 0.01),
+        new THREE.MeshBasicMaterial({ color: 0xf4f4ff }), [s * 0.038, 0.132, 0.1], [1, 1, 1], [0, 0, s * 0.22]));
     }
-    part(head, new THREE.BoxGeometry(0.02, 0.05, 0.02), dark, [0, 0.105, 0.11], [1, 1, 1], [0.35, 0, 0]);
+    part(head, new THREE.BoxGeometry(0.024, 0.055, 0.03), dark, [0, 0.1, 0.098], [1, 1, 1], [0.3, 0, 0]); // cowl nose
   } else {
-    part(head, new THREE.SphereGeometry(0.112, 24, 18), skin, [0, 0.11, 0], [0.9, 1.08, 1]);
-    const hair = mat(0x0c0c10, 0.5);
-    part(head, new THREE.SphereGeometry(0.12, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.55), hair, [0, 0.115, -0.012], [0.95, 1.08, 1.04], [-0.3, 0, 0]);
-    part(head, new THREE.TorusGeometry(0.02, 0.007, 6, 12, Math.PI * 1.5), hair, [0.02, 0.2, 0.098], [1, 1, 1], [0, 0, 1]);
-    part(head, new THREE.BoxGeometry(0.02, 0.04, 0.03), skin, [0, 0.1, 0.107], [1, 1, 1], [0.2, 0, 0]);
+    part(head, new THREE.SphereGeometry(0.1, 24, 18), skin, [0, 0.13, -0.005], [0.9, 1.05, 1]);
+    part(head, new THREE.BoxGeometry(0.14, 0.085, 0.13), skin, [0, 0.055, 0.02]);                // square jaw
+    part(head, new THREE.BoxGeometry(0.075, 0.04, 0.05), skin, [0, 0.022, 0.07]);                // chin
+    const hair = mat(0x08080c, 0.35, 0.1);
+    part(head, new THREE.SphereGeometry(0.108, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.5), hair, [0, 0.14, -0.012], [0.95, 1.0, 1.04], [-0.35, 0, 0]);
+    part(head, new THREE.SphereGeometry(0.06, 12, 8), hair, [0.03, 0.215, 0.05], [1.4, 0.6, 1]); // swept quiff
+    part(head, new THREE.TorusGeometry(0.016, 0.006, 6, 12, Math.PI * 1.5), hair, [0.012, 0.188, 0.098], [1, 1, 1], [0, 0, 1]); // spit curl
+    part(head, new THREE.BoxGeometry(0.022, 0.045, 0.03), skin, [0, 0.11, 0.098], [1, 1, 1], [0.2, 0, 0]);
+    part(head, new THREE.BoxGeometry(0.04, 0.007, 0.01), mat(0x8a4a40, 0.6), [0, 0.06, 0.087]);   // mouth
     for (const s of [1, -1]) {
-      eyes.push(part(head, new THREE.SphereGeometry(0.013, 8, 6),
-        new THREE.MeshStandardMaterial({ color: 0x2a4fa0, emissive: 0x000000 }), [s * 0.04, 0.128, 0.096]));
-      part(head, new THREE.BoxGeometry(0.04, 0.008, 0.01), hair, [s * 0.04, 0.15, 0.1]);
-      part(head, new THREE.SphereGeometry(0.02, 8, 6), skin, [s * 0.1, 0.11, 0], [0.5, 1, 0.8]);
+      eyes.push(part(head, new THREE.SphereGeometry(0.012, 8, 6),
+        new THREE.MeshStandardMaterial({ color: 0x2a4fa0, emissive: 0x000000 }), [s * 0.036, 0.13, 0.085]));
+      part(head, new THREE.BoxGeometry(0.042, 0.011, 0.015), hair, [s * 0.037, 0.152, 0.088], [1, 1, 1], [0, 0, s * 0.12]);
+      part(head, new THREE.SphereGeometry(0.02, 8, 6), skin, [s * 0.088, 0.12, 0], [0.5, 1, 0.8]);
     }
   }
 
   const arms = {};
   for (const [side, s] of [['L', 1], ['R', -1]]) {
     const sh = joint(chest, [s * 0.25, 0.24, 0]);
-    part(sh, new THREE.SphereGeometry(0.09, 14, 10), suit, [0, -0.01, 0]);
-    part(sh, new THREE.CapsuleGeometry(0.063, 0.2, 6, 12), suit, [0, -0.16, 0]);
+    part(sh, new THREE.SphereGeometry(0.105, 16, 12), suit, [s * 0.025, -0.015, 0], [1, 1.12, 1.02]);           // deltoid cap
+    muscle(sh, [[0.001, -0.33], [0.055, -0.32], [0.065, -0.28], [0.078, -0.2], [0.084, -0.13], [0.08, -0.06], [0.075, 0], [0.001, 0.02]], suit);
+    part(sh, new THREE.SphereGeometry(0.06, 12, 8), suit, [0, -0.17, 0.035], [0.95, 1.5, 0.8]);                 // bicep
+    part(sh, new THREE.SphereGeometry(0.06, 12, 8), suit, [0, -0.15, -0.035], [0.95, 1.6, 0.8]);                // tricep
     const el = joint(sh, [0, -0.32, 0]);
-    part(el, new THREE.CapsuleGeometry(0.052, 0.19, 6, 12), suit, [0, -0.14, 0]);
+    muscle(el, [[0.001, -0.31], [0.042, -0.3], [0.046, -0.26], [0.062, -0.17], [0.074, -0.08], [0.068, -0.01], [0.055, 0.025], [0.001, 0.035]], suit);
     if (B) {
-      part(el, new THREE.CylinderGeometry(0.062, 0.054, 0.18, 12), dark, [0, -0.19, 0]);
+      muscle(el, [[0.001, -0.31], [0.05, -0.3], [0.055, -0.26], [0.07, -0.15], [0.077, -0.09], [0.001, -0.088]], dark); // gauntlet
       for (let k = 0; k < 3; k++)
-        part(el, new THREE.BoxGeometry(0.012, 0.055, 0.03), dark, [s * 0.064, -0.13 - k * 0.045, -0.01], [1, 1, 1], [0, 0, s * 0.6]);
+        part(el, new THREE.ConeGeometry(0.016, 0.07, 4), dark, [s * 0.072, -0.13 - k * 0.045, -0.02], [0.5, 1, 1], [0, 0, s * 1.0]);
     } else {
-      part(el, new THREE.CylinderGeometry(0.055, 0.05, 0.03, 12), suit, [0, -0.27, 0]);
+      part(el, new THREE.CylinderGeometry(0.05, 0.046, 0.025, 14), red, [0, -0.29, 0]); // cuff
     }
     const hand = joint(el, [0, -0.3, 0]);
-    part(hand, new THREE.SphereGeometry(0.056, 12, 10), glove, [0, -0.03, 0], [1, 1.15, 1.1]);
+    part(hand, new THREE.BoxGeometry(0.085, 0.1, 0.095), glove, [0, -0.045, 0.005]);              // fist
+    part(hand, new THREE.SphereGeometry(0.05, 10, 8), glove, [0, -0.04, 0.005], [0.95, 1.1, 1.05]);
+    part(hand, new THREE.CapsuleGeometry(0.016, 0.04, 4, 6), glove, [s * 0.04, -0.03, 0.035], [1, 1, 1], [0.5, 0, 0]); // thumb
     arms[side] = { sh, el, hand, s };
   }
 
   const legs = {};
   for (const [side, s] of [['L', 1], ['R', -1]]) {
     const th = joint(hips, [s * 0.1, -0.04, 0]);
-    part(th, new THREE.CapsuleGeometry(0.088, 0.3, 6, 12), suit, [0, -0.22, 0]);
+    muscle(th, [[0.001, -0.47], [0.062, -0.46], [0.072, -0.4], [0.095, -0.28], [0.108, -0.16], [0.11, -0.06], [0.1, 0.03], [0.001, 0.06]], suit);
+    part(th, new THREE.SphereGeometry(0.065, 12, 8), suit, [s * 0.02, -0.3, 0.04], [1, 1.8, 0.8]);       // quad sweep
     const kn = joint(th, [0, -0.46, 0]);
-    part(kn, new THREE.CapsuleGeometry(0.068, 0.3, 6, 12), suit, [0, -0.2, 0]);
-    part(kn, new THREE.CylinderGeometry(0.08, 0.07, 0.27, 12), boot, [0, -0.33, 0]);
-    if (!B) part(kn, new THREE.BoxGeometry(0.05, 0.05, 0.02), boot, [0, -0.19, 0.075], [1, 1, 1], [0, 0, Math.PI / 4]);
+    muscle(kn, [[0.001, -0.47], [0.048, -0.46], [0.052, -0.38], [0.066, -0.25], [0.078, -0.14], [0.07, -0.04], [0.064, 0.02], [0.001, 0.04]], suit);
+    part(kn, new THREE.SphereGeometry(0.055, 12, 8), suit, [0, -0.15, -0.035], [1, 1.9, 0.9]);           // calf
+    // boots
+    muscle(kn, [[0.001, -0.475], [0.06, -0.47], [0.062, -0.38], [0.077, -0.25], [0.083, -0.19], [B ? 0.085 : 0.086, B ? -0.17 : -0.18], [0.001, B ? -0.168 : -0.178]], boot);
+    if (!B) part(kn, new THREE.ConeGeometry(0.05, 0.06, 3), boot, [0, -0.15, 0.075], [1, 1, 0.3], [Math.PI, 0, 0]); // boot V notch
     const an = joint(kn, [0, -0.46, 0]);
-    part(an, new THREE.BoxGeometry(0.1, 0.075, 0.25), boot, [0, -0.03, 0.05]);
+    part(an, new THREE.BoxGeometry(0.11, 0.08, 0.26), boot, [0, -0.035, 0.055]);
+    part(an, new THREE.SphereGeometry(0.055, 10, 8), boot, [0, -0.03, 0.17], [1, 0.7, 1]);
     legs[side] = { th, kn, an, s };
   }
 
