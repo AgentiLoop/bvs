@@ -125,9 +125,9 @@ export function makeHero(kind) {
 
   // The pecs, sternum, obliques and abdomen are sculpted into one continuous surface.
   const torsoRows = [[0.035, 0.15, 0.105], [0.13, 0.138, 0.1], [0.23, 0.134, 0.098],
-    [0.34, 0.16, 0.112], [0.45, 0.196, 0.13], [0.56, B ? 0.222 : 0.215, 0.14],
+    [0.34, 0.16, 0.112], [0.45, 0.196, 0.13], [0.56, 0.222, 0.14],
     [0.64, 0.208, 0.13], [0.69, 0.165, 0.108], [0.735, 0.085, 0.074],
-    [0.78, 0.065, 0.063], [0.835, 0.061, 0.06]];
+    [0.78, B ? 0.065 : 0.074, B ? 0.063 : 0.068], [0.835, B ? 0.061 : 0.069, B ? 0.06 : 0.064]];
   const chestDepth = (x, y) => {
     const [rx, rz] = contour(torsoRows, y);
     const base = rz * Math.sqrt(Math.max(0, 1 - (x / rx) ** 2));
@@ -168,11 +168,17 @@ export function makeHero(kind) {
     oval(hips, yellow, [s * Math.sin(a) * 0.158, 0.084, Math.cos(a) * 0.112], [0.024, 0.034, 0.018]);
 
   // Planar jaw, cheekbones, recessed temples and an integrated nose replace the egg head.
-  const faceRows = [[0.002, 0.024, 0.026, 0.032], [0.019, 0.052, 0.052, 0.023],
+  // Superman's face has a broad, square jaw rather than an egg-shaped head.
+  const faceRows = B ? [[0.002, 0.024, 0.026, 0.032], [0.019, 0.052, 0.052, 0.023],
     [0.047, 0.071, 0.066, 0.01], [0.082, 0.079, 0.071, 0.003],
     [0.115, 0.087, 0.077, 0], [0.149, 0.083, 0.077, -0.002],
     [0.182, 0.084, 0.077, -0.006], [0.214, 0.071, 0.065, -0.009],
-    [0.237, 0.037, 0.036, -0.009], [0.245, 0.0001, 0.0001, -0.009]];
+    [0.237, 0.037, 0.036, -0.009], [0.245, 0.0001, 0.0001, -0.009]]
+    : [[0.004, 0.036, 0.03, 0.03], [0.02, 0.063, 0.056, 0.02],
+      [0.047, 0.08, 0.068, 0.008], [0.082, 0.084, 0.072, 0.002],
+      [0.115, 0.085, 0.076, 0], [0.149, 0.081, 0.077, -0.002],
+      [0.182, 0.079, 0.076, -0.006], [0.214, 0.068, 0.064, -0.009],
+      [0.237, 0.036, 0.035, -0.009], [0.245, 0.0001, 0.0001, -0.009]];
   const faceSculpt = (p, a) => {
     const front = Math.max(0, Math.cos(a));
     p.x = Math.sign(p.x) * Math.pow(Math.abs(Math.sin(a)), 0.83) * contour(faceRows, p.y)[0];
@@ -203,10 +209,13 @@ export function makeHero(kind) {
     const hp = hairGeo.attributes.position;
     for (let i = 0; i < hp.count; i++) {
       const x = hp.getX(i), y = hp.getY(i), z = hp.getZ(i);
-      const hairline = 0.167 + 0.016 * z - 0.018 * bump(x, -0.24, 0.22) * Math.max(0, z);
-      hp.setXYZ(i, x * 0.087, hairline + y * (0.085 + 0.012 * x), z * 0.081 - 0.008);
+      // Low hairline at the temples and enough volume to cover the crown fully.
+      const hairline = 0.158 + 0.02 * Math.max(0, z) - 0.012 * (1 - Math.abs(z));
+      hp.setXYZ(i, x * 0.093, hairline + y * (0.1 + 0.012 * z), z * 0.092 - 0.006);
     }
     hairGeo.computeVertexNormals(); part(head, hairGeo, hair);
+    oval(head, hair, [0.012, 0.236, 0.035], [0.074, 0.032, 0.056]); // swept-back pompadour
+    for (const s of [-1, 1]) oval(head, hair, [s * 0.08, 0.15, -0.004], [0.014, 0.034, 0.03]); // sideburns
     line(head, [[-0.027, 0.21, 0.06], [0.003, 0.2, 0.077], [0.017, 0.184, 0.078], [0.008, 0.169, 0.079], [-0.002, 0.174, 0.079]], 0.004, hair);
     for (const s of [-1, 1]) oval(head, skin, [s * 0.085, 0.126, -0.004], [0.012, 0.026, 0.017]);
   }
