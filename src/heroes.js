@@ -19,6 +19,48 @@ const rim = (m) => {
 const mat = (color, roughness = 0.6, metalness = 0, extra = {}) =>
   rim(new THREE.MeshStandardMaterial({ color, roughness, metalness, ...extra }));
 
+// MK11-style battle damage: up to DMG_N bruise / scuff spots (world positions + strength, refreshed each
+// frame by main.js from the game's bone-anchored scars), torn-in cuts inside the worst of them, and dusty
+// grime over the whole suit as the match wears on. Noise runs in rest space so the marks stick to the body.
+export const DMG_N = 12;
+const DMG_GLSL = `uniform vec3 dmgP[${DMG_N}];
+uniform float dmgS[${DMG_N}];
+uniform float dmgWear;
+varying vec3 vDmgW;
+varying vec3 vDmgR;
+float dmgHash(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+float dmgNoise(vec3 p) {
+  vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(dmgHash(i), dmgHash(i + vec3(1, 0, 0)), f.x), mix(dmgHash(i + vec3(0, 1, 0)), dmgHash(i + vec3(1, 1, 0)), f.x), f.y),
+    mix(mix(dmgHash(i + vec3(0, 0, 1)), dmgHash(i + vec3(1, 0, 1)), f.x), mix(dmgHash(i + vec3(0, 1, 1)), dmgHash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+`;
+const DMG_APPLY = `
+  float dmgA = 0.0;
+  float dmgN1 = dmgNoise(vDmgR * 31.0);
+  for (int i = 0; i < ${DMG_N}; i++) {
+    float r = 0.05 + 0.06 * dmgS[i];
+    dmgA = max(dmgA, dmgS[i] * smoothstep(r, r * 0.25, distance(vDmgW, dmgP[i]) + (dmgN1 - 0.5) * 0.06));
+  }
+  float dmgCut = smoothstep(0.35, 0.8, dmgA) * smoothstep(0.66, 0.74, dmgNoise(vDmgR * vec3(150.0, 18.0, 150.0)));
+  float dmgGrime = dmgWear * smoothstep(0.45, 0.8, dmgNoise(vDmgR * 7.0 + 3.1));
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.78, 0.5, 0.55) + vec3(0.035, 0.008, 0.012), dmgA * 0.85);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.3, 0.025, 0.02), dmgCut * 0.9);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.145, 0.13), dmgGrime * 0.35);
+`;
+function battleDamage(m, U) {
+  const prev = m.onBeforeCompile, base = m.customProgramCacheKey();
+  m.onBeforeCompile = (sh, r) => {
+    prev.call(m, sh, r);
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = 'varying vec3 vDmgW;\nvarying vec3 vDmgR;\n' + sh.vertexShader.replace('#include <project_vertex>',
+      '#include <project_vertex>\n  vDmgW = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vDmgR = position;');
+    sh.fragmentShader = DMG_GLSL + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n' + DMG_APPLY)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor = mix(mix(roughnessFactor, 0.3, dmgCut), 1.0, dmgGrime * 0.5);');
+  };
+  m.customProgramCacheKey = () => base + '|dmg';
+}
+
 function part(parent, geo, material, pos = [0, 0, 0], scale = [1, 1, 1], rot = [0, 0, 0]) {
   const m = new THREE.Mesh(geo, material);
   m.position.set(...pos); m.scale.set(...scale); m.rotation.set(...rot);
@@ -529,7 +571,10 @@ export function makeHero(kind) {
   }
   // Torso cross-section [halfWidth, halfDepth] at a hips-space height, for cloth collision.
   const torsoSection = (y) => contour(torsoRows, y);
-  return { kind, root, hips, spine, chest, head, arms, legs, eyes, torsoSection, chestDepth };
+  const dmg = { dmgP: { value: Array.from({ length: DMG_N }, () => new THREE.Vector3(0, -99, 0)) }, dmgS: { value: new Float32Array(DMG_N) }, dmgWear: { value: 0 } };
+  const patched = new Set();
+  root.traverse(o => { if (o.isMesh && o.material.isMeshStandardMaterial && !patched.has(o.material)) { patched.add(o.material); battleDamage(o.material, dmg); } });
+  return { kind, root, hips, spine, chest, head, arms, legs, eyes, torsoSection, chestDepth, dmg };
 }
 
 // ---------- IK ----------

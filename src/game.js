@@ -2,7 +2,7 @@
 // Poses are the same hip-relative IK poses as the film (POSES), blended toward a target every step.
 // Combat: chained punches/kicks, launchers, sweeps, air attacks, juggles, bounces, hitstop, trades; keyboard + gamepad.
 import * as THREE from 'three';
-import { applyPose, GAIT_A, GAIT_SIDE } from './heroes.js';
+import { applyPose, GAIT_A, GAIT_SIDE, DMG_N } from './heroes.js';
 import { POSES, face } from './timeline.js';
 import { groundAt } from './world.js';
 
@@ -238,6 +238,11 @@ const PROP = { reach: 1.4, lift: 0.16, rel: 0.44, dur: 0.72, speed: 12, r: 0.6, 
   keys: [[0, 'pickUp'], [0.16, 'lift'], [0.34, 'heaveUp'], [0.44, 'heave'], [0.62, 'guard']] };
 // what a parry can deflect: normal strikes, the rising uppercut, projectiles and the flying kick (not throws, supers, fatalities)
 const PARRYABLE = new Set([...Object.values(MOVES), ...Object.values(RISE), ...Object.values(SHOT), FLYKICK]);
+// MK11 battle damage: each clean hit leaves a bruise / scuff where it landed on the body (raycast onto the skin and
+// anchored to the struck bone so it moves with him; hits within `merge` m deepen the same mark, cuts open once it is
+// deep), and the suit gathers grime with total damage taken (wear). Lasts the whole match: reset in start() only.
+const SCAR = { merge: 0.11, base: 0.3, per: 1 / 14, heavy: 0.2, wear: 1 / 160, cast: 1.2 };
+const _ray = new THREE.Raycaster(), _rv = new THREE.Vector3(), _rd = new THREE.Vector3(), BIG = new THREE.Sphere(new THREE.Vector3(), 1e4);
 const LIMB = { lh: (H) => H.arms.L.hand, rh: (H) => H.arms.R.hand, lf: (H) => H.legs.L.an, rf: (H) => H.legs.R.an };
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -272,7 +277,7 @@ export class Game {
     this.round = 1; this.wins = { bat: 0, sup: 0 }; this.clock = ROUND_TIME; this.fightT = 0; this.matchOver = false; this.winner = null;
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
       ko: false, cd: 0, down: 0, meter: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
-      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, lastLat: 0, lastLatT: -1, latS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, brk: 0, rollA: null, blowUsed: false, blowSaid: false,
+      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, lastLat: 0, lastLatT: -1, latS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, brk: 0, rollA: null, blowUsed: false, blowSaid: false, scars: [], wear: 0,
       ai: { t: 0, mx: 0, mz: 0, block: 0, crouch: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0, hx: 0, hy: 0, squash: 0, gph: 0, gdx: 0, gdz: 1, gpx: null, gpz: null });
     this.F = { bat: mk(bat, 'bat', -7.4, Math.PI / 2), sup: mk(sup, 'sup', 2.2, -Math.PI / 2) };
     this.F.sup.y = 26; this.F.sup.cur = T(POSES.fly, { pitch: 0.35 });
@@ -962,6 +967,7 @@ export class Game {
     if (M.heavy || att.hits >= 3) this.camKick(at, M.heavy ? 1 : 0.5, M.at === 'lh' ? -1 : 1);
     if (mine) this.rumble(M.heavy ? 0.9 : 0.45, M.heavy ? 220 : 110);
     def.hp = Math.max(0, def.hp - dmg);
+    this.scar(def, att, M, dmg, at);
     if (!(att.act && (att.act.type === 'super' || att.act.type === 'blow'))) { att.meter = Math.min(100, att.meter + dmg * 1.4); def.meter = Math.min(100, def.meter + dmg * 0.8); }
     this.updateBars();
     if (CK) { // counter flash: hotter sparks, a ring, a longer freeze and a meter bonus
@@ -987,6 +993,37 @@ export class Game {
       this.hitstop = 0.2;
       if (mine) this.rumble(1, 500);
     }
+  }
+
+  scar(def, att, M, dmg, at) {
+    const H = def.H;
+    if (!H.dmg) return;
+    def.wear = Math.min(1, def.wear + dmg * SCAR.wear);
+    H.root.updateMatrixWorld(true);
+    let bone = H.chest, aim = H.chest.getWorldPosition(new THREE.Vector3());
+    if (def.zone === 'head') { bone = H.head; aim = H.head.getWorldPosition(aim); aim.y += 0.12; }
+    else if (def.zone === 'low') { // the knee nearer the attacker
+      const kl = H.legs.L.kn.getWorldPosition(new THREE.Vector3()), kr = H.legs.R.kn.getWorldPosition(new THREE.Vector3());
+      const l = Math.hypot(kl.x - att.x, kl.z - att.z) < Math.hypot(kr.x - att.x, kr.z - att.z);
+      bone = H.legs[l ? 'L' : 'R'].kn; aim = l ? kl : kr; aim.y -= 0.05;
+    } else aim.y = THREE.MathUtils.clamp(at.y, aim.y + 0.05, aim.y + 0.4);
+    // cast from the attacker's side (a little jitter so repeated blows spread) onto the skin
+    _rd.set(att.x - def.x, 0, att.z - def.z); if (_rd.lengthSq() < 1e-6) _rd.set(0, 0, 1); _rd.normalize();
+    aim.x += -_rd.z * (Math.random() - 0.5) * 0.12; aim.z += _rd.x * (Math.random() - 0.5) * 0.12; aim.y += (Math.random() - 0.5) * 0.08;
+    if (!H.hitMeshes) {
+      H.hitMeshes = [];
+      H.root.traverse((o) => { if (o.isMesh && o.material.isMeshStandardMaterial) { H.hitMeshes.push(o); if (o.isSkinnedMesh) o.boundingSphere = BIG; } });
+    }
+    for (const m of H.hitMeshes) if (m.isSkinnedMesh) m.skeleton.update();
+    _ray.set(_rv.copy(aim).addScaledVector(_rd, SCAR.cast), _rd.negate()); _ray.far = SCAR.cast + 0.3;
+    const hit = _ray.intersectObjects(H.hitMeshes.filter((m) => m.visible), false)[0];
+    const p = hit ? hit.point : aim.addScaledVector(_rd, -0.1);
+    const inc = dmg * SCAR.per + (M.heavy ? SCAR.heavy : 0);
+    for (const s of def.scars) {
+      if (s.bone === bone && _rv.copy(s.lp).applyMatrix4(bone.matrixWorld).distanceTo(p) < SCAR.merge) { s.s = Math.min(1, s.s + inc); return; }
+    }
+    def.scars.push({ bone, lp: bone.worldToLocal(p.clone()), s: Math.min(1, SCAR.base + inc) });
+    if (def.scars.length > DMG_N) def.scars.splice(def.scars.reduce((k, s, i, a) => (s.s < a[k].s ? i : k), 0), 1); // fade the faintest
   }
 
   // Both fighters connect in the same instant: a blast on each side plus a shock ring between them.

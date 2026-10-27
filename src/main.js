@@ -473,6 +473,17 @@ function updateVisuals() {
     orbMesh.halo.scale.setScalar(1.0 + Math.sin(orb.t * 6) * 0.15);
   }
 
+  // battle damage: the game's bone-anchored scars -> world positions for the hero shaders (clean outside a fight)
+  for (const [H, k] of [[bat, 'bat'], [sup, 'sup']]) {
+    const f = game.active && game.F && game.F[k], sc = (f && f.scars) || [], U = H.dmg;
+    if (sc.length) H.root.updateMatrixWorld(true);
+    for (let i = 0; i < U.dmgS.value.length; i++) {
+      const s = sc[i];
+      U.dmgS.value[i] = s ? s.s : 0;
+      if (s) U.dmgP.value[i].copy(s.lp).applyMatrix4(s.bone.matrixWorld);
+    }
+    U.dmgWear.value = f ? f.wear : 0;
+  }
   propMesh.forEach((m, i) => {
     const p = game.active && game.props && game.props[i];
     m.visible = !!p && p.st !== 'gone';
