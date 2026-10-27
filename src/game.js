@@ -46,7 +46,13 @@ const MP = {
   bThrow:  { ...G, lean: 0.45, tw: -0.5, rh: [-0.1, 0.62, 0.95] },
   clapUp:  { ...G, h: 0.9, lean: -0.05, lh: [0.6, 0.7, 0.2], rh: [-0.6, 0.7, 0.2] },
   clap:    { ...G, h: 0.82, lean: 0.4, lh: [0.03, 0.55, 0.72], rh: [-0.03, 0.55, 0.72] },
+  // hit reactions by where the blow lands: head whips back with the rear foot stepping out to catch the weight,
+  // a body blow doubles him over clutching the gut, a low kick yanks the front leg out with the arms thrown wide
+  hitHead: { h: 0.84, lean: -0.45, roll: 0.12, tw: 0.25, lh: [0.32, 0.68, 0.02], rh: [-0.34, 0.6, 0.08], lf: [0.18, -0.76, 0.32], rf: [-0.2, -0.76, -0.5] },
+  hitBody: { h: 0.68, lean: 0.9, roll: 0, tw: 0.1, lh: [0.1, 0.16, 0.3], rh: [-0.1, 0.12, 0.3], lf: [0.19, -0.62, 0.18], rf: [-0.2, -0.6, -0.42] },
+  hitLow:  { h: 0.62, lean: 0.25, roll: 0.2, tw: -0.15, lh: [0.42, 0.42, 0.15], rh: [-0.42, 0.38, 0.05], lf: [0.2, -0.42, 0.1], rf: [-0.22, -0.55, -0.32] },
 };
+const REACT = { head: MP.hitHead, body: MP.hitBody, low: MP.hitLow };
 // keys: [time, pose]; hit: active frame; cancel: earliest chain into `next` (J punch / K kick); reach: horizontal range;
 // kb: knockback m/s; up: launch m/s (<0 spikes airborne targets down); at: striking limb; blast: hit-explosion size.
 // Height (SF/MK mix-ups): hi = whiffs over a crouching foe; low = must be blocked crouching; air/over = overhead,
@@ -120,6 +126,12 @@ const LIMB = { lh: (H) => H.arms.L.hand, rh: (H) => H.arms.R.hand, lf: (H) => H.
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const T = (p, x) => ({ tw: 0, pitch: 0, gait: 0, ...p, ...x });
+const mixPose = (a, b, k) => {
+  const o = { ...b };
+  for (const n of NUM) o[n] = a[n] + (b[n] - a[n]) * k;
+  for (const n of ARR) o[n] = a[n].map((v, j) => v + (b[n][j] - v) * k);
+  return o;
+};
 
 export class Game {
   constructor(ctx) {
@@ -510,6 +522,7 @@ export class Game {
       def.hp = Math.max(1, def.hp - M.dmg * 0.15 * rage);
       att.meter = Math.min(100, att.meter + 2); def.meter = Math.min(100, def.meter + 4);
       def.kx += nx * M.kb * 0.45; def.kz += nz * M.kb * 0.45; att.kx -= nx * 0.6; att.kz -= nz * 0.6;
+      def.cur.lean -= M.heavy ? 0.22 : 0.12; def.hx -= 0.12; // the guard absorbs the blow: a small jolt back
       fx.sparkBurst(at.x, at.y, at.z, 14, 3, 0xbfd8ff);
       fx.blast(at.x, at.y, at.z, 0.3, 0.3, 0x6fa8ff);
       fx.impact(at.x, at.y, at.z, 0.06);
@@ -521,7 +534,8 @@ export class Game {
     const juggle = def.stun > 0 || def.launched || def.y > 0.05;
     att.hits = juggle ? att.hits + 1 : 1;
     const dmg = M.dmg * rage * Math.max(0.45, 1 - 0.1 * (att.hits - 1));
-    def.act = null; def.buf = null; def.stun = M.stun; def.heavy = !!M.heavy;
+    def.act = null; def.buf = null; def.stun = def.stunMax = M.stun; def.heavy = !!M.heavy;
+    def.zone = M.low ? 'low' : M.hi || M.air || M.over || (M.up || 0) > 5 ? 'head' : 'body'; def.hitSide = M.at === 'lh' ? -1 : 1;
     def.kx = def.kx * 0.3 + nx * M.kb; def.kz = def.kz * 0.3 + nz * M.kb;
     att.kx -= nx * 0.5; att.kz -= nz * 0.5;
     const up = M.up || 0, air = def.y > 0.05;
@@ -889,7 +903,7 @@ export class Game {
           const blocked = o.block && o.stun <= 0;
           if (o.down <= 0) {
             o.hp = Math.max(0, o.hp - (blocked ? 4 : 15) * dt);
-            if (!blocked) o.stun = Math.max(o.stun, 0.12), o.heavy = false;
+            if (!blocked) o.stun = Math.max(o.stun, 0.12), o.stunMax = 0.12, o.heavy = false, o.zone = 'body';
           }
           if (this.ctx.rng() < 0.5) fx.sparkBurst(tg.x, tg.y, tg.z, 2, 2.5, 0xff8030);
           this.updateBars();
@@ -968,7 +982,14 @@ export class Game {
     }
     if (a && a.type === 'flykick') { const u = a.t / 0.75; return u < 0.15 ? T(POSES.tuck) : T(POSES.flykick, { h: 0.75 }); }
     if (a && a.type === 'heat') return T(POSES.heat);
-    if (f.stun > 0) return T(POSES[f.heavy ? 'hit' : 'flinch']);
+    if (f.stun > 0) {
+      // reaction by where the blow landed, mirrored to the side it came from; heavy head shots whip all the way back.
+      // Full strength while stunned, easing back into the guard over the last 40% of the stun.
+      if (f.heldBy || !f.zone) return T(POSES[f.heavy ? 'hit' : 'flinch']);
+      const R = f.zone === 'head' && f.heavy ? POSES.hit : REACT[f.zone], s = f.hitSide || 1;
+      const r = T(R, { tw: (R.tw || 0) * s, roll: (R.roll || 0) * s, h: R.h - (f.heavy && f.zone !== 'head' ? 0.06 : 0) });
+      return mixPose(T(G), r, clamp(f.stun / (0.4 * (f.stunMax || 0.3)), 0, 1));
+    }
     if (f.y > 0.05) return T(POSES.tuck);
     if (f.crouch) { const b = this.breath(f); return T(f.block ? MP.cblock : MP.crouch, { lean: (f.block ? MP.cblock : MP.crouch).lean + b * 0.015 }); }
     if (f.block) { const b = this.breath(f); return T(POSES.guard, { ...BLOCK, lean: BLOCK.lean + b * 0.01 }); }
