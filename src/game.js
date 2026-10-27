@@ -197,6 +197,13 @@ const WAKE = { open: 0.8, dist: 2.2, roll: 0.45, kneel: 0.15, quick: 0.2, cpu: [
 // projectiles fly past; hooks, the roundhouse and the sweep track it. Cancels into attacks after `cancel` s.
 // cpu: chance to sidestep a straight attack it reads.
 const SIDE = { ang: 0.62, dur: 0.36, evade: [0.03, 0.28], cancel: 0.24, cpu: 0.2 };
+// SF6 counters: a clean hit on a fighter still winding up his own attack = COUNTER (more damage + stun, longer combo
+// window); a hit while he recovers from a whiff, a parried / blocked move or a sidestep = PUNISH COUNTER (more again,
+// and heavy blows launch higher for a juggle). meter: bonus to the attacker.
+const COUNTER = {
+  counter: { name: 'COUNTER!', dmg: 1.2, stun: 1.3, up: 0, meter: 4, col: 0xffa030 },
+  punish: { name: 'PUNISH COUNTER!', dmg: 1.3, stun: 1.5, up: 2.2, meter: 8, col: 0xff3a30 },
+};
 // Power-ups: a glowing orb drops into the arena now and then (first at `first` s, then every `every` s if none is out);
 // walk through it to collect. rage: 1.5x damage for `time` s (red aura); meter: +50 super meter; heal: +15 HP.
 const ORB = { first: 8, every: 11, life: 9, y: 1.0, r: 0.75, fall: 1.2 };
@@ -738,6 +745,20 @@ export class Game {
     const p = LIMB[M.at || 'rh'](att.H).getWorldPosition(new THREE.Vector3());
     return p.lerp(def.H.chest.getWorldPosition(new THREE.Vector3()), 0.35);
   }
+  // What the defender was doing when he got hit (see COUNTER): winding up = counter, recovering = punish counter.
+  counterKind(def, att) {
+    const a = def.act, aa = att.act;
+    if (this.state !== 'fight' || !a || def.stun > 0 || def.heldBy || (aa && (aa.type === 'super' || aa.type === 'blow' || aa.type === 'fatal'))) return null;
+    const M = MOVES[a.type];
+    let k = null;
+    if (M) k = a.parried || a.done ? 'punish' : 'counter';
+    else if (a.type === 'rise') k = a.t <= RISE[def.key].act[1] ? 'counter' : 'punish';
+    else if (a.type === 'shoot' || a.type === 'flykick') k = a.done ? 'punish' : 'counter';
+    else if (a.type === 'throw') k = a.checked && !a.grab ? 'punish' : 'counter';
+    else if (a.type === 'heat') k = 'counter';
+    else if (a.type === 'side' && a.t > SIDE.evade[1]) k = 'punish';
+    return k && COUNTER[k];
+  }
 
   hurt(def, att, M, at, trade = false) {
     const { fx } = this.ctx;
@@ -746,6 +767,8 @@ export class Game {
     if (def.act && def.act.type === 'dash' && def.act.dir < 0 && def.act.t < DASH.invuln) return; // backdash invulnerability
     if (def.act && def.act.type === 'rise' && def.act.t < RISE[def.key].inv) { fx.sparkBurst(at.x, at.y, at.z, 8, 2, 0xffffff); return; } // invincible start-up
     if (this.canParry(def, M)) { this.parry(def, att, M, at); return; }
+    const CK = trade ? null : this.counterKind(def, att);
+    if (CK) M = { ...M, dmg: M.dmg * CK.dmg, stun: M.stun * CK.stun, up: M.heavy && (M.up || 0) >= 0 ? (M.up || 0) + CK.up : M.up };
     const dx = def.x - att.x, dz = def.z - att.z, d = Math.hypot(dx, dz) || 1, nx = dx / d, nz = dz / d;
     const mine = def === this.me || att === this.me;
     const guarding = def.block && !def.act && def.stun <= 0 && def.y <= 0.001, over = M.air || M.over;
@@ -788,7 +811,14 @@ export class Game {
     def.hp = Math.max(0, def.hp - dmg);
     if (!(att.act && (att.act.type === 'super' || att.act.type === 'blow'))) { att.meter = Math.min(100, att.meter + dmg * 1.4); def.meter = Math.min(100, def.meter + dmg * 0.8); }
     this.updateBars();
+    if (CK) { // counter flash: hotter sparks, a ring, a longer freeze and a meter bonus
+      fx.sparkBurst(at.x, at.y, at.z, 35, 4.5, CK.col); fx.waves.spawn(at.x, at.y, at.z, 1.8, CK.col, 0.45); fx.blast(at.x, at.y, at.z, size * 0.8, 0.35, CK.col);
+      this.hitstop += 0.05; att.meter = Math.min(100, att.meter + CK.meter); this.updateBars();
+      if (!M.heavy) this.camKick(at, 0.6, M.at === 'lh' ? -1 : 1);
+      if (mine) this.rumble(0.8, 160);
+    }
     if (att.hits >= 2) this.showCombo(`${att.hits} HIT COMBO`, att.key);
+    else if (CK) this.showCombo(CK.name, att.key);
     else if (guarding) this.showCombo(def.crouch ? 'OVERHEAD!' : 'LOW!', att.key); // guard broken by the wrong height
     if (def.hp <= 0) {
       if (!M.fin && att.act && att.act.type === 'fatal') return; // fatality string: only its last blow K.O.s
@@ -937,7 +967,7 @@ export class Game {
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
     if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN',
-      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>DOUBLE-TAP UP / DOWN = SIDESTEP · STRAIGHT HITS + PROJECTILES MISS, HOOKS / ROUNDHOUSE / SWEEP TRACK IT<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
+      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>DOUBLE-TAP UP / DOWN = SIDESTEP · STRAIGHT HITS + PROJECTILES MISS, HOOKS / ROUNDHOUSE / SWEEP TRACK IT<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>HIT HIM WHILE HE WINDS UP = COUNTER · WHILE HE RECOVERS FROM A MISS = PUNISH COUNTER (MORE DAMAGE + STUN)<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }
   }
