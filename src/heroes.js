@@ -620,7 +620,7 @@ function posePass(H, s, t, ground, raise) {
     // Forearm resting across the chest: if its middle is inside the torso, move the fist out by the same amount.
     for (let it = 0; it < 2; it++) for (const u of [0.35, 0.7]) {
     a.el.getWorldPosition(_C); a.hand.getWorldPosition(_F); _C.lerp(_F, u); _F.copy(_C);
-    if (pushOutOfTorso(H, _C, 0.06)) {
+    if (pushOutOfTorso(H, _C, 0.07 /* forearm radius + gap */)) {
       _T.add(_C.sub(_F).multiplyScalar(1 / u));
       a.el.getWorldPosition(_C); a.sh.getWorldPosition(_A);
       solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A));
