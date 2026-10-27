@@ -422,7 +422,9 @@ export function makeHero(kind) {
     legGeo.addGroup(bootRing * 40 * 6, (briefRing - bootRing) * 40 * 6, 0);
     legGeo.addGroup(briefRing * 40 * 6, (112 - briefRing) * 40 * 6, 2);
     skinSurface(th, legGeo, [suit, boot, B ? dark : red], p => {
-      const lower = 1 - blend(-0.52, -0.40, p.y), pelvis = blend(-0.015, 0.10, p.y) * 0.7;
+      // Front of the upper thigh shares weight with the hips so a raised knee folds the hip crease instead
+      // of pushing suit out through the front of the trunks.
+      const lower = 1 - blend(-0.52, -0.40, p.y), pelvis = Math.max(blend(-0.015, 0.10, p.y) * 0.7, 0.7 * blend(-0.26, -0.06, p.y) * Math.max(0, p.z) / Math.hypot(p.x, p.z));
       return [[kn, lower], [th, (1 - lower) * (1 - pelvis)], [hips, (1 - lower) * pelvis]];
     });
     // Boot foot: heel, high instep and a tapered toe on a flat sole, built along its length
