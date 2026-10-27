@@ -271,6 +271,10 @@ const AMP = { cost: 25, win: 0.14, fan: 0.22, gap: 0.12, freeze: 0.06, cpu: 0.4,
     sup: [{ ...RISE.sup, dmg: 6, kb: 0.4, up: 3.5, stun: 0.6, heavy: false, blast: 0.8 }, { ...RISE.sup, name: 'KRYPTON RISING · AMPLIFIED', dmg: 12, up: 11, blast: 1.7 }],
   },
   kick: { ...FLYKICK, dmg: 22, kb: 9, up: 5.5, stun: 0.9, blast: 1.9 } };
+// SF special cancel: a grounded normal that connected (hit or block, not parried) can be cut short, from the moment it
+// lands until it ends, into a projectile, rising uppercut, special or super, so a confirmed jab / cross / kick links
+// straight into it as one combo. cpu: chance the CPU cancels a normal that connected.
+const CANCEL = { cpu: 0.45 };
 // what a parry can deflect: normal strikes, the rising uppercut, projectiles and the flying kick (not throws, supers, fatalities)
 const PARRYABLE = new Set([...Object.values(MOVES), ...Object.values(RISE), ...Object.values(SHOT), FLYKICK,
   ...Object.values(AMP.shot), ...Object.values(AMP.rise).flat(), AMP.kick]);
@@ -409,6 +413,20 @@ export class Game {
 
   // ---------- moves ----------
   free(f) { return !f.act && f.stun <= 0 && !f.ko && f.y <= 0.001 && f.down <= 0 && !f.launched; }
+  // SF special cancel (see CANCEL): mid-normal that already connected, still grounded and in control.
+  cancelable(f) {
+    const a = f.act, M = a && MOVES[a.type];
+    return !!M && !M.air && !!a.conn && !a.parried && f.stun <= 0 && !f.ko && f.y <= 0.001 && f.down <= 0 && !f.launched && !f.heldBy;
+  }
+  // Free to start a special, or cancelling into one (a quick flash in the hero's colour marks the cancel).
+  ready(f) {
+    if (this.free(f)) return true;
+    if (!this.cancelable(f)) return false;
+    const c = f.H.chest.getWorldPosition(new THREE.Vector3());
+    this.ctx.fx.sparkBurst(c.x, c.y, c.z, 16, 2.4, f.key === 'bat' ? 0xffd23a : 0x6fa8ff); this.ctx.fx.blast(c.x, c.y, c.z, 0.5, 0.2, 0xffffff);
+    f.buf = null; f.cancels = (f.cancels || 0) + 1;
+    return true;
+  }
   press(f, btn, mod = false) {
     if (this.state !== 'fight' || f.ko || f.dazed) return;
     if (btn === 'S') return this.canFatal(f) ? this.fatality(f) : mod && f.meter >= 100 ? this.superMove(f) : this.special(f);
@@ -492,7 +510,7 @@ export class Game {
     this.showCombo(f.key === 'bat' ? 'HIP TOSS' : 'POWER SLAM', f.key);
   }
   shoot(f) {
-    if (!this.free(f) || this.shots.some((s) => s.f === f)) return false;
+    if (this.shots.some((s) => s.f === f) || !this.ready(f)) return false;
     f.act = { type: 'shoot', t: 0, done: false }; f.buf = null; f.block = f.crouch = false; f.downT = -9;
     return true;
   }
@@ -735,13 +753,13 @@ export class Game {
     }
   }
   rise(f) {
-    if (!this.free(f)) return false;
+    if (!this.ready(f)) return false;
     f.act = { type: 'rise', t: 0, done: false, go: false }; f.buf = null; f.block = f.crouch = false; f.cT0 = -9;
     return true;
   }
   jump(f, mx = 0, mz = 0) { if (this.free(f) && !f.block) { f.vy = 6; f.kx += mx * 3; f.kz += mz * 3; } }
   special(f) {
-    if (!this.free(f) || f.cd > 0) return;
+    if (f.cd > 0 || !this.ready(f)) return false;
     f.cd = 4;
     f.act = { type: f.key === 'bat' ? 'flykick' : 'heat', t: 0, done: false };
   }
@@ -794,7 +812,7 @@ export class Game {
   }
 
   superMove(f) {
-    if (!this.free(f)) return;
+    if (!this.ready(f)) return false;
     const S = SUPERS[f.key];
     f.meter = 0; f.block = false; f.hits = 0;
     f.act = { type: 'super', t: 0, phase: 'rush', k: 0, kt: 0, hit: false, done: false };
@@ -1311,6 +1329,7 @@ export class Game {
     for (const h of H) h.at = this.contact(h.att, h.def, h.M);
     const trade = H.length === 2;
     for (const h of H) this.hurt(h.def, h.att, h.M, h.at, trade);
+    for (const h of H) { const a = h.att.act; if (a && MOVES[a.type] && !a.parried) a.conn = true; } // hit or blocked: cancellable (see CANCEL)
     if (trade) this.clash(H[0], H[1]);
   }
 
@@ -1326,7 +1345,7 @@ export class Game {
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
     if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN',
-      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>DOUBLE-TAP UP / DOWN = SIDESTEP · STRAIGHT HITS + PROJECTILES MISS, HOOKS / ROUNDHOUSE / SWEEP TRACK IT<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>HIT HIM WHILE HE WINDS UP = COUNTER · WHILE HE RECOVERS FROM A MISS = PUNISH COUNTER (MORE DAMAGE + STUN)<br>KRUSHING BLOWS (×1.5, X-RAY, ONCE EACH A MATCH): COUNTER UPPERCUT OR SWEEP · PUNISH ROUNDHOUSE · RISING UPPERCUT ON A JUMPER<br>H / LB+RB = DRIVE IMPACT (QUARTER METER): ARMOURED, ABSORBS 2 HITS · COUNTER = CRUMPLE · NEAR A WALL = WALL SPLAT (EVEN BLOCKED)<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH · E / R3 BY A STEEL DRUM = HURL IT (BLOCK / SIDESTEP / JUMP IT)<br>BATMAN G / R3 = GRAPNEL GUN: KRYPTONITE HOOK BURNS + REELS HIM IN · + DIRECTION = ZIP AWAY · BLOCK+G = SWING OVER HIM<br>TAP BLOCK JUST AFTER A PROJECTILE / RISING UPPERCUT / FLYING KICK = AMPLIFY (QUARTER METER): TRIPLE BATARANG · SONIC BOOM · 2-HIT INVINCIBLE UPPERCUT<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
+      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>DOUBLE-TAP UP / DOWN = SIDESTEP · STRAIGHT HITS + PROJECTILES MISS, HOOKS / ROUNDHOUSE / SWEEP TRACK IT<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>HIT HIM WHILE HE WINDS UP = COUNTER · WHILE HE RECOVERS FROM A MISS = PUNISH COUNTER (MORE DAMAGE + STUN)<br>KRUSHING BLOWS (×1.5, X-RAY, ONCE EACH A MATCH): COUNTER UPPERCUT OR SWEEP · PUNISH ROUNDHOUSE · RISING UPPERCUT ON A JUMPER<br>H / LB+RB = DRIVE IMPACT (QUARTER METER): ARMOURED, ABSORBS 2 HITS · COUNTER = CRUMPLE · NEAR A WALL = WALL SPLAT (EVEN BLOCKED)<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH · E / R3 BY A STEEL DRUM = HURL IT (BLOCK / SIDESTEP / JUMP IT)<br>BATMAN G / R3 = GRAPNEL GUN: KRYPTONITE HOOK BURNS + REELS HIM IN · + DIRECTION = ZIP AWAY · BLOCK+G = SWING OVER HIM<br>TAP BLOCK JUST AFTER A PROJECTILE / RISING UPPERCUT / FLYING KICK = AMPLIFY (QUARTER METER): TRIPLE BATARANG · SONIC BOOM · 2-HIT INVINCIBLE UPPERCUT<br>A PUNCH / KICK THAT LANDS (HIT OR BLOCK) CANCELS STRAIGHT INTO A PROJECTILE, RISING UPPERCUT, SPECIAL OR SUPER<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }
   }
@@ -1389,6 +1408,12 @@ export class Game {
     else if (A.wk == null && f.down > 0.3 && f.down < 0.7) { const r = rng(); A.wk = r < WAKE.cpu[0] ? 'roll' : r < WAKE.cpu[0] + WAKE.cpu[1] ? 'quick' : ''; if (A.wk) this.wake(f, A.wk); }
     f.block = A.block > 0 && this.free(f);
     f.crouch = A.crouch > 0 && this.canCrouch(f);
+    // one cancel roll per normal that connected: super (full meter), rising uppercut, or projectile / special
+    const ca = f.act;
+    if (ca && MOVES[ca.type] && ca.conn && !ca.cRoll && this.cancelable(f)) {
+      ca.cRoll = true;
+      if (rng() < CANCEL.cpu) { const r = rng(); if (f.meter >= 100 && r < 0.3) this.superMove(f); else if (r < 0.6) this.rise(f); else if (!this.shoot(f)) this.special(f); }
+    }
     // keep strings going once the first hit is out
     if (f.act && MOVES[f.act.type] && f.act.done && A.chain > 0 && !f.buf) { A.chain--; f.buf = rng() < 0.6 ? 'J' : 'K'; f.bufT = 0.3; f.bufMod = false; }
     if (f.heldBy && A.tech > 0 && (A.tech -= dt) <= 0) this.throwStart(f);
