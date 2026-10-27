@@ -188,6 +188,21 @@ const blasts = Array.from({ length: 12 }, () => {
   s.visible = false; s.renderOrder = 10; s.userData.age = 0; scene.add(s);
   return s;
 });
+// Playable-mode projectiles: Batman's spinning batarang (dark bat silhouette with a gold glow) and Superman's sonic clap
+// (an upright blue shock ring rolling along the ground). One mesh each: only one projectile per fighter is in flight.
+const shotMesh = (() => {
+  const s = new THREE.Shape([[0, 0.05], [0.07, 0.11], [0.1, 0.06], [0.2, 0.1], [0.17, 0.02], [0.13, -0.03], [0.07, -0.02], [0, -0.07],
+    [-0.07, -0.02], [-0.13, -0.03], [-0.17, 0.02], [-0.2, 0.1], [-0.1, 0.06], [-0.07, 0.11]].map(([x, y]) => new THREE.Vector2(x * 1.4, y * 1.4)));
+  const bat = new THREE.Group();
+  bat.add(new THREE.Mesh(new THREE.ShapeGeometry(s).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x15161a, side: THREE.DoubleSide })));
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: blastTex, color: 0xffc040, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 }));
+  glow.scale.setScalar(0.7); bat.add(glow);
+  const sup = new THREE.Group();
+  sup.add(new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.05, 8, 32), new THREE.MeshBasicMaterial({ color: 0x9fc8ff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.85 })));
+  sup.add(new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.025, 6, 28), new THREE.MeshBasicMaterial({ color: 0xffffff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.7 })));
+  for (const g of [bat, sup]) { g.visible = false; scene.add(g); }
+  return { bat, sup };
+})();
 const CLASH_T = 18.2, BLAST_LIFE = 0.9; // sim seconds (clash happens in slow-mo, so this plays out long)
 let blastN = 2;
 function blast(x, y, z, size = 1, life = 0.45, tint = 0xffffff) {
@@ -417,6 +432,14 @@ function updateVisuals() {
       beams[i].visible = true;
     });
   } else beams.forEach((b) => (b.visible = false));
+  for (const k of ['bat', 'sup']) {
+    const m = shotMesh[k], s = game.active && game.shots.find((q) => q.key === k);
+    m.visible = !!s;
+    if (!s) continue;
+    m.position.set(s.x, s.y, s.z);
+    if (k === 'bat') m.rotation.set(0, s.t * 28, 0); // spins flat as it flies
+    else { m.rotation.set(0, Math.atan2(s.vx, s.vz), 0); m.scale.setScalar(0.85 + s.t * 0.35 + Math.sin(s.t * 40) * 0.04); }
+  }
 
   title.style.opacity = game.active ? 0 : Math.min(1, Math.max(0, (realT - 19.0) / 0.8)) * Math.min(1, Math.max(0, (LOOP_END - realT) / 0.4));
   const subText = !game.active && realT < 3 ? 'GOTHAM · 2:14 AM' : '';
