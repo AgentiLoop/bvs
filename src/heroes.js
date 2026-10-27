@@ -695,13 +695,22 @@ function kneePole(H, l, tg) {
 // Foot keeps the body's orientation (flat on the roof when planted), but never bends past the ankle's
 // plantarflex limit relative to the shin: with the leg kicked up, the root-aligned foot folded back
 // against the calf and the boot looked upside down. Now the sole turns toward the target instead.
-const MAX_PF = 0.9, _toe = new THREE.Vector3(), _qf = new THREE.Quaternion(), _XA = new THREE.Vector3(1, 0, 0);
-function orientFoot(l, qRoot) {
+// In the air (air 0..1, the ankle's height above the roof) a free foot is not held flat to the body: flying
+// in pitched forward with the trailing knee bent, the root-aligned boot was cranked 65 deg up toward the shin
+// (a real ankle dorsiflexes ~20 deg). Airborne feet relax into a point along the shin line instead.
+const MAX_PF = 0.9, AIR_PF = 0.8, _toe = new THREE.Vector3(), _qf = new THREE.Quaternion(), _XA = new THREE.Vector3(1, 0, 0),
+  _DN = new THREE.Vector3(0, -1, 0), _ax = new THREE.Vector3();
+function orientFoot(l, qRoot, air = 0) {
   l.kn.getWorldQuaternion(_qa).invert();
   l.an.quaternion.copy(_qa).multiply(qRoot);
   _toe.set(0, 0, 1).applyQuaternion(l.an.quaternion); // toes in the shin's frame
   const pf = Math.atan2(-_toe.y, _toe.z);
   if (pf > MAX_PF) l.an.quaternion.premultiply(_qf.setFromAxisAngle(_XA, MAX_PF - pf));
+  else if (air > 0 && _ax.crossVectors(_toe, _DN).lengthSq() > 1e-8) {
+    // Swing the toes toward the shin's long axis (no twist about it, so the sole never rolls in or out).
+    const cur = Math.asin(Math.max(-1, Math.min(1, -_toe.y)));
+    l.an.quaternion.premultiply(_qf.setFromAxisAngle(_ax.normalize(), air * (AIR_PF - cur)));
+  }
   l.an.updateMatrixWorld(true);
 }
 function posePass(H, s, t, ground, raise) {
@@ -775,9 +784,12 @@ function posePass(H, s, t, ground, raise) {
     // Knee pole tracks the foot's spread so knees track over the toes and never knock together.
     // It also rotates with the hip->foot direction (forward when the foot hangs below the hip, up and back
     // when it is kicked up past hip height): a fixed low-forward pole bent high kicks backwards at the knee.
+    // Airborne = hips well above standing height (flying, jumps) and this ankle clear of the roof; ground
+    // kicks, stances and landings keep the old flat foot.
+    const air = blend(1.15, 1.5, s.p[1] + raise - ground) * blend(0.1, 0.35, _T.y - ground - SOLE);
     kneePole(H, l, tg);
     solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
-    orientFoot(l, _qb);
+    orientFoot(l, _qb, air);
     // When the body is pitched (rolls, tumbles) the boot's toe/heel can still dip through the roof even
     // with the ankle above it: lift the ankle by the deficit of the lowest boot corner and re-solve.
     if (_T.y > ground - 0.6) {
