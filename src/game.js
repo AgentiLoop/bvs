@@ -257,8 +257,23 @@ const PROP = { reach: 1.4, lift: 0.16, rel: 0.44, dur: 0.72, speed: 12, r: 0.6, 
   spots: [[-5.4, -1.1], [5.4, -1.1]],
   hit: { dmg: 11, kb: 6, up: 3.5, stun: 0.8, heavy: true, at: 'rh', blast: 1.6 },
   keys: [[0, 'pickUp'], [0.16, 'lift'], [0.34, 'heaveUp'], [0.44, 'heave'], [0.62, 'guard']] };
+// MK11 Amplify / SF EX specials: tap block (Shift / any shoulder or trigger) within `win` s of starting a special, with
+// `cost` meter = the enhanced version (flash + freeze). Batman: three batarangs fanned `fan` rad apart (a sidestep won't
+// clear them); Superman: SONIC BOOM, a bigger ring that knocks down; either rising uppercut: invincible through its whole
+// active window and two hits (rise[k] = [first, second], the second `gap` s later and launching higher); Batman's flying
+// kick: harder and launching. An amplified projectile beats a plain one (only the plain one is cancelled).
+// cpu: chance the CPU amplifies a special when it has `cpuMeter` meter.
+const AMP = { cost: 25, win: 0.14, fan: 0.22, gap: 0.12, freeze: 0.06, cpu: 0.4, cpuMeter: 50,
+  shot: { bat: { ...SHOT.bat, name: 'TRIPLE BATARANG', speed: 14, dmg: 8 },
+    sup: { ...SHOT.sup, name: 'SONIC BOOM', speed: 10, r: 0.85, dmg: 11, kb: 5, up: 4, stun: 0.8, heavy: true, blast: 1.4 } },
+  rise: {
+    bat: [{ ...RISE.bat, dmg: 6, kb: 0.4, up: 3.5, stun: 0.6, heavy: false, blast: 0.8 }, { ...RISE.bat, name: 'RISING KNIGHT · AMPLIFIED', dmg: 11, up: 10, blast: 1.6 }],
+    sup: [{ ...RISE.sup, dmg: 6, kb: 0.4, up: 3.5, stun: 0.6, heavy: false, blast: 0.8 }, { ...RISE.sup, name: 'KRYPTON RISING · AMPLIFIED', dmg: 12, up: 11, blast: 1.7 }],
+  },
+  kick: { ...FLYKICK, dmg: 22, kb: 9, up: 5.5, stun: 0.9, blast: 1.9 } };
 // what a parry can deflect: normal strikes, the rising uppercut, projectiles and the flying kick (not throws, supers, fatalities)
-const PARRYABLE = new Set([...Object.values(MOVES), ...Object.values(RISE), ...Object.values(SHOT), FLYKICK]);
+const PARRYABLE = new Set([...Object.values(MOVES), ...Object.values(RISE), ...Object.values(SHOT), FLYKICK,
+  ...Object.values(AMP.shot), ...Object.values(AMP.rise).flat(), AMP.kick]);
 // Facial expression (expr): blink length (s), easing rate, effort (scowl / shout) per special act type; strikes use heavy.
 const EXPR = { blink: 0.15, k: 22, effort: { super: 1, blow: 1, fatal: 0.9, impact: 1, rise: 0.9, flykick: 0.8, throw: 0.7, prop: 0.9, shoot: 0.4, heat: 0.3 } };
 // MK11 battle damage: each clean hit leaves a bruise / scuff where it landed on the body (placed on the struck bone's
@@ -337,6 +352,7 @@ export class Game {
     else if (k === 'e') this.interact(this.me);
     else if (k === 'g') this.grapnelIn(this.me);
     else if (k === ' ') this.press(this.me, 'A');
+    else if (k === 'shift') this.amplify(this.me);
   }
   keyup(e) { this.keys.delete(e.key.toLowerCase()); }
 
@@ -371,6 +387,7 @@ export class Game {
     if (this.padHit(3)) this.press(this.me, 'K', this.blockHeld());
     if (this.padHit(1)) this.press(this.me, 'S', this.blockHeld());
     if (this.padHit(0)) this.press(this.me, 'A');
+    if ([4, 5, 6, 7].some((i) => this.padHit(i))) this.amplify(this.me); // a block tap during a special's start-up
     if (this.padHit(11) && !this.interact(this.me)) this.grapnelIn(this.me); // R3 = stage interactable, else Batman's grapnel
     if (this.padNow[6] && this.padNow[7] && (this.padHit(6) || this.padHit(7))) this.blow(this.me); // both triggers = fatal blow
     if (this.padNow[4] && this.padNow[5] && (this.padHit(4) || this.padHit(5))) this.impact(this.me); // both bumpers = drive impact
@@ -479,6 +496,21 @@ export class Game {
     f.act = { type: 'shoot', t: 0, done: false }; f.buf = null; f.block = f.crouch = false; f.downT = -9;
     return true;
   }
+  // MK11 Amplify (see AMP): a block tap in a special's start-up spends meter on the enhanced version.
+  amplify(f) {
+    const a = f.act;
+    if (this.state !== 'fight' || !a || a.amp || a.done || a.t > AMP.win || f.meter < AMP.cost || f.stun > 0) return false;
+    if (!(a.type === 'shoot' || a.type === 'rise' || a.type === 'flykick' && f.key === 'bat')) return false;
+    const { fx } = this.ctx, c = f.H.chest.getWorldPosition(new THREE.Vector3()), col = f.key === 'bat' ? 0xffd23a : 0x6fa8ff;
+    a.amp = true; f.meter -= AMP.cost; this.updateBars();
+    fx.flash(0.15); fx.blast(c.x, c.y, c.z, 1.1, 0.35, col); fx.waves.spawn(c.x, c.y, c.z, 2, col, 0.4); fx.sparkBurst(c.x, c.y, c.z, 40, 3.5, col);
+    this.hitstop = Math.max(this.hitstop, AMP.freeze);
+    this.showCombo('AMPLIFIED!', f.key);
+    if (f === this.me) this.rumble(0.5, 120);
+    return true;
+  }
+  // the rising uppercut's invincible start-up (an amplified one stays invincible through its whole active window)
+  riseInv(o) { const a = o.act; return !!a && a.type === 'rise' && a.t < (a.amp ? RISE[o.key].act[1] : RISE[o.key].inv); }
   // Player grapnel: block held = swing over the foe, a direction held (not toward) = zip that way, else the kryptonite hook.
   grapnelIn(f) {
     const m = Math.hypot(f.inX, f.inZ);
@@ -575,11 +607,12 @@ export class Game {
       s.t += dt; s.x += s.vx * dt; s.z += s.vz * dt;
       if (s.key === 'bat') { if (rng() < 0.5) fx.sparkBurst(s.x, s.y, s.z, 1, 0.6, 0xffd23a); }
       else { if (rng() < 0.6) fx.dustBurst(s.x, 0, s.z, 2, 1.2); if (rng() < 0.3) fx.sparkBurst(s.x, s.y, s.z, 1, 1, 0x9fc8ff); }
-      if (s.t > SHOT[s.key].life || s.x < ARENA.x0 - 1 || s.x > ARENA.x1 + 1 || s.z < ARENA.z0 - 1 || s.z > ARENA.z1 + 1) s.dead = true;
+      if (s.t > s.S.life || s.x < ARENA.x0 - 1 || s.x > ARENA.x1 + 1 || s.z < ARENA.z0 - 1 || s.z > ARENA.z1 + 1) s.dead = true;
     }
-    const [p, q] = this.shots;
-    if (p && q && !p.dead && !q.dead && Math.hypot(p.x - q.x, p.z - q.z) < 0.8) {
-      p.dead = q.dead = true;
+    // opposing projectiles that meet cancel out; an amplified one survives a plain one
+    for (const p of this.shots) for (const q of this.shots) {
+      if (p.f === q.f || p.dead || q.dead || Math.hypot(p.x - q.x, p.z - q.z) >= 0.8) continue;
+      if (p.amp === q.amp) p.dead = q.dead = true; else (p.amp ? q : p).dead = true;
       const x = (p.x + q.x) / 2, z = (p.z + q.z) / 2, y = (p.y + q.y) / 2;
       fx.sparkBurst(x, y, z, 50, 5, 0xffffff); fx.blast(x, y, z, 1.2, 0.5); fx.waves.spawn(x, y, z, 2, 0xffffff, 0.5); fx.impact(x, y, z, 0.25);
       this.hitstop = Math.max(this.hitstop, 0.08);
@@ -587,11 +620,11 @@ export class Game {
     }
     for (const s of this.shots) {
       if (s.dead) continue;
-      const S = SHOT[s.key], o = s.f === this.me ? this.cpu : this.me;
+      const S = s.S, o = s.f === this.me ? this.cpu : this.me;
       if (o.ko || o.down > 0 || o.heldBy || Math.hypot(o.x - s.x, o.z - s.z) > S.r) continue;
       if (S.hi ? o.y > 0.9 || (o.crouch && o.y <= 0.001) : o.y > 0.45) continue; // jumped over / ducked under
       if (o.act && o.act.type === 'dash' && o.act.dir < 0 && o.act.t < DASH.invuln) continue;
-      if (o.act && o.act.type === 'rise' && o.act.t < RISE[o.key].inv) continue; // rising uppercut passes through
+      if (this.riseInv(o)) continue; // rising uppercut passes through
       s.dead = true;
       const at = new THREE.Vector3(s.x, Math.max(s.y, 0.7), s.z);
       if (this.canParry(o, S)) this.parry(o, null, S, at); else this.hurt(o, s.f, S, at);
@@ -684,7 +717,7 @@ export class Game {
       if (!p.harmless) { p.spin += dt * 11; p.rx = Math.PI / 2 + p.spin; if (this.ctx.rng() < 0.5) fx.sparkBurst(p.x, p.y, p.z, 1, 0.5, 0xffb060); }
       const o = p.by && (p.by === this.me ? this.cpu : this.me);
       if (o && !p.harmless && this.state === 'fight' && !o.ko && o.down <= 0 && !o.heldBy && Math.hypot(o.x - p.x, o.z - p.z) < PROP.r
-        && p.y > o.y + 0.1 && p.y < o.y + 2.0 && !(o.act && (o.act.type === 'dash' && o.act.dir < 0 && o.act.t < DASH.invuln || o.act.type === 'rise' && o.act.t < RISE[o.key].inv))) {
+        && p.y > o.y + 0.1 && p.y < o.y + 2.0 && !(o.act && o.act.type === 'dash' && o.act.dir < 0 && o.act.t < DASH.invuln) && !this.riseInv(o)) {
         const at = new THREE.Vector3(p.x, p.y, p.z), att = p.by;
         this.burstProp(p);
         this.hurt(o, att, PROP.hit, at);
@@ -1036,7 +1069,7 @@ export class Game {
       this.hitstop = Math.max(this.hitstop, 0.1); this.showCombo('ARMOR', def.key); this.updateBars();
       return;
     }
-    if (def.act && def.act.type === 'rise' && def.act.t < RISE[def.key].inv) { fx.sparkBurst(at.x, at.y, at.z, 8, 2, 0xffffff); return; } // invincible start-up
+    if (this.riseInv(def)) { fx.sparkBurst(at.x, at.y, at.z, 8, 2, 0xffffff); return; } // invincible start-up
     if (this.canParry(def, M)) { this.parry(def, att, M, at); return; }
     const CK = trade ? null : this.counterKind(def, att), M0 = M;
     if (CK) M = { ...M, dmg: M.dmg * CK.dmg, stun: M.stun * CK.stun, up: M.heavy && (M.up || 0) >= 0 ? (M.up || 0) + CK.up : M.up };
@@ -1293,7 +1326,7 @@ export class Game {
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
     if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN',
-      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>DOUBLE-TAP UP / DOWN = SIDESTEP · STRAIGHT HITS + PROJECTILES MISS, HOOKS / ROUNDHOUSE / SWEEP TRACK IT<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>HIT HIM WHILE HE WINDS UP = COUNTER · WHILE HE RECOVERS FROM A MISS = PUNISH COUNTER (MORE DAMAGE + STUN)<br>KRUSHING BLOWS (×1.5, X-RAY, ONCE EACH A MATCH): COUNTER UPPERCUT OR SWEEP · PUNISH ROUNDHOUSE · RISING UPPERCUT ON A JUMPER<br>H / LB+RB = DRIVE IMPACT (QUARTER METER): ARMOURED, ABSORBS 2 HITS · COUNTER = CRUMPLE · NEAR A WALL = WALL SPLAT (EVEN BLOCKED)<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH · E / R3 BY A STEEL DRUM = HURL IT (BLOCK / SIDESTEP / JUMP IT)<br>BATMAN G / R3 = GRAPNEL GUN: KRYPTONITE HOOK BURNS + REELS HIM IN · + DIRECTION = ZIP AWAY · BLOCK+G = SWING OVER HIM<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
+      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>DOUBLE-TAP UP / DOWN = SIDESTEP · STRAIGHT HITS + PROJECTILES MISS, HOOKS / ROUNDHOUSE / SWEEP TRACK IT<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>HIT HIM WHILE HE WINDS UP = COUNTER · WHILE HE RECOVERS FROM A MISS = PUNISH COUNTER (MORE DAMAGE + STUN)<br>KRUSHING BLOWS (×1.5, X-RAY, ONCE EACH A MATCH): COUNTER UPPERCUT OR SWEEP · PUNISH ROUNDHOUSE · RISING UPPERCUT ON A JUMPER<br>H / LB+RB = DRIVE IMPACT (QUARTER METER): ARMOURED, ABSORBS 2 HITS · COUNTER = CRUMPLE · NEAR A WALL = WALL SPLAT (EVEN BLOCKED)<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH · E / R3 BY A STEEL DRUM = HURL IT (BLOCK / SIDESTEP / JUMP IT)<br>BATMAN G / R3 = GRAPNEL GUN: KRYPTONITE HOOK BURNS + REELS HIM IN · + DIRECTION = ZIP AWAY · BLOCK+G = SWING OVER HIM<br>TAP BLOCK JUST AFTER A PROJECTILE / RISING UPPERCUT / FLYING KICK = AMPLIFY (QUARTER METER): TRIPLE BATARANG · SONIC BOOM · 2-HIT INVINCIBLE UPPERCUT<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }
   }
@@ -1359,6 +1392,9 @@ export class Game {
     // keep strings going once the first hit is out
     if (f.act && MOVES[f.act.type] && f.act.done && A.chain > 0 && !f.buf) { A.chain--; f.buf = rng() < 0.6 ? 'J' : 'K'; f.bufT = 0.3; f.bufMod = false; }
     if (f.heldBy && A.tech > 0 && (A.tech -= dt) <= 0) this.throwStart(f);
+    // one amplify roll per special (projectile, rising uppercut, flying kick) when the meter allows
+    const fa = f.act;
+    if (fa && !fa.ampRoll && fa.t > 0.02 && (fa.type === 'shoot' || fa.type === 'rise' || fa.type === 'flykick') && f.meter >= AMP.cpuMeter) { fa.ampRoll = true; if (rng() < AMP.cpu) this.amplify(f); }
     if (A.air && f.y > 0.5 && d < 1.9 && !f.act) { A.air = false; this.press(f, rng() < 0.5 ? 'J' : 'K'); }
     // incoming projectile: one read per shot (60% right): duck / block the batarang, jump / crouch-block the clap
     for (const s of this.shots) {
@@ -1561,11 +1597,15 @@ export class Game {
         const S = SHOT[f.key], sx = Math.sin(f.yaw), sz = Math.cos(f.yaw);
         if (!a.done && a.t >= S.rel) {
           a.done = true;
-          const x = f.x + sx * 0.7, z = f.z + sz * 0.7;
-          this.shots.push({ f, key: f.key, x, y: S.y, z, vx: sx * S.speed, vz: sz * S.speed, t: 0 });
-          if (f.key === 'bat') fx.sparkBurst(x, S.y, z, 12, 2, 0xffd23a);
-          else { fx.waves.spawn(x, 1.2, z, 1.4, 0x9fc8ff, 0.4); fx.dustBurst(x, 0, z, 30, 2.5); fx.impact(x, 1.2, z, 0.15); }
-          this.showCombo(S.name, f.key);
+          const x = f.x + sx * 0.7, z = f.z + sz * 0.7, A = a.amp ? AMP.shot[f.key] : S;
+          // amplified: Batman fans three batarangs, Superman's ring is a bigger, faster sonic boom
+          for (const da of a.amp && f.key === 'bat' ? [-AMP.fan, 0, AMP.fan] : [0]) {
+            const vx = Math.sin(f.yaw + da) * A.speed, vz = Math.cos(f.yaw + da) * A.speed;
+            this.shots.push({ f, key: f.key, S: A, amp: !!a.amp, x, y: A.y, z, vx, vz, t: 0 });
+          }
+          if (f.key === 'bat') fx.sparkBurst(x, S.y, z, a.amp ? 30 : 12, 2, 0xffd23a);
+          else { fx.waves.spawn(x, 1.2, z, a.amp ? 2.2 : 1.4, 0x9fc8ff, 0.4); fx.dustBurst(x, 0, z, a.amp ? 60 : 30, 2.5); fx.impact(x, 1.2, z, a.amp ? 0.3 : 0.15); }
+          this.showCombo(A.name, f.key);
         }
         if (a.t >= S.dur) f.act = null;
       } else if (a.type === 'prop') {
@@ -1591,9 +1631,11 @@ export class Game {
           fx.dustBurst(f.x, 0, f.z, 30, 2.2); fx.waves.spawn(f.x, 0.05, f.z, 1.6, R.col, 0.4); fx.sparkBurst(c.x, c.y, c.z, 25, 3, R.col);
           this.showCombo(R.name, f.key);
         } else if (f.vy > 0 && this.ctx.rng() < 0.7) { const h = LIMB.rh(f.H).getWorldPosition(new THREE.Vector3()); fx.sparkBurst(h.x, h.y, h.z, 2, 1, R.col); }
-        const dy = o.y - f.y;
-        if (!a.done && a.t >= R.act[0] && a.t <= R.act[1] && this.state === 'fight' && d < R.reach && dy > -0.6 && dy < 1.9 && !o.ko && o.down <= 0) {
-          a.done = true; this.pending.push({ att: f, def: o, M: R });
+        const dy = o.y - f.y, RA = a.amp && AMP.rise[f.key], live = this.state === 'fight' && dy > -0.6 && dy < 1.9 && !o.ko && o.down <= 0;
+        if (!a.done && a.t >= R.act[0] && a.t <= R.act[1] && live && d < R.reach) {
+          a.done = true; a.t1 = a.t; this.pending.push({ att: f, def: o, M: RA ? RA[0] : R });
+        } else if (RA && a.done && !a.done2 && !a.parried && a.t >= a.t1 + AMP.gap && a.t <= R.act[1] + AMP.gap && live && d < R.reach + 0.4) {
+          a.done2 = true; this.pending.push({ att: f, def: o, M: RA[1] }); // amplified: a second, higher-launching blow
         }
         if (a.t > 0.1 && f.y <= 0.001) { if (a.landT == null) a.landT = a.t; if (a.t - a.landT >= R.rec) f.act = null; }
       } else if (a.type === 'flykick') {
@@ -1602,7 +1644,7 @@ export class Game {
         f.y = Math.sin(Math.PI * u) * 1.1;
         if (!a.done && u > 0.3 && d < 1.3 && !o.ko && o.down <= 0) {
           a.done = true;
-          this.hurt(o, f, FLYKICK, this.contact(f, o, FLYKICK));
+          const K = a.amp ? AMP.kick : FLYKICK; this.hurt(o, f, K, this.contact(f, o, K));
         }
         if (u >= 1) { f.act = null; f.y = 0; fx.dustBurst(f.x, 0, f.z, 20, 1.5); }
       } else if (a.type === 'heat') {

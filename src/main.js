@@ -212,7 +212,7 @@ const blasts = Array.from({ length: 12 }, () => {
   return s;
 });
 // Playable-mode projectiles: Batman's spinning batarang (dark bat silhouette with a gold glow) and Superman's sonic clap
-// (an upright blue shock ring rolling along the ground). One mesh each: only one projectile per fighter is in flight.
+// (an upright blue shock ring rolling along the ground). An amplified throw fans three batarangs, so Batman gets three meshes.
 const shotMesh = (() => {
   const s = new THREE.Shape([[0, 0.05], [0.07, 0.11], [0.1, 0.06], [0.2, 0.1], [0.17, 0.02], [0.13, -0.03], [0.07, -0.02], [0, -0.07],
     [-0.07, -0.02], [-0.13, -0.03], [-0.17, 0.02], [-0.2, 0.1], [-0.1, 0.06], [-0.07, 0.11]].map(([x, y]) => new THREE.Vector2(x * 1.4, y * 1.4)));
@@ -223,8 +223,9 @@ const shotMesh = (() => {
   const sup = new THREE.Group();
   sup.add(new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.05, 8, 32), new THREE.MeshBasicMaterial({ color: 0x9fc8ff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.85 })));
   sup.add(new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.025, 6, 28), new THREE.MeshBasicMaterial({ color: 0xffffff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.7 })));
-  for (const g of [bat, sup]) { g.visible = false; scene.add(g); }
-  return { bat, sup };
+  const bats = [bat, bat.clone(), bat.clone()];
+  for (const g of [...bats, sup]) { g.visible = false; scene.add(g); }
+  return { bat: bats, sup: [sup] };
 })();
 // Playable mode: Batman's grapnel line (a green kryptonite laser with a white-hot core) and its glowing kryptonite hook head.
 const grapMesh = (() => {
@@ -540,12 +541,15 @@ function updateVisuals() {
     });
   } else beams.forEach((b) => (b.visible = false));
   for (const k of ['bat', 'sup']) {
-    const m = shotMesh[k], s = game.active && game.shots.find((q) => q.key === k);
-    m.visible = !!s;
-    if (!s) continue;
-    m.position.set(s.x, s.y, s.z);
-    if (k === 'bat') m.rotation.set(0, s.t * 28, 0); // spins flat as it flies
-    else { m.rotation.set(0, Math.atan2(s.vx, s.vz), 0); m.scale.setScalar(0.85 + s.t * 0.35 + Math.sin(s.t * 40) * 0.04); }
+    const list = game.active ? game.shots.filter((q) => q.key === k) : [];
+    shotMesh[k].forEach((m, i) => {
+      const s = list[i];
+      m.visible = !!s;
+      if (!s) return;
+      m.position.set(s.x, s.y, s.z);
+      if (k === 'bat') m.rotation.set(0, s.t * 28, 0); // spins flat as it flies
+      else { m.rotation.set(0, Math.atan2(s.vx, s.vz), 0); m.scale.setScalar((0.85 + s.t * 0.35 + Math.sin(s.t * 40) * 0.04) * (s.amp ? 1.5 : 1)); } // sonic boom: bigger ring
+    });
   }
   const gp = game.active && game.grap;
   grapMesh.line.visible = grapMesh.hook.visible = !!gp;
