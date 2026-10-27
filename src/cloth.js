@@ -15,6 +15,8 @@ const CAPSULES = [
   ['arms', 'L', 'sh', 'el', 0.1], ['arms', 'R', 'sh', 'el', 0.1],
 ];
 const _a = new THREE.Vector3(), _b = new THREE.Vector3();
+const _hInv = new THREE.Matrix4(), _cInv = new THREE.Matrix4();
+const CHEST_Y = 0.36; // chest bone height above the hips bone (spine 0.08 + chest 0.28)
 
 export class Cape {
   constructor(hero, { cols, rows, topW, botW, len, color, scallop = false }) {
@@ -32,6 +34,14 @@ export class Cape {
         const fold = 0.035 * (j / (rows - 1)) * Math.cos(u * Math.PI * 1.5);
         this.canon.push(new THREE.Vector3(u * w / 2, pinY - (j * len) / (rows - 1), pinZ * (1 - f) + (-0.17 - j * 0.02 + fold) * f));
       }
+    }
+    // Rest shape (incl. the pinned neckline) starts outside the torso so the pinned corners don't sit
+    // inside the trapezius.
+    if (hero.torsoSection) for (const c of this.canon) {
+      const y = c.y + CHEST_Y;
+      if (y <= 0.035 || y >= 0.735) continue;
+      const [rx, rz] = hero.torsoSection(y), e = Math.hypot(c.x / (rx + 0.02), c.z / (rz + 0.02));
+      if (e < 1 && e > 1e-6) { c.x /= e; c.z /= e; }
     }
     const idx = (i, j) => j * cols + i;
     this.cons = [];
@@ -91,6 +101,10 @@ export class Cape {
     const P = this.pos, Q = this.prev, cols = this.cols, n = this.canon.length;
     for (const c of this.colliders) { c.c.copy(c.off); c.bone.localToWorld(c.c); }
     for (const c of this.capsules) { c.a.getWorldPosition(c.p); c.b.getWorldPosition(c.q); }
+    // The spheres under-fill the broad upper back, so the cape sank 1-2 cm (up to 11 cm on Batman) into
+    // it. Also collide against the torso's real elliptical cross-section in the bone frame that drives it.
+    const sec = this.hero.torsoSection;
+    if (sec) { _hInv.copy(this.hero.hips.matrixWorld).invert(); _cInv.copy(this.hero.chest.matrixWorld).invert(); }
     const dt2 = dt * dt, damp = 0.982;
     for (let k = 0; k < n; k++) {
       const o = k * 3;
@@ -138,6 +152,21 @@ export class Cape {
           if (d2 < c.r * c.r && d2 > 1e-10) {
             const s = c.r / Math.sqrt(d2);
             P[o] = _a.x + dx * s; P[o + 1] = _a.y + dy * s; P[o + 2] = _a.z + dz * s;
+          }
+        }
+        if (sec) {
+          _v.set(P[o], P[o + 1], P[o + 2]).applyMatrix4(_cInv);
+          let bone = this.hero.chest, y = _v.y + CHEST_Y;
+          if (y < 0.4) { _v.set(P[o], P[o + 1], P[o + 2]).applyMatrix4(_hInv); bone = this.hero.hips; y = _v.y; }
+          else _v.y = y;
+          if (y > 0.035 && y < 0.735) {
+            const [rx, rz] = sec(y), e = Math.hypot(_v.x / (rx + 0.02), _v.z / (rz + 0.02));
+            if (e < 1 && e > 1e-6) {
+              _v.x /= e; _v.z /= e;
+              if (bone === this.hero.chest) _v.y -= CHEST_Y;
+              _v.applyMatrix4(bone.matrixWorld);
+              P[o] = _v.x; P[o + 1] = _v.y; P[o + 2] = _v.z;
+            }
           }
         }
         const gy = groundFn(P[o], P[o + 2]) + 0.015;

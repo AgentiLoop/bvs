@@ -478,7 +478,9 @@ export function makeHero(kind) {
     if (m.isSkinnedMesh) { root.add(o); o.bind(m.skeleton, m.bindMatrix); }
     else { o.position.copy(m.position); o.quaternion.copy(m.quaternion); o.scale.copy(m.scale); m.parent.add(o); }
   }
-  return { kind, root, hips, spine, chest, head, arms, legs, eyes };
+  // Torso cross-section [halfWidth, halfDepth] at a hips-space height, for cloth collision.
+  const torsoSection = (y) => contour(torsoRows, y);
+  return { kind, root, hips, spine, chest, head, arms, legs, eyes, torsoSection };
 }
 
 // ---------- IK ----------
