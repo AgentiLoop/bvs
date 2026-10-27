@@ -541,9 +541,11 @@ export function applyPose(H, s, t, ground = 0) {
 function posePass(H, s, t, ground, raise) {
   H.root.position.set(s.p[0], s.p[1] + raise, s.p[2]);
   H.root.rotation.set(s.pitch, s.yaw, s.roll, 'YXZ');
-  H.spine.rotation.set(s.lean * 0.45, 0, s.roll * 0.3);
-  H.chest.rotation.set(s.lean * 0.55 + Math.sin(t * 2.1) * 0.012, 0, 0);
-  H.head.rotation.set(-s.lean * 0.7, 0, 0);
+  // Athletic, coiled posture: the lean is spread through spine and chest at 1.35x (hunched shoulders,
+  // chest driving forward) and the head counters most of it so the eyes stay on the opponent.
+  H.spine.rotation.set(s.lean * 0.6, 0, s.roll * 0.3);
+  H.chest.rotation.set(s.lean * 0.75 + Math.sin(t * 2.1) * 0.012, 0, 0);
+  H.head.rotation.set(-s.lean * 0.95, 0, 0);
   H.root.updateMatrixWorld(true);
 
   const g = s.gait || 0, ph = t * Math.PI * 2 * 1.7, sw = Math.sin(ph), cw = Math.cos(ph);
