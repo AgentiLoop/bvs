@@ -170,6 +170,23 @@ const beams = [0, 1].map(() => {
   g.visible = false; scene.add(g);
   return g;
 });
+// Fist-to-chin impact blasts: additive radial-glow sprites that bloom at each contact point.
+const blastTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.18, 'rgba(255,245,200,0.95)');
+  gr.addColorStop(0.45, 'rgba(255,170,60,0.55)'); gr.addColorStop(1, 'rgba(255,80,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 3;
+  for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI * 2, r = i % 2 ? 40 : 62; g.beginPath(); g.moveTo(64, 64); g.lineTo(64 + Math.cos(a) * r, 64 + Math.sin(a) * r); g.stroke(); }
+  return new THREE.CanvasTexture(c);
+})();
+const blasts = [0, 1].map(() => {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: blastTex, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, transparent: true }));
+  s.visible = false; s.renderOrder = 10; s.userData.age = 0; scene.add(s);
+  return s;
+});
+const CLASH_T = 18.2, BLAST_LIFE = 0.9; // sim seconds (clash happens in slow-mo, so this plays out long)
 
 // ---------- sim state ----------
 let rng, simT, realT, shake, postFlash, flashI, lightning, fired, acc = 0;
@@ -177,6 +194,16 @@ const CONCRETE = [0x6b6d73, 0x5a5c62, 0x7d7f85, 0x4a4b50, 0x8a7a6a];
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler();
 const chestPos = (H, out = new THREE.Vector3()) => out.set(0, 0.15, 0).applyMatrix4(H.chest.matrixWorld);
+// Where H's right fist meets T's chin: fist position pulled a bit toward the target's head.
+const contactPos = (H, T, out = new THREE.Vector3()) => H.arms.R.hand.getWorldPosition(out).lerp(T.head.getWorldPosition(_w), 0.3);
+function fistBlast() {
+  [[bat, sup], [sup, bat]].forEach(([H, T], i) => {
+    contactPos(H, T, _v);
+    blasts[i].position.copy(_v); blasts[i].userData.age = 0; blasts[i].visible = true;
+    sparkBurst(_v.x, _v.y, _v.z, 90, 7, i ? 0xbfd8ff : 0xfff0c0);
+    waves.spawn(_v.x, _v.y, _v.z, 2.5, 0xffffff, 0.8);
+  });
+}
 
 function rubble(x, y, z, n, speed, sMin, sMax, up = 4) {
   for (let i = 0; i < n; i++) {
@@ -253,7 +280,7 @@ const EVENTS = [
     rubble(0, 0, 0, 180, 9, 0.06, 0.34, 7); dustBurst(0, 0, 0, 220, 6); sparkBurst(0, 1.5, 0, 160, 9, 0xfff0d0);
     waves.spawn(0, 0.05, 0, 9, 0xffffff, 1.6); waves.spawn(0, 1.4, 0, 4, 0xbfd8ff, 1.0);
     for (let i = 0; i < 10; i++) decals.add((rng() - 0.5) * 3, (rng() - 0.5) * 2, 0.4 + rng() * 0.8);
-    impact(0, 1.4, 0, 0.7); postFlash = 1;
+    impact(0, 1.4, 0, 0.7); postFlash = 1; fistBlast();
   } },
 ];
 const EMITTERS = [
@@ -270,6 +297,7 @@ const EMITTERS = [
   { t0: 15.8, t1: 16.4, fn: (k) => { const p = sup.root.position; if (k % 2 === 0) rubble(p.x, 0, p.z, 1, 2, 0.05, 0.14, 2); dustBurst(p.x, 0, p.z, 2, 1.2);
     if (k % 3 === 0) decals.add(p.x, p.z, 0.25); } },
   { t0: 17.4, t1: 18.2, fn: (k) => { if (k % 3) return; for (const H of [bat, sup]) dustBurst(H.root.position.x, 0, H.root.position.z, 1, 0.6); } },
+  { t0: CLASH_T, t1: CLASH_T + 0.6, fn: () => { [[bat, sup], [sup, bat]].forEach(([H, T], i) => { contactPos(H, T, _v); sparkBurst(_v.x, _v.y, _v.z, 3, 4, i ? 0xbfd8ff : 0xffd080); }); } },
 ];
 
 function heatTarget(t) {
@@ -292,7 +320,7 @@ function reset() {
   rng = mulberry32(SEED);
   simT = 0; realT = 0; shake = 0; postFlash = 0; flashI = 0; lightning = 0; fired = new Set();
   debris.clear(); water.clear(); sparks.clear(); dust.clear(); waves.clear(); decals.clear();
-  world.tower.reset();
+  world.tower.reset(); blasts.forEach((b) => (b.visible = false));
   poseHeroes(0);
   batCape.reset(); supCape.reset();
 }
@@ -309,6 +337,9 @@ function step() {
   const wind = [1.6 + Math.sin(simT * 0.9) * 1.2, 0.3, 1.2 + Math.cos(simT * 0.6)];
   for (let s = 0; s < 2; s++) { batCape.step(sdt / 2, simT, wind, groundAt); supCape.step(sdt / 2, simT, wind, groundAt); }
   shake *= Math.exp(-DT * 6); postFlash *= Math.exp(-DT * (simT > SLOWMO ? 1.2 : 7)); flashI *= Math.exp(-DT * 6); lightning *= Math.exp(-DT * 5);
+  blasts.forEach((b) => { if (!b.visible) return; const u = (b.userData.age += sdt) / BLAST_LIFE;
+    if (u >= 1) { b.visible = false; return; }
+    b.scale.setScalar(0.25 + 1.6 * Math.sqrt(u)); b.material.opacity = 1 - u * u; b.material.rotation = u * 0.8; });
   chestPos(bat, _v); chestPos(sup, _w);
   world.update(simT, sdt, _v.lerp(_w, 0.5).setY(0.5));
   if (realT >= LOOP_END) reset();
