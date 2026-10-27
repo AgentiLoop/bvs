@@ -7,6 +7,7 @@ import { Debris, Particles, Shockwaves, Decals } from './fx.js';
 import { buildWorld, groundAt } from './world.js';
 import { BAT, SUP, HEAT, SLOWMO, KEY, sampleTrack, sampleCam, face } from './timeline.js';
 import { mulberry32 } from './rng.js';
+import { loadFanModel } from './modelrig.js';
 
 const qs = new URLSearchParams(location.search);
 const SEED = +(qs.get('seed') || 1337);
@@ -92,9 +93,18 @@ for (const k of (qs.get('off') || '').split(',')) { // debug: ?off=rain,spot,fog
 }
 const bat = makeHero('batman'), sup = makeHero('superman');
 scene.add(bat.root, sup.root);
+// fan models: models/batman.glb + models/superman.glb (or ?bat=url&sup=url, ?byaw=deg&syaw=deg); procedural body if missing
+window.__fan = {};
+for (const [H, key, file] of [[bat, 'bat', 'batman'], [sup, 'sup', 'superman']]) {
+  if (qs.get(key) === '0') continue;
+  loadFanModel(H, qs.get(key) || `./models/${file}.glb`, { yaw: (+(qs.get(key[0] + 'yaw')) || 0) * Math.PI / 180 })
+    .then((n) => (window.__fan[key] = n))
+    .catch((e) => (window.__fan[key] = 'none: ' + String((e && e.message) || e).slice(0, 80)));
+}
 const batCape = new Cape(bat, { cols: 11, rows: 15, topW: 0.4, botW: 1.7, len: 1.45, color: 0x111216, scallop: true });
 const supCape = new Cape(sup, { cols: 9, rows: 14, topW: 0.42, botW: 1.0, len: 1.35, color: 0xb3161a });
 scene.add(batCape.mesh, supCape.mesh);
+for (const [cape, key] of [[batCape, 'bcape'], [supCape, 'scape']]) if (qs.get(key) === '0' || qs.get('cape') === '0') cape.mesh.visible = false;
 
 const debris = new Debris(700);
 const water = new Particles(2200, { size: 0.07, gravity: 9.8, bounce: 0.15, drag: 0.3, opacity: 0.85 });
@@ -360,4 +370,14 @@ if (qs.has('debug')) {
     batRF: wp(bat.legs.R.an), batRH: wp(bat.arms.R.hand), batHead: wp(bat.head), batChest: wp(bat.chest),
     supRH: wp(sup.arms.R.hand), supHead: wp(sup.head), supChest: wp(sup.chest), supLF: wp(sup.legs.L.an),
     sup: sup.root.position.toArray(), capeNaN: [...batCape.pos, ...supCape.pos].some((v) => !Number.isFinite(v)), bad: bad.slice(0, 10), nbad: bad.length });
+  setTimeout(() => {
+    const info = {};
+    for (const [k, H] of [['bat', bat], ['sup', sup]]) {
+      const b = new THREE.Box3(); let n = 0, vis = 0;
+      H.root.updateMatrixWorld(true);
+      H.root.traverse((o) => { if (o.userData.fan) { n++; b.expandByObject(o); } else if (o.isMesh && o.visible) vis++; });
+      info[k] = { n, procVisible: vis, min: b.min.toArray().map((v) => +v.toFixed(2)), max: b.max.toArray().map((v) => +v.toFixed(2)) };
+    }
+    document.getElementById('err').textContent += ' fan=' + JSON.stringify(window.__fan) + ' box=' + JSON.stringify(info);
+  }, 2500);
 }
