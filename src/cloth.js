@@ -3,10 +3,18 @@ import * as THREE from 'three';
 
 const _v = new THREE.Vector3();
 
+// Spheres hug the sculpted torso so the cape lies on the back instead of floating off it.
 const COLLIDERS = [
-  ['chest', [0.11, 0.17, -0.01], 0.19], ['chest', [-0.11, 0.17, -0.01], 0.19], ['chest', [0, 0.33, -0.03], 0.15],
-  ['spine', [0, 0.1, 0], 0.16], ['hips', [0, 0, 0], 0.2], ['head', [0, 0.11, 0], 0.13],
+  ['chest', [0.1, 0.2, 0.0], 0.15], ['chest', [-0.1, 0.2, 0.0], 0.15], ['chest', [0, 0.3, 0.0], 0.11],
+  ['spine', [0, 0.1, 0], 0.13], ['hips', [0, 0, 0], 0.17], ['head', [0, 0.11, 0], 0.12],
 ];
+// Capsules (joint -> joint) keep the cloth out of the legs and upper arms.
+const CAPSULES = [
+  ['legs', 'L', 'th', 'kn', 0.12], ['legs', 'L', 'kn', 'an', 0.09],
+  ['legs', 'R', 'th', 'kn', 0.12], ['legs', 'R', 'kn', 'an', 0.09],
+  ['arms', 'L', 'sh', 'el', 0.1], ['arms', 'R', 'sh', 'el', 0.1],
+];
+const _a = new THREE.Vector3(), _b = new THREE.Vector3();
 
 export class Cape {
   constructor(hero, { cols, rows, topW, botW, len, color, scallop = false }) {
@@ -17,8 +25,11 @@ export class Cape {
     this.canon = [];
     for (let j = 0; j < rows; j++) {
       const w = topW + (botW - topW) * Math.pow(j / (rows - 1), 0.8);
-      for (let i = 0; i < cols; i++)
-        this.canon.push(new THREE.Vector3((i / (cols - 1) - 0.5) * w, 0.31 - (j * len) / (rows - 1), -0.17 - j * 0.04));
+      for (let i = 0; i < cols; i++) {
+        const u = i / (cols - 1) * 2 - 1, f = Math.min(1, j / 2);
+        const pinY = 0.375 - 0.05 * u * u, pinZ = -0.088 + 0.035 * u * u;
+        this.canon.push(new THREE.Vector3(u * w / 2, pinY - (j * len) / (rows - 1), pinZ * (1 - f) + (-0.17 - j * 0.02) * f));
+      }
     }
     const idx = (i, j) => j * cols + i;
     this.cons = [];
@@ -31,6 +42,8 @@ export class Cape {
       if (i < cols - 2) link(idx(i, j), idx(i + 2, j));
     }
     this.colliders = COLLIDERS.map(([bone, off, r]) => ({ bone: hero[bone], off: new THREE.Vector3(...off), r, c: new THREE.Vector3() }));
+    this.capsules = CAPSULES.map(([group, side, a, b, r]) => ({ a: hero[group][side][a], b: hero[group][side][b], r,
+      p: new THREE.Vector3(), q: new THREE.Vector3() }));
 
     const geo = new THREE.BufferGeometry();
     this.attr = new THREE.BufferAttribute(this.pos, 3);
@@ -61,6 +74,7 @@ export class Cape {
   step(dt, t, wind, groundFn) {
     const P = this.pos, Q = this.prev, cols = this.cols, n = this.canon.length;
     for (const c of this.colliders) { c.c.copy(c.off); c.bone.localToWorld(c.c); }
+    for (const c of this.capsules) { c.a.getWorldPosition(c.p); c.b.getWorldPosition(c.q); }
     const dt2 = dt * dt, damp = 0.982;
     for (let k = 0; k < n; k++) {
       const o = k * 3;
@@ -97,6 +111,17 @@ export class Cape {
           if (d2 < c.r * c.r && d2 > 1e-10) {
             const s = c.r / Math.sqrt(d2);
             P[o] = c.c.x + dx * s; P[o + 1] = c.c.y + dy * s; P[o + 2] = c.c.z + dz * s;
+          }
+        }
+        for (const c of this.capsules) {
+          _b.subVectors(c.q, c.p);
+          _v.set(P[o], P[o + 1], P[o + 2]);
+          const t = Math.min(1, Math.max(0, _a.subVectors(_v, c.p).dot(_b) / (_b.lengthSq() || 1e-9)));
+          _a.copy(c.p).addScaledVector(_b, t);
+          const dx = P[o] - _a.x, dy = P[o + 1] - _a.y, dz = P[o + 2] - _a.z, d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 < c.r * c.r && d2 > 1e-10) {
+            const s = c.r / Math.sqrt(d2);
+            P[o] = _a.x + dx * s; P[o + 1] = _a.y + dy * s; P[o + 2] = _a.z + dz * s;
           }
         }
         const gy = groundFn(P[o], P[o + 2]) + 0.015;

@@ -124,15 +124,16 @@ export function makeHero(kind) {
     new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p))), 24, radius, 8, false), material);
 
   // The pecs, sternum, obliques and abdomen are sculpted into one continuous surface.
-  const torsoRows = [[0.035, 0.15, 0.105], [0.13, 0.138, 0.1], [0.23, 0.134, 0.098],
-    [0.34, 0.16, 0.112], [0.45, 0.196, 0.13], [0.56, 0.222, 0.14],
-    [0.64, 0.208, 0.13], [0.69, 0.165, 0.108], [0.735, 0.085, 0.074],
+  // Heavyweight V-taper: wide lats/chest, trapezius slope into a thick neck, tight waist.
+  const torsoRows = [[0.035, 0.155, 0.108], [0.13, 0.142, 0.104], [0.23, 0.14, 0.103],
+    [0.34, 0.178, 0.12], [0.45, 0.228, 0.14], [0.56, 0.262, 0.152],
+    [0.64, 0.252, 0.142], [0.69, 0.205, 0.12], [0.735, 0.1, 0.082],
     [0.78, B ? 0.065 : 0.074, B ? 0.063 : 0.068], [0.835, B ? 0.061 : 0.069, B ? 0.06 : 0.064]];
   const chestDepth = (x, y) => {
     const [rx, rz] = contour(torsoRows, y);
     const base = rz * Math.sqrt(Math.max(0, 1 - (x / rx) ** 2));
-    const pec = 0.04 * bump(Math.abs(x), 0.092, 0.064) * bump(y, 0.565, 0.062);
-    const abs = [0.21, 0.285, 0.36, 0.427].reduce((v, cy) => v + 0.012 * bump(Math.abs(x), 0.047, 0.035) * bump(y, cy, 0.028), 0);
+    const pec = 0.052 * bump(Math.abs(x), 0.105, 0.07) * bump(y, 0.565, 0.065);
+    const abs = [0.21, 0.285, 0.36, 0.427].reduce((v, cy) => v + 0.016 * bump(Math.abs(x), 0.047, 0.035) * bump(y, cy, 0.028), 0);
     const sternum = -0.007 * bump(x, 0, 0.017) * bump(y, 0.52, 0.12);
     const clavicle = 0.011 * bump(y, 0.663 - Math.abs(x) * 0.10, 0.013) * bump(Math.abs(x), 0.12, 0.10);
     return base + pec + abs + sternum + clavicle;
@@ -211,10 +212,10 @@ export function makeHero(kind) {
       const x = hp.getX(i), y = hp.getY(i), z = hp.getZ(i);
       // Low hairline at the temples and enough volume to cover the crown fully.
       const hairline = 0.158 + 0.02 * Math.max(0, z) - 0.012 * (1 - Math.abs(z));
-      hp.setXYZ(i, x * 0.093, hairline + y * (0.1 + 0.012 * z), z * 0.092 - 0.006);
+      hp.setXYZ(i, x * 0.093, hairline + y * (0.09 + 0.01 * z), z * 0.092 - 0.006);
     }
     hairGeo.computeVertexNormals(); part(head, hairGeo, hair);
-    oval(head, hair, [0.012, 0.236, 0.035], [0.074, 0.032, 0.056]); // swept-back pompadour
+    oval(head, hair, [0.008, 0.222, 0.05], [0.07, 0.02, 0.045]); // low swept front, not a top-knot
     for (const s of [-1, 1]) oval(head, hair, [s * 0.08, 0.15, -0.004], [0.014, 0.034, 0.03]); // sideburns
     line(head, [[-0.027, 0.21, 0.06], [0.003, 0.2, 0.077], [0.017, 0.184, 0.078], [0.008, 0.169, 0.079], [-0.002, 0.174, 0.079]], 0.004, hair);
     for (const s of [-1, 1]) oval(head, skin, [s * 0.085, 0.126, -0.004], [0.012, 0.026, 0.017]);
@@ -230,19 +231,19 @@ export function makeHero(kind) {
     }
     line(head, [[s * 0.014, 0.156, 0.076], [s * 0.032, 0.16, 0.076], [s * 0.053, 0.158, 0.067]], B ? 0.006 : 0.0035, brow);
   }
-  line(head, [[-0.025, 0.061, 0.075], [-0.009, 0.063, 0.079], [0, 0.061, 0.08], [0.011, 0.063, 0.079], [0.025, 0.061, 0.075]], 0.0018, mat(0x754b43, 0.9));
+  line(head, [[-0.018, 0.06, 0.077], [0, 0.061, 0.08], [0.018, 0.06, 0.077]], 0.0016, mat(0x754b43, 0.9));
 
   const arms = {}, legs = {};
   for (const [side, s] of [['L', 1], ['R', -1]]) {
-    const sh = joint(chest, [s * 0.205, 0.235, 0]);
+    const sh = joint(chest, [s * 0.24, 0.235, 0]);
     const el = joint(sh, [0, -0.32, 0]);
     const hand = joint(el, [0, -0.3, 0]);
-    const armRows = [[-0.63, 0.031, 0.03], [-0.57, 0.037, 0.034], [-0.49, 0.05, 0.044],
-      [-0.41, 0.06, 0.05], [-0.32, 0.044, 0.044], [-0.25, 0.057, 0.058],
-      [-0.16, 0.071, 0.067], [-0.065, 0.073, 0.071], [0.015, 0.084, 0.078],
-      [0.072, 0.056, 0.053], [0.096, 0.001, 0.001]];
+    const armRows = [[-0.63, 0.036, 0.034], [-0.57, 0.043, 0.039], [-0.49, 0.062, 0.052],
+      [-0.41, 0.074, 0.06], [-0.32, 0.055, 0.054], [-0.25, 0.07, 0.072],
+      [-0.16, 0.086, 0.084], [-0.065, 0.088, 0.086], [0.015, 0.1, 0.092],
+      [0.072, 0.07, 0.064], [0.1, 0.001, 0.001]];
     const armGeo = surface(armRows, (p, a) => {
-      p.z += 0.01 * bump(p.y, -0.18, 0.07) * Math.cos(a) ** 3;
+      p.z += 0.02 * bump(p.y, -0.17, 0.065) * Math.cos(a) ** 3; // biceps peak
       p.x += s * 0.017 * bump(p.y, 0.005, 0.06);
       return p;
     }, 80, 40);
@@ -266,10 +267,10 @@ export function makeHero(kind) {
     const th = joint(hips, [s * 0.1, -0.04, 0]);
     const kn = joint(th, [0, -0.46, 0]);
     const an = joint(kn, [0, -0.46, 0]);
-    const legRows = [[-0.94, 0.04, 0.04], [-0.85, 0.043, 0.043], [-0.73, 0.058, 0.056],
-      [-0.62, 0.068, 0.066], [-0.54, 0.057, 0.054], [-0.46, 0.052, 0.055],
-      [-0.37, 0.066, 0.068], [-0.25, 0.082, 0.082], [-0.12, 0.09, 0.088],
-      [-0.025, 0.085, 0.086], [0.06, 0.055, 0.06], [0.09, 0.001, 0.001]];
+    const legRows = [[-0.94, 0.044, 0.044], [-0.85, 0.048, 0.048], [-0.73, 0.07, 0.066],
+      [-0.62, 0.08, 0.078], [-0.54, 0.064, 0.062], [-0.46, 0.058, 0.06],
+      [-0.37, 0.078, 0.078], [-0.25, 0.098, 0.095], [-0.12, 0.108, 0.102],
+      [-0.025, 0.1, 0.098], [0.06, 0.062, 0.066], [0.09, 0.001, 0.001]];
     const legGeo = surface(legRows, (p, a) => {
       p.x += s * 0.01 * bump(p.y, -0.2, 0.15);
       p.z += 0.012 * bump(p.y, -0.29, 0.14) * Math.max(0, Math.cos(a));
