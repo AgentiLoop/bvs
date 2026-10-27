@@ -15,6 +15,7 @@ const CAPSULES = [
   ['arms', 'L', 'sh', 'el', 0.1], ['arms', 'R', 'sh', 'el', 0.1],
 ];
 const _a = new THREE.Vector3(), _b = new THREE.Vector3();
+const _cq = new THREE.Quaternion(), _pq = new THREE.Quaternion(), _dq = new THREE.Quaternion(), _iq = new THREE.Quaternion();
 const _hInv = new THREE.Matrix4(), _cInv = new THREE.Matrix4();
 const CHEST_Y = 0.36; // chest bone height above the hips bone (spine 0.08 + chest 0.28)
 
@@ -109,14 +110,19 @@ export class Cape {
     if (sec) this.prepSection();
     // Carry the cloth along with most of the body's motion (local-frame simulation). Superman's 20 m/s
     // dive and sudden stop used to whip his cape over his head, where it stayed draped on his chest for 11 s.
-    this.hero.chest.getWorldPosition(_a);
+    // Rotation is carried too (90%), so Batman's somersault no longer flings the cape round his front.
+    this.hero.chest.updateWorldMatrix(true, false);
+    this.hero.chest.getWorldPosition(_a); this.hero.chest.getWorldQuaternion(_cq);
     if (this.anchor) {
-      _b.subVectors(_a, this.anchor).multiplyScalar(0.9);
-      for (let o = cols * 3; o < n * 3; o += 3) {
-        P[o] += _b.x; P[o + 1] += _b.y; P[o + 2] += _b.z; Q[o] += _b.x; Q[o + 1] += _b.y; Q[o + 2] += _b.z;
+      _dq.copy(_cq).multiply(_pq.copy(this.anchorQ).invert());
+      _dq.slerp(_iq, 0.1);
+      _b.subVectors(_a, this.anchor).multiplyScalar(0.9).add(this.anchor);
+      for (let o = cols * 3; o < n * 3; o += 3) for (const A of [P, Q]) {
+        _v.set(A[o], A[o + 1], A[o + 2]).sub(this.anchor).applyQuaternion(_dq).add(_b);
+        A[o] = _v.x; A[o + 1] = _v.y; A[o + 2] = _v.z;
       }
-    } else this.anchor = new THREE.Vector3();
-    this.anchor.copy(_a);
+    } else { this.anchor = new THREE.Vector3(); this.anchorQ = new THREE.Quaternion(); }
+    this.anchor.copy(_a); this.anchorQ.copy(_cq);
     const dt2 = dt * dt, damp = 0.982;
     for (let k = 0; k < n; k++) {
       const o = k * 3;
