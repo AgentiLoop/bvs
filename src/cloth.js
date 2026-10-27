@@ -39,7 +39,7 @@ export class Cape {
     // inside the trapezius.
     if (hero.torsoSection) for (const c of this.canon) {
       const y = c.y + CHEST_Y;
-      if (y <= 0.035 || y >= 0.735) continue;
+      if (y <= 0.035 || y >= 0.83) continue;
       const [rx, rz] = hero.torsoSection(y), e = Math.hypot(c.x / (rx + 0.02), c.z / (rz + 0.02));
       if (e < 1 && e > 1e-6) { c.x /= e; c.z /= e; }
     }
@@ -104,7 +104,7 @@ export class Cape {
     // The spheres under-fill the broad upper back, so the cape sank 1-2 cm (up to 11 cm on Batman) into
     // it. Also collide against the torso's real elliptical cross-section in the bone frame that drives it.
     const sec = this.hero.torsoSection;
-    if (sec) { _hInv.copy(this.hero.hips.matrixWorld).invert(); _cInv.copy(this.hero.chest.matrixWorld).invert(); }
+    if (sec) this.prepSection();
     const dt2 = dt * dt, damp = 0.982;
     for (let k = 0; k < n; k++) {
       const o = k * 3;
@@ -154,25 +154,29 @@ export class Cape {
             P[o] = _a.x + dx * s; P[o + 1] = _a.y + dy * s; P[o + 2] = _a.z + dz * s;
           }
         }
-        if (sec) {
-          _v.set(P[o], P[o + 1], P[o + 2]).applyMatrix4(_cInv);
-          let bone = this.hero.chest, y = _v.y + CHEST_Y;
-          if (y < 0.4) { _v.set(P[o], P[o + 1], P[o + 2]).applyMatrix4(_hInv); bone = this.hero.hips; y = _v.y; }
-          else _v.y = y;
-          if (y > 0.035 && y < 0.735) {
-            const [rx, rz] = sec(y), e = Math.hypot(_v.x / (rx + 0.02), _v.z / (rz + 0.02));
-            if (e < 1 && e > 1e-6) {
-              _v.x /= e; _v.z /= e;
-              if (bone === this.hero.chest) _v.y -= CHEST_Y;
-              _v.applyMatrix4(bone.matrixWorld);
-              P[o] = _v.x; P[o + 1] = _v.y; P[o + 2] = _v.z;
-            }
-          }
-        }
+        if (sec) this.pushOut(P, o);
         const gy = groundFn(P[o], P[o + 2]) + 0.015;
         if (P[o + 1] < gy) { P[o + 1] = gy; Q[o] += (P[o] - Q[o]) * 0.3; Q[o + 2] += (P[o + 2] - Q[o + 2]) * 0.3; }
       }
     }
+  }
+
+  prepSection() { _hInv.copy(this.hero.hips.matrixWorld).invert(); _cInv.copy(this.hero.chest.matrixWorld).invert(); }
+
+  // Push point A[o..o+2] out of the torso's elliptical cross-section (in the bone frame that drives it).
+  pushOut(A, o) {
+    const sec = this.hero.torsoSection;
+    _v.set(A[o], A[o + 1], A[o + 2]).applyMatrix4(_cInv);
+    let bone = this.hero.chest, y = _v.y + CHEST_Y;
+    if (y < 0.4) { _v.set(A[o], A[o + 1], A[o + 2]).applyMatrix4(_hInv); bone = this.hero.hips; y = _v.y; }
+    else _v.y = y;
+    if (y <= 0.035 || y >= 0.83) return;
+    const [rx, rz] = sec(y), e = Math.hypot(_v.x / (rx + 0.02), _v.z / (rz + 0.02));
+    if (e >= 1 || e < 1e-6) return;
+    _v.x /= e; _v.z /= e;
+    if (bone === this.hero.chest) _v.y -= CHEST_Y;
+    _v.applyMatrix4(bone.matrixWorld);
+    A[o] = _v.x; A[o + 1] = _v.y; A[o + 2] = _v.z;
   }
 
   updateMesh() {
@@ -193,6 +197,9 @@ export class Cape {
       const k = Math.min(rows - 2, Math.floor(y / SUB));
       for (let x = 0; x < RC; x++) cr(T, rows, RC * 3, x * 3, k, y / SUB - k, R, (y * RC + x) * 3);
     }
+    // The smooth surface can cut corners between sim points (e.g. across the back of the neck when the
+    // cape flips over the shoulders), so the rendered points get the same torso push-out.
+    if (this.hero.torsoSection) { this.prepSection(); for (let o = RC * 3; o < R.length; o += 3) this.pushOut(R, o); }
     this.attr.needsUpdate = true;
     this.geo.computeVertexNormals();
   }
