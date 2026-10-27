@@ -368,6 +368,25 @@ export function makeHero(kind) {
     mesh.frustumCulled = false;
     root.add(mesh); mesh.bind(skeleton);
   }
+  // Comic-book ink outline: an inverted hull pushed out along the (skinned) normal, so it bends with
+  // the body. Tiny details (eyes, mouth, brows) are skipped so they don't turn into black blobs.
+  const ink = new THREE.MeshBasicMaterial({ color: 0x050608, side: THREE.BackSide });
+  ink.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <skinning_vertex>',
+      '#include <skinning_vertex>\n#ifdef USE_SKINNING\n  transformed += normalize(objectNormal) * 0.0055;\n#else\n  transformed += normalize(normal) * 0.0055;\n#endif');
+  };
+  ink.customProgramCacheKey = () => 'hero-ink';
+  const inked = [];
+  root.traverse(o => { if (o.isMesh) inked.push(o); });
+  for (const m of inked) {
+    const g = m.geometry;
+    if (!g.boundingSphere) g.computeBoundingSphere();
+    if (!g.attributes.normal || g.boundingSphere.radius * Math.max(...m.scale.toArray()) < 0.05) continue;
+    const o = m.isSkinnedMesh ? new THREE.SkinnedMesh(g, ink) : new THREE.Mesh(g, ink);
+    o.frustumCulled = false;
+    if (m.isSkinnedMesh) { root.add(o); o.bind(m.skeleton, m.bindMatrix); }
+    else { o.position.copy(m.position); o.quaternion.copy(m.quaternion); o.scale.copy(m.scale); m.parent.add(o); }
+  }
   return { kind, root, hips, spine, chest, head, arms, legs, eyes };
 }
 
