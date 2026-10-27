@@ -250,10 +250,10 @@ const EVENTS = [
   { t: 15.75, fn: () => { const k = KEY.kick; sparkBurst(k[0] + 0.5, k[1] + 0.2, k[2], 50, 5, 0xffffff); waves.spawn(KEY.S1[0], 0.05, KEY.S1[2], 3, 0xffffff, 0.5);
     impact(k[0], k[1], k[2], 0.4); postFlash = 0.25; } },
   { t: 18.2, fn: () => {
-    rubble(0, 0, 0, 180, 9, 0.06, 0.34, 7); dustBurst(0, 0, 0, 220, 6); sparkBurst(0, 1.5, 0, 160, 9, 0xfff0d0);
-    waves.spawn(0, 0.05, 0, 9, 0xffffff, 1.6); waves.spawn(0, 1.4, 0, 4, 0xbfd8ff, 1.0);
+    rubble(0, 0, 0, 180, 9, 0.06, 0.34, 7); dustBurst(0, 0, 0, 220, 6); sparkBurst(0, 1.25, 0, 50, 6, 0xfff0d0);
+    waves.spawn(0, 0.05, 0, 9, 0xffffff, 1.6);
     for (let i = 0; i < 10; i++) decals.add((rng() - 0.5) * 3, (rng() - 0.5) * 2, 0.4 + rng() * 0.8);
-    impact(0, 1.4, 0, 0.7); postFlash = 1;
+    impact(0, 1.25, 0, 0.7); postFlash = 0.7;
   } },
 ];
 const EMITTERS = [
@@ -308,7 +308,7 @@ function step() {
   debris.step(sdt, groundAt); water.step(sdt, groundAt); sparks.step(sdt, groundAt); dust.step(sdt, groundAt); waves.step(sdt);
   const wind = [1.6 + Math.sin(simT * 0.9) * 1.2, 0.3, 1.2 + Math.cos(simT * 0.6)];
   for (let s = 0; s < 2; s++) { batCape.step(sdt / 2, simT, wind, groundAt); supCape.step(sdt / 2, simT, wind, groundAt); }
-  shake *= Math.exp(-DT * 6); postFlash *= Math.exp(-DT * (simT > SLOWMO ? 1.2 : 7)); flashI *= Math.exp(-DT * 6); lightning *= Math.exp(-DT * 5);
+  shake *= Math.exp(-DT * 6); postFlash *= Math.exp(-DT * (simT > SLOWMO ? 4 : 7)); flashI *= Math.exp(-DT * 6); lightning *= Math.exp(-DT * 5);
   chestPos(bat, _v); chestPos(sup, _w);
   world.update(simT, sdt, _v.lerp(_w, 0.5).setY(0.5));
   if (realT >= LOOP_END) reset();
