@@ -3,3 +3,8 @@ node_modules/
 .agent/
 models/_test/
 .wrangler/
+mac/.build/
+mac/build/
+windows/build/
+linux/build/
+release/
