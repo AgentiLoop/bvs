@@ -15,7 +15,7 @@ const CAPSULES = [
   ['arms', 'L', 'sh', 'el', 0.1], ['arms', 'R', 'sh', 'el', 0.1],
 ];
 const _a = new THREE.Vector3(), _b = new THREE.Vector3();
-const _fw = new THREE.Vector3(), _cq = new THREE.Quaternion(), _pq = new THREE.Quaternion(), _dq = new THREE.Quaternion(), _iq = new THREE.Quaternion();
+const _fw = new THREE.Vector3(), _cp = new THREE.Vector3(), _w = new THREE.Vector3(), _cq = new THREE.Quaternion(), _pq = new THREE.Quaternion(), _dq = new THREE.Quaternion(), _iq = new THREE.Quaternion();
 const _hInv = new THREE.Matrix4(), _cInv = new THREE.Matrix4();
 const CHEST_Y = 0.36; // chest bone height above the hips bone (spine 0.08 + chest 0.28)
 
@@ -127,6 +127,13 @@ export class Cape {
     // A real cape trails behind the hero: a gentle push toward the back (6x on cloth that has
     // swung round in front of the chest) keeps it off his front after rolls and spins.
     _fw.set(0, 0, 1).applyQuaternion(_cq);
+    _cp.copy(_a);
+    // Wind in the hero's frame: drop any part blowing the way he faces (a tailwind), so the cape is only
+    // ever blown back or sideways. The scene wind is a tailwind for Batman (faces +x) and flung his cape
+    // out in front of him.
+    _w.set(0, 0, 1).applyQuaternion(this.hero.root.quaternion); _w.y = 0; _w.normalize();
+    const along = wind[0] * _w.x + wind[2] * _w.z;
+    const wx = wind[0] - _w.x * Math.max(0, along) * 1.6, wy = wind[1], wz = wind[2] - _w.z * Math.max(0, along) * 1.6;
     for (let k = 0; k < n; k++) {
       const o = k * 3;
       if (k < cols) {
@@ -139,7 +146,7 @@ export class Cape {
       for (let a = 0; a < 3; a++) {
         const vel = (P[o + a] - Q[o + a]) * damp;
         Q[o + a] = P[o + a];
-        P[o + a] += vel + ((a === 1 ? -9.8 : 0) + wind[a] * flutter) * dt2;
+        P[o + a] += vel + ((a === 1 ? -9.8 : 0) + (a === 0 ? wx : a === 1 ? wy : wz) * flutter) * dt2;
       }
       const fz = (P[o] - _a.x) * _fw.x + (P[o + 1] - _a.y) * _fw.y + (P[o + 2] - _a.z) * _fw.z;
       const back = (4) * (fz > 0 ? 6 : 1) * dt2;
@@ -179,6 +186,12 @@ export class Cape {
           }
         }
         if (sec) this.pushOut(P, o);
+        // Hard limit: below the shoulders the cape never crosses the chest's front plane (it used to drape
+        // over Batman when he landed on his back at 12 s and swing round his front mid-somersault).
+        if (k >= cols * 2) {
+          const fz = (P[o] - _cp.x) * _fw.x + (P[o + 1] - _cp.y) * _fw.y + (P[o + 2] - _cp.z) * _fw.z;
+          if (fz > 0) { P[o] -= _fw.x * fz; P[o + 1] -= _fw.y * fz; P[o + 2] -= _fw.z * fz; }
+        }
         const gy = groundFn(P[o], P[o + 2]) + 0.015;
         if (P[o + 1] < gy) { P[o + 1] = gy; Q[o] += (P[o] - Q[o]) * 0.3; Q[o + 2] += (P[o + 2] - Q[o + 2]) * 0.3; }
       }
