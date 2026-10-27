@@ -15,7 +15,7 @@ const CAPSULES = [
   ['arms', 'L', 'sh', 'el', 0.1], ['arms', 'R', 'sh', 'el', 0.1],
 ];
 const _a = new THREE.Vector3(), _b = new THREE.Vector3();
-const _cq = new THREE.Quaternion(), _pq = new THREE.Quaternion(), _dq = new THREE.Quaternion(), _iq = new THREE.Quaternion();
+const _fw = new THREE.Vector3(), _cq = new THREE.Quaternion(), _pq = new THREE.Quaternion(), _dq = new THREE.Quaternion(), _iq = new THREE.Quaternion();
 const _hInv = new THREE.Matrix4(), _cInv = new THREE.Matrix4();
 const CHEST_Y = 0.36; // chest bone height above the hips bone (spine 0.08 + chest 0.28)
 
@@ -124,6 +124,9 @@ export class Cape {
     } else { this.anchor = new THREE.Vector3(); this.anchorQ = new THREE.Quaternion(); }
     this.anchor.copy(_a); this.anchorQ.copy(_cq);
     const dt2 = dt * dt, damp = 0.982;
+    // A real cape trails behind the hero: a gentle push toward the back (strongest on cloth that has
+    // swung round in front of the chest) keeps it off his front after rolls and spins.
+    _fw.set(0, 0, 1).applyQuaternion(_cq);
     for (let k = 0; k < n; k++) {
       const o = k * 3;
       if (k < cols) {
@@ -138,6 +141,9 @@ export class Cape {
         Q[o + a] = P[o + a];
         P[o + a] += vel + ((a === 1 ? -9.8 : 0) + wind[a] * flutter) * dt2;
       }
+      const fz = (P[o] - _a.x) * _fw.x + (P[o + 1] - _a.y) * _fw.y + (P[o + 2] - _a.z) * _fw.z;
+      const back = (4) * (fz > 0 ? 3 : 1) * dt2;
+      P[o] -= _fw.x * back; P[o + 1] -= _fw.y * back; P[o + 2] -= _fw.z * back;
     }
     for (let it = 0; it < 10; it++) {
       for (const [a, b, rest] of this.cons) {
