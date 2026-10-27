@@ -13,12 +13,12 @@ const qs = new URLSearchParams(location.search);
 const SEED = +(qs.get('seed') || 1337);
 const DT = 1 / 60;
 const LOOP_END = 21.5; // real seconds
-let pixelMode = qs.get('pixel') !== '0';
+let pixelMode = qs.get('pixel') === '1';
 let PIX = +(qs.get('px') || 4);
 let paused = false, freeCam = false;
 
 // ---------- renderer ----------
-const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(1);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -71,7 +71,7 @@ function resize() {
   const w = Math.max(1, Math.floor(innerWidth / s)), h = Math.max(1, Math.floor(innerHeight / s));
   renderer.setSize(w, h, false);
   if (rt) rt.dispose();
-  rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+  rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, samples: pixelMode ? 0 : 4 });
   rt.depthTexture = new THREE.DepthTexture(w, h);
   post.uniforms.tColor.value = rt.texture;
   post.uniforms.tDepth.value = rt.depthTexture;
@@ -93,12 +93,13 @@ for (const k of (qs.get('off') || '').split(',')) { // debug: ?off=rain,spot,fog
 }
 const bat = makeHero('batman'), sup = makeHero('superman');
 scene.add(bat.root, sup.root);
-// fan models: models/batman.glb + models/superman.glb (or ?bat=url&sup=url, ?byaw=deg&syaw=deg); procedural body if missing
+// Clean procedural heroes by default; imported models remain available through explicit URLs.
+document.getElementById('hud').textContent = 'Procedural Batman & Superman · P pixel-art · [ ] pixel size · C free camera · SPACE pause · R restart';
 window.__fan = {};
 const DEFAULT_CAPE = { bat: 'Cube_2', sup: null }; // Batman's cape shares a shell with the cowl, so name it
 const DEFAULT_YAW = { bat: 0, sup: -Math.PI / 2 }; // verified facing for the bundled models (auto-detect is fooled by capes)
 for (const [H, key, file] of [[bat, 'bat', 'batman'], [sup, 'sup', 'superman']]) {
-  if (qs.get(key) === '0') continue;
+  if (!qs.get(key) || qs.get(key) === '0') continue;
   loadFanModel(H, qs.get(key) || `./models/${file}.glb`, { yaw: qs.has(key[0] + 'yaw') ? +qs.get(key[0] + 'yaw') * Math.PI / 180 : qs.get(key) ? null : DEFAULT_YAW[key], capeMesh: qs.get(key) ? null : DEFAULT_CAPE[key] })
     .then((n) => {
       window.__fan[key] = { n, yaw: Math.round(H.fanYaw * 180 / Math.PI) };
