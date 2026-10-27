@@ -797,7 +797,7 @@ for (const x of [-0.035, 0.035]) for (const y of [-0.015, -0.1]) for (const z of
 // w = wrist extension 0..1 (palm strikes): the hand bends back up to 66 deg so the heel of the palm leads
 // and the fingers point up (a palm-down extended arm turns into a palm-forward strike).
 const WRIST_EXT = 1.15, _XH = new THREE.Vector3(1, 0, 0);
-function orientHand(a, qRoot, w = 0) {
+function orientHand(a, qRoot, w = 0, palm = null, pw = 0) {
   a.el.getWorldPosition(_hy); a.hand.getWorldPosition(_hf); a.sh.getWorldPosition(_hx);
   const ext = _hx.distanceTo(_hf) / 0.62;
   _hy.sub(_hf).normalize(); // hand +y runs back up the forearm
@@ -806,6 +806,7 @@ function orientHand(a, qRoot, w = 0) {
   // uppercuts stay palm-in; w < 0 keeps the palm turned in too (Superman's thunderclap to the ears)
   const k = blend(0.8, 0.97, ext) * blend(0.2, 0.7, _hf.z) * (1 - blend(0.25, 0.6, _hf.y)) * (w < 0 ? 1 + Math.max(-1, w) : 1);
   _hz.set(-a.s * (1 - k), -k, -(0.25 + 0.6 * Math.max(0, _hf.y))).applyQuaternion(qRoot);
+  if (palm) _hz.normalize().lerp(palm, pw); // gripping: the palm turns onto the body it holds
   _hz.addScaledVector(_hy, -_hz.dot(_hy));
   if (_hz.lengthSq() < 1e-6) { _hz.set(0, -1, 0).applyQuaternion(qRoot); _hz.addScaledVector(_hy, -_hz.dot(_hy)); } // forearm along the preferred palm line
   _hz.normalize();
@@ -825,6 +826,10 @@ const OPEN_MIN = 0.06, CURL = [1.5, 1.7, 1.05], CASCADE = [0, 0.15, 0.35, 0.6], 
 const THUMB_OPEN = [[0.55, -0.8, 0.22], [0.35, -0.93, 0.08], [0.25, -0.97, 0]].map(v => new THREE.Vector3(...v).normalize());
 const THUMB_SHUT = [[0.35, -0.6, 0.45], [-0.3, -0.45, 0.72], [-0.95, -0.24, 0.18]].map(v => new THREE.Vector3(...v).normalize());
 const _tp = new THREE.Vector3(), _td = new THREE.Vector3();
+function bendFinger(f, k, o) {
+  f.mcp.rotation.set(-CURL[0] * k, 0, f.spread * o);
+  f.pip.rotation.x = -CURL[1] * k; f.dip.rotation.x = -CURL[2] * k;
+}
 function shapeHand(a, o) {
   const g = a.grip; if (!g) return;
   o = Math.max(0, Math.min(1, o || 0));
@@ -833,11 +838,11 @@ function shapeHand(a, o) {
   g.fistG.visible = o < OPEN_MIN; g.openG.visible = !g.fistG.visible;
   if (!g.openG.visible) return;
   const c = 1 - o;
-  g.fingers.forEach((f, i) => {
-    const k = Math.min(1, c + CASCADE[i] * c * (1 - c));
-    f.mcp.rotation.set(-CURL[0] * k, 0, f.spread * o);
-    f.pip.rotation.x = -CURL[1] * k; f.dip.rotation.x = -CURL[2] * k;
-  });
+  g.fingers.forEach((f, i) => bendFinger(f, Math.min(1, c + CASCADE[i] * c * (1 - c)), o));
+  bendThumb(a, c);
+}
+function bendThumb(a, c) {
+  const g = a.grip;
   _tp.set(a.s * 0.032, -0.018, 0.01);
   g.thumb.forEach((m, k) => {
     _td.copy(THUMB_OPEN[k]).lerp(THUMB_SHUT[k], c); _td.x *= a.s; _td.normalize();
@@ -846,6 +851,114 @@ function shapeHand(a, o) {
   });
   g.thumbTip.position.copy(_tp);
 }
+// Grip contact (game throws): the hands used to hang 16-56 cm off the opponent they were holding, palms turned
+// away from him. Now each hand reaches the nearest point of the held body's torso (his chest frame ellipse
+// plus the sculpted pecs, the same shape the self-collision uses), the palm turns onto it and sits on the
+// surface, and every finger curls on its own until it wraps the body: a flat palm on the chest, fingers hooked
+// round the flank or over the shoulder.
+const GRIP_Y = [0.28, 0.66], PALM_C = new THREE.Vector3(0, -0.05, 0.018), PALM_GAP = 0.01, FINGER_GAP = 0.016, THUMB_GAP = 0.018, HYPER = -0.2, GRIP_REACH = [0.68, 0.85], GRIP_EASE = 0.35,
+  PALM_PTS = [[0.04, -0.082, 0.018], [-0.04, -0.075, 0.018], [0, -0.085, 0.02], [0.03, -0.01, 0.014], [-0.03, -0.01, 0.014]].map(p => new THREE.Vector3(...p));
+const _gS = new THREE.Vector3(), _gN = new THREE.Vector3(), _gL = new THREE.Vector3(), _gW = new THREE.Vector3(), _gP = new THREE.Vector3(), _gT = new THREE.Vector3(), _gm = new THREE.Matrix4();
+function torsoSurface(O, w, S, N) {
+  _gL.copy(w); O.chest.worldToLocal(_gL);
+  const oy = O.spine.position.y + O.chest.position.y, y = Math.min(GRIP_Y[1], Math.max(GRIP_Y[0], _gL.y + oy));
+  const [rx, rz] = O.torsoSection(y), ang = Math.atan2(_gL.x / rx, _gL.z / rz);
+  S.set(rx * Math.sin(ang), y - oy, rz * Math.cos(ang));
+  if (S.z > 0 && Math.abs(S.x) < rx) S.z = Math.max(S.z, O.chestDepth(S.x, y));
+  N.set(Math.sin(ang) / rx, 0, Math.cos(ang) / rz);
+  O.chest.localToWorld(S); N.transformDirection(O.chest.matrixWorld);
+}
+// Inside the held body (torso + margin m, or head)? Above / below the torso band the section is extended
+// straight up / down (the waist and hips go on below the chest frame's band; fingers hooked under the ribs
+// slipped into them).
+function touches(O, p, m) { // -> how deep (m) the point is inside, 0 = clear
+  _gW.copy(p); O.chest.worldToLocal(_gW);
+  // (the shoulders taper into the neck above GRIP_Y[1]; the held body's deltoids and traps fill that out)
+  const y = Math.min(GRIP_Y[1], Math.max(0.1, _gW.y + O.spine.position.y + O.chest.position.y)), [rx, rz] = O.torsoSection(y);
+  let d = 0;
+  const e = Math.hypot(_gW.x / (rx + m), _gW.z / (rz + m));
+  if (e < 1) d = (1 - e) * Math.min(rx, rz) + m * (1 - e);
+  if (_gW.z > 0 && Math.abs(_gW.x) < rx) d = Math.max(d, O.chestDepth(_gW.x, y) + m - _gW.z);
+  if (pushOutOfHead(O, _gW.copy(p), m)) d = Math.max(d, _gW.distanceTo(p));
+  return d;
+}
+// World position of a finger's tip (j = 3), DIP (2) or PIP (1) joint without touching the rest of the scene graph.
+function fingerPoint(g, f, j, out) {
+  _gm.multiplyMatrices(g.openG.matrixWorld, f.mcp.updateMatrix() ?? f.mcp.matrix);
+  if (j > 1) _gm.multiply(f.pip.updateMatrix() ?? f.pip.matrix);
+  if (j > 2) _gm.multiply(f.dip.updateMatrix() ?? f.dip.matrix);
+  return out.copy(j === 1 ? f.pip.position : j === 2 ? f.dip.position : f.tip.position).applyMatrix4(_gm);
+}
+function wrapFingers(a, O, o, hw) {
+  const g = a.grip; if (!g || !g.openG.visible) return 0;
+  g.openG.updateMatrix(); g.openG.matrixWorld.multiplyMatrices(a.hand.matrixWorld, g.openG.matrix);
+  // joints, tip and the middle of each segment (a segment can cut a curved body between two joints outside it)
+  const hit = (f, k) => {
+    bendFinger(f, k, o);
+    for (let j = 1; j <= 3; j++) {
+      fingerPoint(g, f, j, _C);
+      if (touches(O, _C, FINGER_GAP) || (j > 1 && touches(O, _gL.copy(_C).add(_E).multiplyScalar(0.5), FINGER_GAP))) return true;
+      _E.copy(_C);
+    }
+    return false;
+  };
+  const c = 1 - o;
+  g.fingers.forEach((f, i) => {
+    const k0 = Math.min(1, c + CASCADE[i] * c * (1 - c));
+    // curl until the finger meets the body (stepping up from flat: a half-curled finger points into the body
+    // while a fully curled one tucks back under the palm); already pressed flat against it: bend back a little
+    let k = k0, lo = 0, hi = -1;
+    if (hit(f, 0)) { lo = HYPER; hi = 0; }
+    else for (let m = 0.125; m <= 1; m += 0.125) { if (hit(f, m)) { hi = m; break; } lo = m; }
+    if (hi === 0 && hit(f, HYPER)) k = HYPER;
+    else if (hi >= 0) {
+      for (let it = 0; it < 4; it++) { const m = (lo + hi) / 2; if (hit(f, m)) hi = m; else lo = m; }
+      k = lo;
+    }
+    if (hw < 1 && !hit(f, k0 + (k - k0) * hw)) k = k0 + (k - k0) * hw; // easing in, but never into the body
+    // the contact search flips between neighbouring solutions as the bodies move (curled under / laid flat):
+    // ease each finger toward its new curl unless that would push it into the body
+    const pk = g.wk[i] ?? k0, ek = pk + (k - pk) * GRIP_EASE;
+    if (!hit(f, ek)) k = ek;
+    g.wk[i] = k;
+    bendFinger(f, k, o);
+  });
+  // The thumb closes across the palm side, i.e. into the body: open it until its joints and tip stay outside.
+  const thit = (k) => {
+    bendThumb(a, k);
+    for (let j = 1; j <= 3; j++) {
+      _C.copy(j < 3 ? g.thumb[j].position : g.thumbTip.position).applyMatrix4(g.openG.matrixWorld);
+      if (touches(O, _C, THUMB_GAP) || (j > 1 && touches(O, _gL.copy(_C).add(_E).multiplyScalar(0.5), THUMB_GAP))) return true;
+      _E.copy(_C);
+    }
+    return false;
+  };
+  let tc = c;
+  if (thit(c)) {
+    let lo = 0, hi = c;
+    for (let it = 0; it < 6; it++) { const m = (lo + hi) / 2; if (thit(m)) hi = m; else lo = m; }
+    tc = lo;
+  }
+  if (hw < 1 && !thit(c + (tc - c) * hw)) tc = c + (tc - c) * hw;
+  const pt = g.wk[4] ?? c, et = pt + (tc - pt) * GRIP_EASE;
+  if (!thit(et)) tc = et;
+  g.wk[4] = tc;
+  bendThumb(a, tc);
+  g.o = -1; // shapeHand must re-apply its own curl next frame
+  if (hw < 0.5) return 0;
+  // Still in the body however the fingers bend (a torso widening toward the chest sinks the knuckles of a
+  // palm laid on the waist): report the deepest finger, thumb or palm point so the hand can back off.
+  let d = 0;
+  for (const f of g.fingers) for (let j = 1; j <= 3; j++) {
+    d = Math.max(d, touches(O, fingerPoint(g, f, j, _C), FINGER_GAP));
+    if (j > 1) d = Math.max(d, touches(O, _gL.copy(_C).add(_E).multiplyScalar(0.5), FINGER_GAP));
+    _E.copy(_C);
+  }
+  for (let j = 1; j <= 3; j++) d = Math.max(d, touches(O, _C.copy(j < 3 ? g.thumb[j].position : g.thumbTip.position).applyMatrix4(g.openG.matrixWorld), THUMB_GAP));
+  for (const p of PALM_PTS) d = Math.max(d, touches(O, _C.set(p.x * a.s, p.y, p.z).applyMatrix4(g.openG.matrixWorld), 0.006));
+  return d;
+}
+
 function posePass(H, s, t, ground, raise) {
   H.root.position.set(s.p[0], s.p[1] + raise, s.p[2]);
   H.root.rotation.set(s.pitch, s.yaw, s.roll, 'YXZ');
@@ -878,6 +991,29 @@ function posePass(H, s, t, ground, raise) {
     if (_T.y > ground - 0.6) _T.y = Math.max(_T.y, ground + 0.07); // fists rest on the roof, not in it
     pushOutOfTorso(H, _T, 0.065); // fists stay in front of / beside the chest, not sunk inside it
     _P.set(a.s * 0.5, 0.2, -0.6); H.root.localToWorld(_P);
+    // s.hold = the opponent held in this hand (s.holdW 0..1 eases the grip in and out): reach for his body,
+    // palm centre onto the nearest surface point, palm turned onto it.
+    // A body out of reach (Superman's overhead lift, the slam) is let go rather than stretched for.
+    const O = s.hold, open = side === 'L' ? s.lo : s.ro;
+    let hw = O ? Math.min(1, s.holdW ?? 1) : 0;
+    // (eased per hand: the nearest surface point jumps about as both bodies move, and the hand flicked on and off)
+    if (hw > 0.01 && a.grip) {
+      torsoSurface(O, _T, _gS, _gN); a.sh.getWorldPosition(_A);
+      const r = 1 - blend(GRIP_REACH[0], GRIP_REACH[1], _A.distanceTo(_gS));
+      a.grip.rw = a.grip.rw == null ? r : a.grip.rw + (r - a.grip.rw) * GRIP_EASE;
+      hw *= a.grip.rw;
+    } else if (a.grip) a.grip.rw = null;
+    if (hw > 0.01) {
+      _gP.copy(_gN).negate(); _gT.copy(_T);
+      _T.copy(_gS).addScaledVector(_gN, 0.04);
+      shapeHand(a, open);
+      for (let it = 0; it < 3; it++) {
+        solveIK(a.sh, a.el, 0.32, 0.30, _T, _P); orientHand(a, _qb, 0, _gP, 1);
+        _C.copy(PALM_C); a.hand.localToWorld(_C);
+        _T.add(_F.copy(_gS).addScaledVector(_gN, PALM_GAP).sub(_C));
+      }
+      _T.lerp(_gT, 1 - hw);
+    }
     solveIK(a.sh, a.el, 0.32, 0.30, _T, _P);
     // Elbows tucked across the body used to sink into the ribs: swing the elbow out past the torso.
     a.el.getWorldPosition(_C);
@@ -903,8 +1039,9 @@ function posePass(H, s, t, ground, raise) {
     }
     }
     const w = side === 'L' ? s.lw : s.rw, gp = a.grip;
-    shapeHand(a, side === 'L' ? s.lo : s.ro);
-    orientHand(a, _qb, w);
+    shapeHand(a, open);
+    const gP = hw > 0.01 ? _gP : null;
+    orientHand(a, _qb, w, gP, hw);
     // The torso checks above only see the wrist; the fist reaches 14 cm past it, and with the palm turned in
     // toward the body (guard, tucked jumps) its palm side and thumb sank up to 5 cm into the chest.
     // An open hand also checks its fingertips and thumb tip.
@@ -921,7 +1058,15 @@ function posePass(H, s, t, ground, raise) {
       if (!moved) break;
       a.el.getWorldPosition(_C); a.sh.getWorldPosition(_A);
       solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A));
-      orientHand(a, _qb, w);
+      orientHand(a, _qb, w, gP, hw);
+    }
+    if (gp) gp.wk = gP ? gp.wk || [] : null; // per-finger eased grip curls (wrapFingers)
+    // fingers wrap the held body; backed off it while a finger, the thumb or the palm still cannot clear it
+    for (let it = 0, d; gP && it < 3 && (d = wrapFingers(a, O, Math.max(0, Math.min(1, open || 0)), hw)) > 0.002; it++) {
+      _T.addScaledVector(_gN, d + 0.002);
+      a.el.getWorldPosition(_C); a.sh.getWorldPosition(_A);
+      solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A));
+      orientHand(a, _qb, w, gP, hw);
     }
   }
   for (const [side, tg, lift, dz, p] of [['L', s.lf, Math.max(0, cw), sw, 0], ['R', s.rf, Math.max(0, -cw), -sw, 0.5]]) {

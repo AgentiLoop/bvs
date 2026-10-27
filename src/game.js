@@ -35,6 +35,8 @@ const MP = {
   grab:    { ...G, lean: 0.45, lh: [0.18, 0.62, 0.62], rh: [-0.18, 0.62, 0.62], lo: 0.8, ro: 0.8 },
   hipToss: { ...G, h: 0.72, lean: 0.75, tw: 1.1, roll: 0.15, lh: [0.25, 0.95, 0.1], rh: [-0.15, 1.05, 0.25], lo: 0.45, ro: 0.45 },
   lift:    { ...G, h: 0.98, lean: -0.2, lh: [0.18, 1.15, 0.4], rh: [-0.18, 1.15, 0.4], lo: 0.45, ro: 0.45 },
+  // hoisted overhead: upright and kicking, boots hanging clear of the lifter's chest
+  held:    { h: 0.92, lean: 0.1, roll: 0, lh: [0.45, 0.72, 0.1], rh: [-0.45, 0.78, 0.05], lf: [0.14, -0.86, -0.1], rf: [-0.14, -0.8, -0.2], lo: 0.75, ro: 0.75 },
   slam:    { ...G, h: 0.66, lean: 0.8, lh: [0.18, 0.25, 0.75], rh: [-0.18, 0.25, 0.75], lo: 0.45, ro: 0.45 },
   whiff:   { ...G, lean: 0.55, lh: [0.25, 0.5, 0.75], rh: [-0.25, 0.5, 0.75], lo: 0.9, ro: 0.9 },
   // stage throw: squat and grip the drum low, press it overhead, arch back, then heave it forward with both arms
@@ -1659,7 +1661,9 @@ export class Game {
         if (a.grab && !a.done && o.heldBy === f) {
           // victim pinned in the thrower's hands (Superman hoists him overhead)
           const lift = S.lift ? clamp((a.t - 0.2) / 0.2, 0, 1) * 0.9 : 0;
-          o.x = f.x + Math.sin(f.yaw) * 0.8; o.z = f.z + Math.cos(f.yaw) * 0.8; o.y = lift; o.vy = 0; o.kx = o.kz = 0;
+          // (hoisted in closer, within the lifter's reach: his hands grip the body, heroes.js s.hold)
+          const hd = 0.8 - (S.lift ? clamp((a.t - 0.15) / 0.1, 0, 1) : 0) * 0.25;
+          o.x = f.x + Math.sin(f.yaw) * hd; o.z = f.z + Math.cos(f.yaw) * hd; o.y = lift; o.vy = 0; o.kx = o.kz = 0;
           o.stun = Math.max(o.stun, 0.3); o.launched = false;
           if (a.t >= THROW.rel) { a.done = true; o.heldBy = null; this.toss(f, o, S); }
         }
@@ -1828,6 +1832,7 @@ export class Game {
     if (f.stun > 0) {
       // reaction by where the blow landed, mirrored to the side it came from; heavy head shots whip all the way back.
       // Full strength while stunned, easing back into the guard over the last 40% of the stun.
+      if (f.heldBy && f.y > 0.2) return T(MP.held);
       if (f.heldBy || !f.zone) return T(POSES[f.heavy ? 'hit' : 'flinch']);
       const u = 1 - f.stun / (f.stunMax || 1);
       // crumple: doubled over clutching the gut, then the knees give and he sinks onto them; back to the guard at the end
@@ -1881,7 +1886,8 @@ export class Game {
 
   pose(dt) {
     const hk = dt ? 1 - Math.exp(-dt * 9) : 1;
-    for (const f of [this.F.bat, this.F.sup]) {
+    // a held fighter is posed first, so the thrower's hands grip where his body is this frame
+    for (const f of this.F.sup.heldBy ? [this.F.sup, this.F.bat] : [this.F.bat, this.F.sup]) {
       const o = f === this.F.bat ? this.F.sup : this.F.bat;
       const k = dt ? 1 - Math.exp(-dt * (f.act || f.stun > 0 ? 26 : 16)) : 1;
       const tg = this.target(f), c = f.cur;
@@ -1914,6 +1920,9 @@ export class Game {
       s.h -= 0.014 * c.gait * Math.cos(2 * f.gph); // hips rise as a foot passes under them, dip in double support
       if (sq > 0.002) { s.h -= sq; s.lf = [c.lf[0], c.lf[1] + sq, c.lf[2]]; s.rf = [c.rf[0], c.rf[1] + sq, c.rf[2]]; s.lean += sq; }
       const base = tg.base ?? f.y;
+      // throw grip: the hands close on the held opponent's body (heroes.js s.hold), easing in and out
+      f.holdW = (f.holdW || 0) + ((o.heldBy === f ? 1 : 0) - (f.holdW || 0)) * (dt ? 1 - Math.exp(-dt * 30) : 1);
+      if (f.holdW > 0.01) { s.hold = o.H; s.holdW = f.holdW; }
       applyPose(f.H, { ...s, p: [f.x, base + s.h, f.z], yaw: f.yaw + c.tw }, this.t, groundAt(f.x, f.z));
       if (this.active) setFace(f.H, this.expr(f, dt));
     }
