@@ -62,7 +62,25 @@ const MP = {
   hitHead: { h: 0.84, lean: -0.45, roll: 0.12, tw: 0.25, lh: [0.32, 0.68, 0.02], rh: [-0.34, 0.6, 0.08], lf: [0.18, -0.76, 0.32], rf: [-0.2, -0.76, -0.5] },
   hitBody: { h: 0.68, lean: 0.9, roll: 0, tw: 0.1, lh: [0.1, 0.16, 0.3], rh: [-0.1, 0.12, 0.3], lf: [0.19, -0.62, 0.18], rf: [-0.2, -0.6, -0.42] },
   hitLow:  { h: 0.62, lean: 0.25, roll: 0.2, tw: -0.15, lh: [0.42, 0.42, 0.15], rh: [-0.42, 0.38, 0.05], lf: [0.2, -0.42, 0.1], rf: [-0.22, -0.55, -0.32] },
+  // super strings, per hero. Batman: gauntlet palm, spinning back elbow, clinch knee, backhand gauntlet-fin slash,
+  // spinning cape heel kick. Superman: dipping liver shot, wide haymaker, thunderclap at the ears, double-axe-handle
+  // smash, rising flying uppercut with the knee tucked.
+  bPalm:   { ...G, lean: 0.52, tw: 0.32, lh: [0.0, 0.5, 0.96], rh: [-0.12, 0.44, 0.28] },
+  bElbowUp:{ ...G, lean: 0.2, tw: 0.95, lh: [0.18, 0.5, 0.35], rh: [0.08, 0.6, 0.12] },
+  bElbow:  { ...G, lean: 0.38, tw: -0.85, roll: -0.08, lh: [0.22, 0.48, 0.18], rh: [0.12, 0.62, 0.55] },
+  bSlashUp:{ ...G, lean: 0.25, tw: 0.65, rh: [0.36, 0.76, 0.25] },
+  bSlash:  { ...G, lean: 0.5, tw: -0.75, roll: -0.1, lh: [0.24, 0.46, 0.2], rh: [-0.58, 0.36, 0.74] },
+  bSpinUp: { ...G, h: 0.82, lean: 0.1, tw: 1.4, rf: [-0.25, -0.52, 0.0] },
+  bSpin:   { h: 0.95, lean: -0.5, roll: -0.22, tw: -1.25, lh: [0.42, 0.3, -0.12], rh: [-0.34, 0.4, 0.02], lf: [0.12, -0.9, -0.05], rf: [0.04, 0.62, 0.8] },
+  sBody:   { ...G, h: 0.72, lean: 0.62, tw: 0.38, lh: [0.05, 0.24, 0.86], rh: [-0.12, 0.46, 0.3] },
+  sHayUp:  { ...G, lean: 0.15, tw: 0.8, rh: [-0.52, 0.66, -0.2] },
+  sHay:    { ...G, lean: 0.56, tw: -0.72, roll: 0.06, lh: [0.25, 0.4, 0.2], rh: [0.1, 0.68, 0.96] },
+  sClap:   { ...G, h: 0.82, lean: 0.45, lh: [0.07, 0.76, 0.76], rh: [-0.07, 0.76, 0.76] },
+  sHammerUp:{ ...G, h: 0.86, lean: -0.15, lh: [0.06, 1.18, 0.22], rh: [-0.06, 1.18, 0.22] },
+  sHammer: { ...G, h: 0.66, lean: 0.78, lh: [0.04, 0.3, 0.76], rh: [-0.04, 0.3, 0.76] },
+  sRise:   { ...P.upper, h: 0.98, lean: -0.1, tw: -0.3, rh: [-0.02, 1.26, 0.46], rf: [-0.15, -0.5, 0.36] },
 };
+
 const REACT = { head: MP.hitHead, body: MP.hitBody, low: MP.hitLow };
 // keys: [time, pose]; hit: active frame; cancel: earliest chain into `next` (J punch / K kick); reach: horizontal range;
 // kb: knockback m/s; up: launch m/s (<0 spikes airborne targets down); at: striking limb; blast: hit-explosion size.
@@ -84,8 +102,21 @@ const MOVES = {
 // Supers (block + special with a full meter): an unblockable armoured rush; if it connects the opponent is pinned
 // through a scripted string, then a launching finisher, while the camera orbits the pair.
 const SUPERS = {
-  bat: { name: 'DARK KNIGHT RUSH', seq: ['jab', 'cross', 'front', 'hook', 'jab', 'cross'], fin: 'round', finish: { dmg: 16, kb: 8, up: 5, stun: 1, heavy: true, at: 'rf', blast: 2.2 } },
-  sup: { name: 'KRYPTONIAN FURY', seq: ['cross', 'hook', 'jab', 'cross', 'hook'], fin: 'upper', finish: { dmg: 18, kb: 4, up: 10, stun: 1, heavy: true, at: 'rh', blast: 2.4 } },
+  bat: { name: 'DARK KNIGHT RUSH', seq: ['bPalm', 'bElbow', 'bKnee', 'bSlash', 'cross'], fin: 'bSpin', finish: { dmg: 16, kb: 8, up: 5, stun: 1, heavy: true, at: 'rf', blast: 2.2 } },
+  sup: { name: 'KRYPTONIAN FURY', seq: ['sBody', 'sHay', 'sClap', 'sHammer', 'sBody'], fin: 'sRise', finish: { dmg: 18, kb: 4, up: 10, stun: 1, heavy: true, at: 'rh', blast: 2.4 } },
+};
+// Super-only strikes (keys at real time, unlike MOVES which the string plays at 1.25x). fx: extra hit effect.
+const SMOVES = {
+  bPalm:   { hi: true, hit: 0.07, dmg: 5, stun: 0.4, at: 'lh', blast: 0.4, keys: [[0, 'guard'], [0.02, 'bPalm']] },
+  bElbow:  { hi: true, hit: 0.11, dmg: 7, stun: 0.4, at: 'rh', blast: 0.55, keys: [[0, 'bElbowUp'], [0.06, 'bElbow']] },
+  bKnee:   { hit: 0.12, dmg: 9, stun: 0.4, at: 'rf', blast: 0.7, keys: [[0, 'kneeHold'], [0.07, 'knee']] },
+  bSlash:  { hi: true, hit: 0.11, dmg: 8, stun: 0.4, at: 'rh', blast: 0.6, fx: 'slash', keys: [[0, 'bSlashUp'], [0.06, 'bSlash']] },
+  bSpin:   { dur: 0.62, hit: 0.24, keys: [[0, 'bSpinUp'], [0.14, 'bSpin'], [0.46, 'guard']] },
+  sBody:   { hit: 0.09, dmg: 6, stun: 0.4, at: 'lh', blast: 0.5, keys: [[0, 'dip'], [0.03, 'sBody']] },
+  sHay:    { hi: true, hit: 0.13, dmg: 8, stun: 0.4, at: 'rh', blast: 0.75, keys: [[0, 'sHayUp'], [0.07, 'sHay']] },
+  sClap:   { hi: true, hit: 0.12, dmg: 6, stun: 0.4, at: 'lh', blast: 0.6, fx: 'clap', keys: [[0, 'clapUp'], [0.07, 'sClap']] },
+  sHammer: { hi: true, hit: 0.14, dmg: 8, stun: 0.4, at: 'rh', blast: 0.8, fx: 'quake', keys: [[0, 'sHammerUp'], [0.08, 'sHammer']] },
+  sRise:   { dur: 0.55, hit: 0.16, keys: [[0, 'dip'], [0.1, 'sRise'], [0.42, 'guard']] },
 };
 // Idle stance personality: Batman is a bouncing street fighter (low, rhythmic bob, fists circling);
 // Superman stands tall and calm with a slow float. hz: bounce rate, bob: dip depth (m), dh/dl: height/lean offset,
@@ -458,7 +489,7 @@ export class Game {
       else if (a.t > 0.7) { this.endCine(0.3); return false; } // whiffed
       return true;
     }
-    const name = a.phase === 'seq' ? S.seq[a.k] : S.fin, M = MOVES[name];
+    const name = a.phase === 'seq' ? S.seq[a.k] : S.fin, M = SMOVES[name] || MOVES[name];
     a.kt += dt;
     if (a.phase === 'seq') {
       // pin the victim in front of the attacker for the whole string
@@ -470,6 +501,11 @@ export class Game {
       const fin = a.phase === 'fin', HM = fin ? S.finish : { ...M, kb: 0.4, up: 0 };
       const at = this.contact(f, o, HM);
       this.hurt(o, f, HM, at);
+      // signature hit effects: Batman's gauntlet fins rake sparks, Superman's thunderclap rings out, his hammer cracks the floor
+      if (M.fx === 'slash') { fx.sparkBurst(at.x, at.y, at.z, 40, 5, 0xffd23a); fx.waves.spawn(at.x, at.y, at.z, 1.2, 0xffd23a, 0.3); }
+      else if (M.fx === 'clap') { fx.waves.spawn(at.x, at.y + 0.2, at.z, 3, 0x9fc8ff, 0.5); fx.impact(at.x, at.y, at.z, 0.3); this.hitstop = Math.max(this.hitstop, 0.1); }
+      else if (M.fx === 'quake') { fx.dustBurst(o.x, 0, o.z, 50, 3); fx.waves.spawn(o.x, 0.05, o.z, 2.5, 0xfff2d0, 0.5); fx.decals.add(o.x, o.z, 0.5); this.camKick(at, 0.9, 1); }
+      if (fin && f.key === 'sup') { f.vy = 4; f.y = Math.max(f.y, 0.001); } // the flying uppercut carries him off the ground
       if (fin) { fx.waves.spawn(at.x, at.y, at.z, 5, 0xffffff, 1); fx.dustBurst(o.x, 0, o.z, 80, 4); fx.flash(0.5); this.hitstop = Math.max(this.hitstop, 0.25); this.endCine(1.4); }
       if (o.ko || o.dazed) { this.endCine(1.4); return false; }
     }
@@ -1132,7 +1168,8 @@ export class Game {
       if (a.phase === 'rush') return T(MP.rush);
       const S = SUPERS[f.key], name = a.phase === 'seq' ? S.seq[a.k] : S.fin;
       let n = null;
-      for (const [t, p] of MOVES[name].keys) if (a.kt >= t * (a.phase === 'seq' ? 0.8 : 1)) n = p;
+      const SM = SMOVES[name], sc = SM || a.phase !== 'seq' ? 1 : 0.8;
+      for (const [t, p] of (SM || MOVES[name]).keys) if (a.kt >= t * sc) n = p;
       return T(MP[n] || POSES[n]);
     }
     if (a && a.type === 'blow') return T(a.phase === 'lunge' ? MP.rush : a.phase === 'rec' ? MP.whiff : MP[a.pose] || MP.grab);
