@@ -548,8 +548,11 @@ function pushOutOfTorso(H, w, margin) {
   const y = _C2.y + H.spine.position.y + H.chest.position.y;
   if (y < 0.1 || y > 0.72) return false;
   const [rx, rz] = H.torsoSection(y), e = (_C2.x / (rx + margin)) ** 2 + (_C2.z / (rz + margin)) ** 2;
-  if (e >= 1) return false;
-  if (e < 1e-6) _C2.z = rz + margin; else { const k = 1 / Math.sqrt(e); _C2.x *= k; _C2.z *= k; }
+  // The front has sculpted pecs/abs up to 6 cm proud of the ellipse; forearms in a guard sank into them.
+  const front = _C2.z > 0 && Math.abs(_C2.x) < rx ? H.chestDepth(_C2.x, y) + margin : 0;
+  if (e >= 1 && !(front && _C2.z < front)) return false;
+  if (e < 1) { if (e < 1e-6) _C2.z = rz + margin; else { const k = 1 / Math.sqrt(e); _C2.x *= k; _C2.z *= k; } }
+  if (front) _C2.z = Math.max(_C2.z, front);
   w.copy(H.chest.localToWorld(_C2));
   return true;
 }
@@ -603,6 +606,15 @@ function posePass(H, s, t, ground, raise) {
     if (pushOutOfTorso(H, _C, 0.06)) {
       a.sh.getWorldPosition(_A);
       solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A)); // pole through the pushed elbow
+    }
+    // Forearm resting across the chest: if its middle is inside the torso, move the fist out by the same amount.
+    for (let it = 0; it < 2; it++) for (const u of [0.35, 0.7]) {
+    a.el.getWorldPosition(_C); a.hand.getWorldPosition(_F); _C.lerp(_F, u); _F.copy(_C);
+    if (pushOutOfTorso(H, _C, 0.06)) {
+      _T.add(_C.sub(_F).multiplyScalar(1 / u));
+      a.el.getWorldPosition(_C); a.sh.getWorldPosition(_A);
+      solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A));
+    }
     }
   }
   H.root.getWorldQuaternion(_qb);
