@@ -521,6 +521,20 @@ function solveIK(upper, lower, L1, L2, target, pole) {
   setBoneDir(lower, _F.subVectors(_G, _E));
 }
 
+const _C = new THREE.Vector3();
+// Push a world point radially out of the torso's elliptical cross-section (plus margin), measured in the
+// chest's frame so it follows the lean. Returns true if it moved.
+function pushOutOfTorso(H, w, margin) {
+  _C2.copy(w); H.chest.worldToLocal(_C2);
+  const y = _C2.y + H.spine.position.y + H.chest.position.y;
+  if (y < 0.1 || y > 0.72) return false;
+  const [rx, rz] = H.torsoSection(y), e = (_C2.x / (rx + margin)) ** 2 + (_C2.z / (rz + margin)) ** 2;
+  if (e >= 1) return false;
+  if (e < 1e-6) _C2.z = rz + margin; else { const k = 1 / Math.sqrt(e); _C2.x *= k; _C2.z *= k; }
+  w.copy(H.chest.localToWorld(_C2));
+  return true;
+}
+const _C2 = new THREE.Vector3();
 // pose: { p:[x,y,z] hips world, yaw, pitch, roll, lean, gait, lh, rh, lf, rf (hip-relative targets) }
 const SOLE = 0.076;
 const BOOT_CORNERS = [[0, -0.074, -0.058], [0, -0.074, 0.178], [0.042, -0.074, 0.06], [-0.042, -0.074, 0.06], [0, 0.021, 0.178], [0, 0.021, -0.058]]
@@ -562,8 +576,15 @@ function posePass(H, s, t, ground, raise) {
     const a = H.arms[side];
     _T.set(tg[0], tg[1], tg[2] + dz); H.root.localToWorld(_T);
     if (_T.y > ground - 0.6) _T.y = Math.max(_T.y, ground + 0.07); // fists rest on the roof, not in it
+    pushOutOfTorso(H, _T, 0.065); // fists stay in front of / beside the chest, not sunk inside it
     _P.set(a.s * 0.5, 0.2, -0.6); H.root.localToWorld(_P);
     solveIK(a.sh, a.el, 0.32, 0.30, _T, _P);
+    // Elbows tucked across the body used to sink into the ribs: swing the elbow out past the torso.
+    a.el.getWorldPosition(_C);
+    if (pushOutOfTorso(H, _C, 0.06)) {
+      a.sh.getWorldPosition(_A);
+      solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A)); // pole through the pushed elbow
+    }
   }
   H.root.getWorldQuaternion(_qb);
   for (const [side, tg, lift, dz] of [['L', s.lf, Math.max(0, cw), sw], ['R', s.rf, Math.max(0, -cw), -sw]]) {
