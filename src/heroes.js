@@ -352,6 +352,7 @@ export function makeHero(kind) {
       p.z += 0.02 * bump(p.y, -0.17, 0.065) * Math.cos(a) ** 3; // biceps peak
       p.x += s * 0.022 * bump(p.y, 0.0, 0.06);                                  // deltoid cap
       p.z -= 0.016 * bump(p.y, -0.17, 0.07) * Math.max(0, -Math.cos(a)) ** 2; // triceps horseshoe
+      p.x += s * 0.035 * bump(p.y, -0.12, 0.05) * Math.max(0, -s * Math.sin(a)) ** 2; // armpit: inner arm tapers into the lats
       const r = Math.hypot(p.x, p.z), dip = 1 - 0.07 * bump(p.y, -0.075, 0.016);    // deltoid insertion groove
       if (r > 1e-6) { p.x *= dip; p.z *= dip; }
       return p;
@@ -611,9 +612,9 @@ function posePass(H, s, t, ground, raise) {
     // Upper arm hugging the lats used to sink up to 4 cm into the side of the back (the arm looked thin and
     // glued into the torso): swing the elbow out until the middle of the upper arm clears the body.
     for (let it = 0; it < 2; it++) {
-      a.sh.getWorldPosition(_A); a.el.getWorldPosition(_C); _C.lerp(_A, 0.65); _F.copy(_C); // a third down the upper arm, where the inner arm meets the lats
+      a.sh.getWorldPosition(_A); a.el.getWorldPosition(_C); _C.lerp(_A, 0.5); _F.copy(_C);
       if (!pushOutOfTorso(H, _C, UPPER_R)) break;
-      a.el.getWorldPosition(_E); _E.add(_C.sub(_F).multiplyScalar(1 / 0.35));
+      a.el.getWorldPosition(_E); _E.add(_C.sub(_F).multiplyScalar(2));
       solveIK(a.sh, a.el, 0.32, 0.30, _T, _E.sub(_A).multiplyScalar(4).add(_A));
     }
     // Forearm resting across the chest: if its middle is inside the torso, move the fist out by the same amount.
