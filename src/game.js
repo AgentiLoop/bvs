@@ -273,6 +273,8 @@ export class Game {
       else { this.me.block = this.cpu.block = false; }
       this.pending = [];
       for (const [f, o] of [[this.me, this.cpu], [this.cpu, this.me]]) this.physics(f, o, sdt);
+      // beam ends if heat vision was interrupted (hit / KO clears act without clearing the beam)
+      if (![this.me, this.cpu].some((f) => f.act && f.act.type === 'heat')) this.heat = null;
       this.resolve();
       this.separate();
       if (this.state === 'fight' && this.t > ENTER_END + 1) this.say('');
