@@ -19,7 +19,8 @@ const SEED = +(qs.get('seed') || 1337);
 const DT = 1 / 60;
 const LOOP_END = 21.5; // real seconds
 let pixelMode = qs.get('pixel') === '1', comicMode = !qs.has('pixel') || qs.get('pixel') === '2'; // comic by default; ?pixel=0 normal. P cycles: normal → pixel-art → comic → normal
-let PIX = +(qs.get('px') || 4), CPIX = 1; const CSTEPS = [1, 1.25, 1.5, 2, 3, 4, 5, 6, 7, 8]; // pixel size for pixel-art / comic modes (- / + keys); comic gets fine steps after 1
+let PIX = +(qs.get('px') || 2), CPIX = 1; const CSTEPS = [1, 1.25, 1.5, 2, 3, 4, 5, 6, 7, 8]; // pixel size for pixel-art / comic modes (- / + keys); comic gets fine steps after 1
+let ditherIGN = qs.get("dither") !== "bayer"; // pixel-art dither: interleaved gradient noise (default) or Bayer 4x4 (?dither=bayer); N toggles
 let paused = false, freeCam = false;
 
 // ---------- renderer ----------
@@ -38,15 +39,17 @@ let rt;
 const post = new THREE.ShaderMaterial({
   uniforms: {
     tColor: { value: null }, tDepth: { value: null }, res: { value: new THREE.Vector2() },
-    near: { value: camera.near }, far: { value: camera.far }, pixel: { value: 1 }, comic: { value: 0 }, flash: { value: 0 }, levels: { value: 6 },
+    near: { value: camera.near }, far: { value: camera.far }, pixel: { value: 1 }, comic: { value: 0 }, flash: { value: 0 }, levels: { value: 6 }, ign: { value: 1 },
+    xray: { value: 0 }, xc: { value: new THREE.Vector2(0.5, 0.5) }, xg: { value: 0 }, // Krushing Blow: amount, impact (screen uv), crack length
   },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
   fragmentShader: `
-    uniform sampler2D tColor, tDepth; uniform vec2 res; uniform float near, far, pixel, comic, flash, levels;
+    uniform sampler2D tColor, tDepth; uniform vec2 res, xc; uniform float near, far, pixel, comic, flash, levels, ign, xray, xg;
     varying vec2 vUv;
     float lin(vec2 uv){ float z = texture2D(tDepth, uv).x * 2.0 - 1.0; return 2.0*near*far/(far+near - z*(far-near)); }
     float bayer2(vec2 a){ a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75))); }
     float bayer4(vec2 a){ return bayer2(0.5 * a) * 0.25 + bayer2(a); }
+    float ignoise(vec2 p){ return fract(52.9829189 * fract(dot(floor(p), vec2(0.06711056, 0.00583715)))); } // Jimenez interleaved gradient noise: blue-noise-like, no grid
     vec3 grade(vec2 uv){ vec3 c = texture2D(tColor, uv).rgb; c = vec3(1.0) - exp(-c * 1.3); return pow(c, vec3(1.0 / 2.2)); }
     float lum(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
     // halftone: dot grid rotated by ang, dot radius grows with ink amount (Ben-Day / CMYK print screens)
@@ -93,8 +96,22 @@ const post = new THREE.ShaderMaterial({
         float th = 0.06 * d0 + 0.08;
         if (max(max(d1, d2), max(d3, d4)) - d0 > th) e = 1.0;
         c *= 1.0 - 0.65 * e;                           // pixel outlines on silhouettes
-        float b = bayer4(gl_FragCoord.xy) - 0.5;
-        c = floor(c * levels + b + 0.5) / levels;       // ordered dither + quantize
+        float b = (ign > 0.5 ? ignoise(gl_FragCoord.xy) : bayer4(gl_FragCoord.xy)) - 0.5;
+        c = floor(c * levels + b + 0.5) / levels;       // dither + quantize
+      }
+      if (xray > 0.001) {
+        // MK x-ray: the frame turns to a cold inverted film, brightest round the impact, and white cracks
+        // splinter outward from the struck point along jagged rays
+        vec2 d = (vUv - xc) * vec2(res.x / res.y, 1.0);
+        float r = length(d), a = atan(d.y, d.x);
+        vec3 film = vec3(0.6, 0.88, 1.0) * pow(1.0 - lum(c), 1.8) * 1.15;
+        float focus = smoothstep(0.6, 0.05, r);
+        c = mix(c, film, xray * mix(0.6, 1.0, focus));
+        float n = 11.0, sec = floor(a / 6.2832 * n + 0.5), ca = (sec + 0.35 * sin(sec * 12.9)) * 6.2832 / n;
+        float off = r * sin(a - ca) + 0.012 * sin(r * 70.0 + sec * 5.0) * smoothstep(0.0, 0.1, r);
+        float len = xg * (0.55 + 0.45 * fract(sin(sec * 78.2) * 437.5));
+        float crack = (1.0 - smoothstep(0.0012, 0.0045, abs(off))) * step(r, len) * smoothstep(len, len * 0.6, r);
+        c = mix(c, vec3(1.0), xray * clamp(crack + exp(-r * 22.0) * 0.8, 0.0, 1.0));
       }
       c = mix(c, vec3(1.0, 0.97, 0.92), flash);
       gl_FragColor = vec4(c, 1.0);
@@ -117,6 +134,7 @@ function resize() {
   post.uniforms.res.value.set(w, h);
   post.uniforms.pixel.value = pixelMode ? 1 : 0;
   post.uniforms.comic.value = comicMode ? 1 : 0;
+  post.uniforms.ign.value = ditherIGN ? 1 : 0;
   rimAmt.value = comicMode ? 0 : 1;
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
@@ -496,6 +514,14 @@ function updateVisuals() {
   world.lights.hemi.intensity = 0.35 + lightning * 5;
   world.sky.material.uniforms.flash.value = lightning;
   post.uniforms.flash.value = Math.min(1, postFlash * 0.8 + lightning * 0.15);
+  // Krushing Blow x-ray: fades in fast, holds, fades out; cracks race out from the impact's screen position
+  const X = game.active && game.xray, XD = 1.25;
+  post.uniforms.xray.value = X ? Math.min(1, X.t / 0.08) * Math.min(1, (XD - X.t) / 0.25) : 0;
+  if (X) {
+    _v.copy(X.at).project(camera);
+    post.uniforms.xc.value.set(_v.x * 0.5 + 0.5, _v.y * 0.5 + 0.5);
+    post.uniforms.xg.value = 0.6 * Math.min(1, X.t / 0.45) ** 0.6;
+  }
 
   const heat = game.active ? !!game.heat : inHeat(simT), ht = game.active ? game.t : simT;
   for (const e of sup.eyes) { e.material.emissive.setHex(heat ? 0xff2000 : 0); e.material.emissiveIntensity = heat ? 6 : 0; }
@@ -589,6 +615,7 @@ addEventListener('keydown', (e) => {
     if (e.code === 'Space' || e.key.startsWith('Arrow')) e.preventDefault();
     game.keydown(e);
     if (e.key === 'p' || e.key === 'P') { if (pixelMode) { pixelMode = false; comicMode = true; } else if (comicMode) comicMode = false; else pixelMode = true; resize(); }
+    if (e.key === "n" || e.key === "N") { ditherIGN = !ditherIGN; resize(); }
     return;
   }
   if (e.key === 'b' || e.key === 'B' || e.key === '1') startGame('bat');
@@ -598,6 +625,7 @@ addEventListener('keydown', (e) => {
   else if (e.key === '-' || e.key === '_') { if (comicMode) CPIX = CSTEPS[Math.max(0, CSTEPS.indexOf(CPIX) - 1)]; else PIX = Math.max(1, PIX - 1); resize(); }
   else if (e.key === '=' || e.key === '+') { if (comicMode) CPIX = CSTEPS[Math.min(CSTEPS.length - 1, CSTEPS.indexOf(CPIX) + 1)]; else PIX = Math.min(8, PIX + 1); resize(); }
   else if (e.key === 'r' || e.key === 'R') reset();
+  else if (e.key === "n" || e.key === "N") { ditherIGN = !ditherIGN; resize(); }
   else if (e.key === 'c' || e.key === 'C') { freeCam = !freeCam; controls.enabled = freeCam; }
 });
 

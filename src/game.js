@@ -226,6 +226,15 @@ const COUNTER = {
   counter: { name: 'COUNTER!', dmg: 1.2, stun: 1.3, up: 0, meter: 4, col: 0xffa030 },
   punish: { name: 'PUNISH COUNTER!', dmg: 1.3, stun: 1.5, up: 2.2, meter: 8, col: 0xff3a30 },
 };
+// MK11 Krushing Blows: a move landing under its condition (ck: counter kinds that trigger it; air: the foe is airborne)
+// turns into an x-ray close-up, once per match per move per fighter: `dmg` x damage, slow-mo (game speed `ts` for `dur` s
+// of real time), the camera orbits in tight on the struck spot, the screen goes x-ray and cracks spread from the impact.
+const KRUSH = { dmg: 1.5, dur: 1.25, ts: 0.18, moves: [
+  { id: 'upper', m: () => MOVES.upper, ck: [COUNTER.counter, COUNTER.punish], name: 'JAW BREAKER' },
+  { id: 'round', m: () => MOVES.round, ck: [COUNTER.punish], name: 'SKULL KRUSHER' },
+  { id: 'sweep', m: () => MOVES.sweep, ck: [COUNTER.counter, COUNTER.punish], name: 'KNEE BREAKER' },
+  { id: 'rise', m: (k) => RISE[k], air: true, name: 'RIB KRUSHER' },
+] };
 // SF6 Drive Impact (H / LB+RB, costs `cost` meter): a lunging armoured palm strike. Absorbs `armor` hits during its
 // start-up (taking half damage, no stun), lands at `hit` s, then `dur` s of recovery if it whiffs (throws beat it).
 // On a counter / punish counter the foe CRUMPLES (doubles over and sinks to his knees, `crumple` s: a free combo);
@@ -285,11 +294,11 @@ export class Game {
   start(choice) {
     const { bat, sup } = this.ctx;
     this.active = true; this.choice = choice; this.t = 0; this.state = 'enter'; this.overT = 0; this.ts = 1; this.landed = false; this.shownWin = false;
-    this.hitstop = 0; this.comboT = 0; this.pending = []; this.cine = null; this.kick = null; this.koCam = null; this.camRoll = 0; this.finish = null; this.shots = []; this.grap = null; this.orb = null; this.orbT = ORB.first; this.resetProps();
+    this.hitstop = 0; this.comboT = 0; this.pending = []; this.cine = null; this.xray = null; this.kick = null; this.koCam = null; this.camRoll = 0; this.finish = null; this.shots = []; this.grap = null; this.orb = null; this.orbT = ORB.first; this.resetProps();
     this.round = 1; this.wins = { bat: 0, sup: 0 }; this.clock = ROUND_TIME; this.fightT = 0; this.matchOver = false; this.winner = null;
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
       ko: false, cd: 0, down: 0, meter: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
-      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, lastLat: 0, lastLatT: -1, latS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, brk: 0, rollA: null, blowUsed: false, blowSaid: false, scars: [], wear: 0, gcd: 0,
+      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, lastLat: 0, lastLatT: -1, latS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, brk: 0, rollA: null, blowUsed: false, blowSaid: false, krush: {}, scars: [], wear: 0, gcd: 0,
       ai: { t: 0, mx: 0, mz: 0, block: 0, crouch: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0, hx: 0, hy: 0, squash: 0, gph: 0, gdx: 0, gdz: 1, gpx: null, gpz: null });
     this.F = { bat: mk(bat, 'bat', -7.4, Math.PI / 2), sup: mk(sup, 'sup', 2.2, -Math.PI / 2) };
     this.F.sup.y = 26; this.F.sup.cur = T(POSES.fly, { pitch: 0.35 });
@@ -1027,7 +1036,7 @@ export class Game {
     }
     if (def.act && def.act.type === 'rise' && def.act.t < RISE[def.key].inv) { fx.sparkBurst(at.x, at.y, at.z, 8, 2, 0xffffff); return; } // invincible start-up
     if (this.canParry(def, M)) { this.parry(def, att, M, at); return; }
-    const CK = trade ? null : this.counterKind(def, att);
+    const CK = trade ? null : this.counterKind(def, att), M0 = M;
     if (CK) M = { ...M, dmg: M.dmg * CK.dmg, stun: M.stun * CK.stun, up: M.heavy && (M.up || 0) >= 0 ? (M.up || 0) + CK.up : M.up };
     const dx = def.x - att.x, dz = def.z - att.z, d = Math.hypot(dx, dz) || 1, nx = dx / d, nz = dz / d;
     const mine = def === this.me || att === this.me;
@@ -1048,7 +1057,8 @@ export class Game {
     }
     const juggle = def.stun > 0 || def.launched || def.y > 0.05;
     att.hits = juggle ? att.hits + 1 : 1;
-    const dmg = M.dmg * rage * Math.max(0.45, 1 - 0.1 * (att.hits - 1));
+    const KB = trade ? null : this.krushOf(def, att, M0, CK);
+    const dmg = M.dmg * rage * Math.max(0.45, 1 - 0.1 * (att.hits - 1)) * (KB ? KRUSH.dmg : 1);
     def.act = null; def.buf = null; def.frz = 0; def.stun = def.stunMax = M.stun; def.heavy = !!M.heavy;
     def.zone = M.low ? 'low' : M.hi || M.air || M.over || (M.up || 0) > 5 ? 'head' : 'body'; def.hitSide = M.at === 'lh' ? -1 : 1;
     def.kx = def.kx * 0.3 + nx * M.kb; def.kz = def.kz * 0.3 + nz * M.kb;
@@ -1081,6 +1091,7 @@ export class Game {
     if (att.hits >= 2) this.showCombo(`${att.hits} HIT COMBO`, att.key);
     else if (CK) this.showCombo(CK.name, att.key);
     else if (guarding) this.showCombo(def.crouch ? 'OVERHEAD!' : 'LOW!', att.key); // guard broken by the wrong height
+    if (KB) this.krush(def, att, KB, at);
     if (def.hp <= 0) {
       if (!M.fin && att.act && att.act.type === 'fatal') return; // fatality string: only its last blow K.O.s
       if (!this.finish && this.wins[att.key] + 1 >= WINS) { this.finishHim(def, att); return; }
@@ -1088,13 +1099,33 @@ export class Game {
       def.ko = true; def.act = null; def.launched = true; def.kx *= 1.6; def.kz *= 1.6; def.vy = Math.max(def.vy, 4); def.y = Math.max(def.y, 0.001);
       this.endRound(att, M.fin ? 'FATALITY' : 'K.O.');
       // MK-style KO camera: low slow-motion orbit round the falling body, then the winner's close-up
-      this.cine = null; this.camKick(at, 1.6, M.at === 'lh' ? -1 : 1);
+      this.cine = null; this.xray = null; this.camKick(at, 1.6, M.at === 'lh' ? -1 : 1);
       this.koCam = { def, att, t: 0, a0: Math.atan2(this.camN.x, this.camN.y), side: att.key === 'bat' ? 1 : -1 };
       fx.flash(0.6);
       fx.sparkBurst(at.x, at.y, at.z, 120, 7, 0xffffff); fx.blast(at.x, at.y, at.z, 2, 0.9);
       this.hitstop = 0.2;
       if (mine) this.rumble(1, 500);
     }
+  }
+
+  // MK11 Krushing Blow (see KRUSH): which entry this clean hit triggers, if any (each once per match per fighter).
+  krushOf(def, att, M, CK) {
+    if (this.state !== 'fight' || this.finish || this.xray) return null;
+    const K = KRUSH.moves.find((k) => k.m(att.key) === M);
+    if (!K || att.krush[K.id]) return null;
+    return (K.air ? def.y > 0.3 : K.ck.includes(CK)) ? K : null;
+  }
+  // x-ray close-up: slow-mo, a tight orbit on the struck spot (camera in aim()), the x-ray / crack post effect in main.js.
+  krush(def, att, K, at) {
+    const { fx } = this.ctx;
+    att.krush[K.id] = true;
+    const bone = def.zone === 'head' ? 'head' : def.zone === 'low' ? 'knee' : 'ribs';
+    this.xray = { def, att, at: at.clone(), t: 0, bone, a0: Math.atan2(this.camN.x, this.camN.y), side: att.key === 'bat' ? 1 : -1 };
+    this.cine = null;
+    fx.sparkBurst(at.x, at.y, at.z, 90, 6, 0xffffff); fx.waves.spawn(at.x, at.y, at.z, 2.6, 0xffffff, 0.6); fx.impact(at.x, at.y, at.z, 0.6); fx.flash(0.4);
+    this.hitstop = Math.max(this.hitstop, 0.1);
+    this.showCombo(`KRUSHING BLOW · ${K.name}`, att.key); this.comboT = KRUSH.dur + 0.6;
+    if (def === this.me || att === this.me) this.rumble(1, 450);
   }
 
   scar(def, att, M, dmg, at) {
@@ -1167,7 +1198,7 @@ export class Game {
     this.say(text, this.matchOver ? '' : winner ? `${winner.key === 'bat' ? 'BATMAN' : 'SUPERMAN'} TAKES ROUND ${this.round}` : 'NO WINNER');
   }
   nextRound() {
-    this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.winner = null; this.koCam = null; this.kick = null; this.finish = null; this.shots = []; this.grap = null; this.orb = null; this.orbT = ORB.first; this.resetProps();
+    this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.xray = null; this.winner = null; this.koCam = null; this.kick = null; this.finish = null; this.shots = []; this.grap = null; this.orb = null; this.orbT = ORB.first; this.resetProps();
     for (const [f, x] of [[this.F.bat, -2.2], [this.F.sup, 2.2]]) {
       Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, dazed: false, downT: -9, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, frz: 0, brk: 0, rollA: null, gcd: 0, cur: T(POSES.guard) });
       f.yaw = x < 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -1183,7 +1214,7 @@ export class Game {
     const hs = this.hitstop > 0; this.hitstop -= dt;
     this.comboT -= dt; if (this.comboT <= 0) this.ui.combo.style.opacity = 0;
     if (this.state === 'over') this.overT += dt;
-    this.ts = hs ? 0.04 : this.state === 'over' && this.overT < 1.4 ? 0.3 : 1;
+    this.ts = hs ? 0.04 : this.xray ? KRUSH.ts : this.state === 'over' && this.overT < 1.4 ? 0.3 : 1;
     const sdt = dt * this.ts;
     this.t += sdt;
     if (this.state === 'enter') this.entrance(sdt);
@@ -1258,7 +1289,7 @@ export class Game {
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
     if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN',
-      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>DOUBLE-TAP UP / DOWN = SIDESTEP · STRAIGHT HITS + PROJECTILES MISS, HOOKS / ROUNDHOUSE / SWEEP TRACK IT<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>HIT HIM WHILE HE WINDS UP = COUNTER · WHILE HE RECOVERS FROM A MISS = PUNISH COUNTER (MORE DAMAGE + STUN)<br>H / LB+RB = DRIVE IMPACT (QUARTER METER): ARMOURED, ABSORBS 2 HITS · COUNTER = CRUMPLE · NEAR A WALL = WALL SPLAT (EVEN BLOCKED)<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH · E / R3 BY A STEEL DRUM = HURL IT (BLOCK / SIDESTEP / JUMP IT)<br>BATMAN G / R3 = GRAPNEL GUN: KRYPTONITE HOOK BURNS + REELS HIM IN · + DIRECTION = ZIP AWAY · BLOCK+G = SWING OVER HIM<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
+      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>DOUBLE-TAP UP / DOWN = SIDESTEP · STRAIGHT HITS + PROJECTILES MISS, HOOKS / ROUNDHOUSE / SWEEP TRACK IT<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>HIT HIM WHILE HE WINDS UP = COUNTER · WHILE HE RECOVERS FROM A MISS = PUNISH COUNTER (MORE DAMAGE + STUN)<br>KRUSHING BLOWS (×1.5, X-RAY, ONCE EACH A MATCH): COUNTER UPPERCUT OR SWEEP · PUNISH ROUNDHOUSE · RISING UPPERCUT ON A JUMPER<br>H / LB+RB = DRIVE IMPACT (QUARTER METER): ARMOURED, ABSORBS 2 HITS · COUNTER = CRUMPLE · NEAR A WALL = WALL SPLAT (EVEN BLOCKED)<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH · E / R3 BY A STEEL DRUM = HURL IT (BLOCK / SIDESTEP / JUMP IT)<br>BATMAN G / R3 = GRAPNEL GUN: KRYPTONITE HOOK BURNS + REELS HIM IN · + DIRECTION = ZIP AWAY · BLOCK+G = SWING OVER HIM<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }
   }
@@ -1785,6 +1816,16 @@ export class Game {
         lk = new THREE.Vector3(w.x, 1.35, w.z); k = Math.min(1, dt * 2.5);
       }
       this.camPos.lerp(cp, k); this.camLook.lerp(lk, k);
+      return;
+    }
+    if (this.xray) {
+      // Krushing Blow: real-time, so the slow-mo crawls while the camera swoops in tight and orbits the struck spot
+      const X = this.xray; X.t += dt;
+      const u = Math.min(1, X.t / 0.35), ang = X.a0 + X.side * (0.5 + X.t * 0.9), r = 3 - 1.9 * u * u * (3 - 2 * u);
+      const cp = new THREE.Vector3(X.at.x + Math.sin(ang) * r, X.at.y + 0.15, X.at.z + Math.cos(ang) * r);
+      const k = Math.min(1, dt * 10);
+      this.camPos.lerp(cp, k); this.camLook.lerp(X.at, k);
+      if (X.t >= KRUSH.dur) this.xray = null;
       return;
     }
     const a = new THREE.Vector3(bat.x, bat.y + 1, bat.z), b = new THREE.Vector3(sup.x, sup.y + 1, sup.z);
