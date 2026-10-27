@@ -132,8 +132,9 @@ export function makeHero(kind) {
   const hips = joint(root, [0, 0, 0]);
   const spine = joint(hips, [0, 0.08, 0]);
   const chest = joint(spine, [0, 0.28, 0]);
-  const head = joint(chest, [0, 0.43, 0]);
-  head.scale.setScalar(1.14); // heroic head-to-shoulder ratio (~1:3) instead of a pinhead
+  // Head sits low on a short, thick neck (jaw overlaps the neck) at a heroic ~1:3 head-to-shoulder ratio.
+  const head = joint(chest, [0, B ? 0.43 : 0.41, B ? 0 : 0.008]);
+  head.scale.setScalar(B ? 1.14 : 1.24);
   const sphere = new THREE.SphereGeometry(1, 32, 24);
   const oval = (parent, material, pos, scale) => part(parent, sphere, material, pos, scale);
   const skins = [];
