@@ -379,8 +379,8 @@ if (qs.has('debug')) {
     for (const [k, H] of [['bat', bat], ['sup', sup]]) {
       const b = new THREE.Box3(); let n = 0, vis = 0;
       H.root.updateMatrixWorld(true);
-      H.root.traverse((o) => { if (o.userData.fan) { n++; b.expandByObject(o); } else if (o.isMesh && o.visible) vis++; });
-      info[k] = { stats: H.fanStats, armDir: H.fanArm, n, procVisible: vis, min: b.min.toArray().map((v) => +v.toFixed(2)), max: b.max.toArray().map((v) => +v.toFixed(2)) };
+      (H.fanMeshes || []).forEach((o) => { n++; o.geometry.computeBoundingBox(); }); H.root.traverse((o) => { if (o.isMesh && o.visible) vis++; }); H.fanMeshes && H.fanMeshes.forEach((o) => { const p = new THREE.Vector3(); for (let i = 0; i < o.geometry.attributes.position.count; i += 50) { o.getVertexPosition(i, p); b.expandByPoint(p); } });
+      info[k] = { armDir: H.fanArm, n, procVisible: vis, min: b.min.toArray().map((v) => +v.toFixed(2)), max: b.max.toArray().map((v) => +v.toFixed(2)) };
     }
     document.getElementById('err').textContent += ' fan=' + JSON.stringify(window.__fan) + ' box=' + JSON.stringify(info);
   }, 6000);
