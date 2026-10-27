@@ -28,7 +28,9 @@ export class Cape {
       for (let i = 0; i < cols; i++) {
         const u = i / (cols - 1) * 2 - 1, f = Math.min(1, j / 2);
         const pinY = 0.375 - 0.05 * u * u, pinZ = -0.088 + 0.035 * u * u;
-        this.canon.push(new THREE.Vector3(u * w / 2, pinY - (j * len) / (rows - 1), pinZ * (1 - f) + (-0.17 - j * 0.02) * f));
+        // Soft vertical folds that deepen toward the hem give the cape volume instead of a flat sheet.
+        const fold = 0.035 * (j / (rows - 1)) * Math.cos(u * Math.PI * 1.5);
+        this.canon.push(new THREE.Vector3(u * w / 2, pinY - (j * len) / (rows - 1), pinZ * (1 - f) + (-0.17 - j * 0.02 + fold) * f));
       }
     }
     const idx = (i, j) => j * cols + i;
@@ -45,20 +47,26 @@ export class Cape {
     this.capsules = CAPSULES.map(([group, side, a, b, r]) => ({ a: hero[group][side][a], b: hero[group][side][b], r,
       p: new THREE.Vector3(), q: new THREE.Vector3() }));
 
+    // The coarse sim grid is rendered through a Catmull-Rom surface SUB times denser, so edges and
+    // folds are smooth curves instead of jagged facets.
+    const SUB = 5, RC = (cols - 1) * SUB + 1, RR = (rows - 1) * SUB + 1;
+    this.RC = RC; this.RR = RR; this.SUB = SUB;
+    this.rowTmp = new Float32Array(rows * RC * 3);
+    this.rpos = new Float32Array(RC * RR * 3);
     const geo = new THREE.BufferGeometry();
-    this.attr = new THREE.BufferAttribute(this.pos, 3);
+    this.attr = new THREE.BufferAttribute(this.rpos, 3);
     this.attr.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute('position', this.attr);
     const uv = [], index = [];
-    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) uv.push(i / (cols - 1), 1 - j / (rows - 1));
-    for (let j = 0; j < rows - 1; j++) for (let i = 0; i < cols - 1; i++) {
-      const a = idx(i, j), b = idx(i + 1, j), c = idx(i, j + 1), d = idx(i + 1, j + 1);
+    for (let j = 0; j < RR; j++) for (let i = 0; i < RC; i++) uv.push(i / (RC - 1), 1 - j / (RR - 1));
+    for (let j = 0; j < RR - 1; j++) for (let i = 0; i < RC - 1; i++) {
+      const a = j * RC + i, b = a + 1, c = a + RC, d = c + 1;
       index.push(a, c, b, b, c, d);
     }
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     geo.setIndex(index);
     this.geo = geo;
-    this.mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 0.85, side: THREE.DoubleSide }));
+    this.mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 0.8, side: THREE.DoubleSide }));
     this.mesh.castShadow = true; this.mesh.receiveShadow = true; this.mesh.frustumCulled = false;
   }
 
@@ -131,6 +139,23 @@ export class Cape {
   }
 
   updateMesh() {
+    const { cols, rows, RC, RR, SUB, pos: P, rowTmp: T, rpos: R } = this;
+    // Catmull-Rom between p1 and p2 (endpoints clamped), written into out[o..o+2].
+    const cr = (src, n, stride, base, k, t, out, o) => {
+      const i0 = base + Math.max(0, k - 1) * stride, i1 = base + k * stride,
+        i2 = base + Math.min(n - 1, k + 1) * stride, i3 = base + Math.min(n - 1, k + 2) * stride;
+      const t2 = t * t, t3 = t2 * t;
+      const a = -0.5 * t3 + t2 - 0.5 * t, b = 1.5 * t3 - 2.5 * t2 + 1, c = -1.5 * t3 + 2 * t2 + 0.5 * t, d = 0.5 * t3 - 0.5 * t2;
+      for (let q = 0; q < 3; q++) out[o + q] = a * src[i0 + q] + b * src[i1 + q] + c * src[i2 + q] + d * src[i3 + q];
+    };
+    for (let j = 0; j < rows; j++) for (let x = 0; x < RC; x++) {
+      const k = Math.min(cols - 2, Math.floor(x / SUB));
+      cr(P, cols, 3, j * cols * 3, k, x / SUB - k, T, (j * RC + x) * 3);
+    }
+    for (let y = 0; y < RR; y++) {
+      const k = Math.min(rows - 2, Math.floor(y / SUB));
+      for (let x = 0; x < RC; x++) cr(T, rows, RC * 3, x * 3, k, y / SUB - k, R, (y * RC + x) * 3);
+    }
     this.attr.needsUpdate = true;
     this.geo.computeVertexNormals();
   }
