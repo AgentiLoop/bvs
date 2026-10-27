@@ -82,6 +82,12 @@ const MP = {
   sHammerUp:{ ...G, h: 0.86, lean: -0.15, lh: [0.06, 1.18, 0.22], rh: [-0.06, 1.18, 0.22] },
   sHammer: { ...G, h: 0.66, lean: 0.78, lh: [0.04, 0.3, 0.76], rh: [-0.04, 0.3, 0.76] },
   sRise:   { ...P.upper, h: 0.98, lean: -0.1, tw: -0.3, rh: [-0.02, 1.26, 0.46], rf: [-0.15, -0.5, 0.36] },
+  // drive impact: coiled low with the rear fist cocked at the hip and the lead hand reaching, then the whole body
+  // drives through a straight-arm palm with the rear leg pushing off
+  diUp:    { ...G, h: 0.74, lean: 0.25, tw: 0.75, roll: 0.05, lh: [0.18, 0.5, 0.5], rh: [-0.3, 0.22, -0.25], lf: [0.22, -0.62, 0.42], rf: [-0.2, -0.62, -0.4] },
+  di:      { ...G, h: 0.8, lean: 0.7, tw: -0.6, roll: -0.05, lh: [0.26, 0.4, 0.1], rh: [0.0, 0.62, 1.08], lf: [0.2, -0.7, 0.55], rf: [-0.18, -0.72, -0.62] },
+  // pinned against the arena wall: back flat, arms flung out, head knocked back, then sliding down it
+  splat:   { h: 0.9, lean: -0.55, roll: 0, tw: 0, lh: [0.6, 0.78, -0.3], rh: [-0.6, 0.74, -0.3], lf: [0.22, -0.86, 0.22], rf: [-0.2, -0.86, 0.1] },
 };
 
 const REACT = { head: MP.hitHead, body: MP.hitBody, low: MP.hitLow };
@@ -204,6 +210,12 @@ const COUNTER = {
   counter: { name: 'COUNTER!', dmg: 1.2, stun: 1.3, up: 0, meter: 4, col: 0xffa030 },
   punish: { name: 'PUNISH COUNTER!', dmg: 1.3, stun: 1.5, up: 2.2, meter: 8, col: 0xff3a30 },
 };
+// SF6 Drive Impact (H / LB+RB, costs `cost` meter): a lunging armoured palm strike. Absorbs `armor` hits during its
+// start-up (taking half damage, no stun), lands at `hit` s, then `dur` s of recovery if it whiffs (throws beat it).
+// On a counter / punish counter the foe CRUMPLES (doubles over and sinks to his knees, `crumple` s: a free combo);
+// with his back `wall` m or less from the arena edge, hit or blocked, he is SPLATTED against the wall (`splat` s).
+const IMPACT = { cost: 25, armor: 2, hit: 0.42, dur: 0.95, reach: 1.7, lunge: [0.12, 0.42, 3.2], crumple: 1.5, splat: 1.1, wall: 1.6,
+  strike: { dmg: 11, kb: 5, stun: 0.55, heavy: true, at: 'rh', blast: 1.4 }, cpu: 0.18 };
 // Power-ups: a glowing orb drops into the arena now and then (first at `first` s, then every `every` s if none is out);
 // walk through it to collect. rage: 1.5x damage for `time` s (red aura); meter: +50 super meter; heal: +15 HP.
 const ORB = { first: 8, every: 11, life: 9, y: 1.0, r: 0.75, fall: 1.2 };
@@ -281,6 +293,7 @@ export class Game {
     else if (k === 'u') this.throwStart(this.me);
     else if (k === 'o') this.rise(this.me);
     else if (k === 'f') this.blow(this.me);
+    else if (k === 'h') this.impact(this.me);
     else if (k === ' ') this.press(this.me, 'A');
   }
   keyup(e) { this.keys.delete(e.key.toLowerCase()); }
@@ -317,6 +330,7 @@ export class Game {
     if (this.padHit(1)) this.press(this.me, 'S', this.blockHeld());
     if (this.padHit(0)) this.press(this.me, 'A');
     if (this.padNow[6] && this.padNow[7] && (this.padHit(6) || this.padHit(7))) this.blow(this.me); // both triggers = fatal blow
+    if (this.padNow[4] && this.padNow[5] && (this.padHit(4) || this.padHit(5))) this.impact(this.me); // both bumpers = drive impact
     return true;
   }
   blockHeld() { return this.keys.has('shift') || [4, 5, 6, 7].some((i) => this.padNow[i]); }
@@ -496,6 +510,53 @@ export class Game {
     if (!this.free(f) || f.cd > 0) return;
     f.cd = 4;
     f.act = { type: f.key === 'bat' ? 'flykick' : 'heat', t: 0, done: false };
+  }
+  // SF6 Drive Impact (see IMPACT): spend meter, glow, coil, then lunge into an armoured palm strike.
+  impact(f) {
+    if (this.state !== 'fight' || f.dazed || !this.free(f) || f.meter < IMPACT.cost) return false;
+    const { fx } = this.ctx, c = f.H.chest.getWorldPosition(new THREE.Vector3()), col = f.key === 'bat' ? 0xffd23a : 0x6fa8ff;
+    f.meter -= IMPACT.cost; f.act = { type: 'impact', t: 0, done: false, armor: 0 }; f.buf = null; f.block = f.crouch = false;
+    fx.waves.spawn(c.x, c.y, c.z, 1.8, col, 0.4); fx.sparkBurst(c.x, c.y, c.z, 30, 3, col); fx.dustBurst(f.x, 0, f.z, 16, 1.4);
+    this.showCombo('DRIVE IMPACT', f.key); this.updateBars();
+    return true;
+  }
+  // Distance from o to the arena edge behind him, pushed along (nx, nz); Infinity if he isn't being driven at a wall.
+  wallGap(o, nx, nz) {
+    let g = Infinity;
+    if (nx > 0.3) g = Math.min(g, ARENA.x1 - o.x); else if (nx < -0.3) g = Math.min(g, o.x - ARENA.x0);
+    if (nz > 0.3) g = Math.min(g, ARENA.z1 - o.z); else if (nz < -0.3) g = Math.min(g, o.z - ARENA.z0);
+    return g;
+  }
+  // The palm lands: wall splat near the edge (even through a block), crumple on a counter / punish counter.
+  impactHit(f, o) {
+    const { fx } = this.ctx, S = IMPACT.strike, col = f.key === 'bat' ? 0xffd23a : 0x6fa8ff;
+    const d = Math.hypot(o.x - f.x, o.z - f.z) || 1, nx = (o.x - f.x) / d, nz = (o.z - f.z) / d;
+    const wall = this.wallGap(o, nx, nz) <= IMPACT.wall;
+    const guarding = o.block && !o.act && o.stun <= 0 && o.y <= 0.001;
+    const CK = guarding ? null : this.counterKind(o, f);
+    const at = this.contact(f, o, S);
+    if (guarding && wall) { o.block = false; this.hurt(o, f, { ...S, dmg: S.dmg * 0.5 }, at); } // the guard is crushed into the wall
+    else this.hurt(o, f, S, at);
+    fx.waves.spawn(at.x, at.y, at.z, 2.4, col, 0.5); fx.blast(at.x, at.y, at.z, 1.1, 0.45, col);
+    if (o.stun <= 0 || o.ko || o.dazed || o.hp <= 0) return; // blocked, armoured, or the round is over
+    const cam = (s) => { this.cine = { f, t: 0, a0: Math.atan2(this.camN.x, this.camN.y), end: s, close: true }; };
+    if (wall) {
+      // slammed flat against the arena wall: pinned there, then slides down it
+      if (Math.abs(nx) >= Math.abs(nz)) o.x = nx > 0 ? ARENA.x1 : ARENA.x0; else o.z = nz > 0 ? ARENA.z1 : ARENA.z0;
+      o.kx = o.kz = 0; o.vy = 0; o.y = 0; o.launched = false; o.stun = o.stunMax = IMPACT.splat; o.zone = 'splat'; o.heavy = true;
+      const w = new THREE.Vector3(o.x + nx * 0.3, 1.2, o.z + nz * 0.3);
+      fx.rubble(w.x, w.y, w.z, 40, 4, 0.05, 0.2, 4); fx.dustBurst(w.x, 0.6, w.z, 70, 3); fx.waves.spawn(w.x, w.y, w.z, 3, 0xfff2d0, 0.6);
+      fx.impact(w.x, w.y, w.z, 0.5); fx.flash(0.35);
+      this.hitstop = Math.max(this.hitstop, 0.22); this.camKick(w, 1.4, f.key === 'bat' ? 1 : -1); cam(1.1);
+      this.showCombo('WALL SPLAT!', f.key);
+    } else if (CK) {
+      // crumple: doubled over, knees buckling, sinking to the floor
+      o.kx = nx * 1.2; o.kz = nz * 1.2; o.vy = 0; o.y = 0; o.launched = false; o.stun = o.stunMax = IMPACT.crumple; o.zone = 'crumple'; o.heavy = true;
+      fx.sparkBurst(at.x, at.y, at.z, 60, 5, CK.col); fx.dustBurst(o.x, 0, o.z, 40, 2.2); fx.flash(0.3);
+      this.hitstop = Math.max(this.hitstop, 0.25); this.camKick(at, 1.3, f.key === 'bat' ? 1 : -1); cam(1.0);
+      this.showCombo(`${CK.name} CRUMPLE!`, f.key);
+    }
+    if (f === this.me || o === this.me) this.rumble(1, 320);
   }
 
   superMove(f) {
@@ -756,6 +817,7 @@ export class Game {
     else if (a.type === 'shoot' || a.type === 'flykick') k = a.done ? 'punish' : 'counter';
     else if (a.type === 'throw') k = a.checked && !a.grab ? 'punish' : 'counter';
     else if (a.type === 'heat') k = 'counter';
+    else if (a.type === 'impact') k = a.done ? 'punish' : 'counter';
     else if (a.type === 'side' && a.t > SIDE.evade[1]) k = 'punish';
     return k && COUNTER[k];
   }
@@ -765,6 +827,12 @@ export class Game {
     if (def.ko || def.down > 0 || def.brk > 0) return;
     if (def.act && (def.act.type === 'super' || def.act.type === 'blow')) { this.ctx.fx.sparkBurst(at.x, at.y, at.z, 10, 2, 0xffffff); return; } // armoured
     if (def.act && def.act.type === 'dash' && def.act.dir < 0 && def.act.t < DASH.invuln) return; // backdash invulnerability
+    if (def.act && def.act.type === 'impact' && !def.act.done && def.act.armor < IMPACT.armor && !M.fin) { // drive impact armour soaks it
+      def.act.armor++; def.hp = Math.max(1, def.hp - M.dmg * 0.5); att.hits = 0;
+      fx.sparkBurst(at.x, at.y, at.z, 24, 3, 0xffffff); fx.blast(at.x, at.y, at.z, 0.5, 0.3, def.key === 'bat' ? 0xffd23a : 0x6fa8ff); fx.impact(at.x, at.y, at.z, 0.12);
+      this.hitstop = Math.max(this.hitstop, 0.1); this.showCombo('ARMOR', def.key); this.updateBars();
+      return;
+    }
     if (def.act && def.act.type === 'rise' && def.act.t < RISE[def.key].inv) { fx.sparkBurst(at.x, at.y, at.z, 8, 2, 0xffffff); return; } // invincible start-up
     if (this.canParry(def, M)) { this.parry(def, att, M, at); return; }
     const CK = trade ? null : this.counterKind(def, att);
@@ -967,7 +1035,7 @@ export class Game {
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
     if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN',
-      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>DOUBLE-TAP UP / DOWN = SIDESTEP · STRAIGHT HITS + PROJECTILES MISS, HOOKS / ROUNDHOUSE / SWEEP TRACK IT<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>HIT HIM WHILE HE WINDS UP = COUNTER · WHILE HE RECOVERS FROM A MISS = PUNISH COUNTER (MORE DAMAGE + STUN)<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
+      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>DOUBLE-TAP UP / DOWN = SIDESTEP · STRAIGHT HITS + PROJECTILES MISS, HOOKS / ROUNDHOUSE / SWEEP TRACK IT<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>HIT HIM WHILE HE WINDS UP = COUNTER · WHILE HE RECOVERS FROM A MISS = PUNISH COUNTER (MORE DAMAGE + STUN)<br>H / LB+RB = DRIVE IMPACT (QUARTER METER): ARMOURED, ABSORBS 2 HITS · COUNTER = CRUMPLE · NEAR A WALL = WALL SPLAT (EVEN BLOCKED)<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }
   }
@@ -1048,12 +1116,21 @@ export class Game {
     // anti-air: one read per jump-in; about half the time the CPU meets it with the rising uppercut
     if (o.y <= 0.001) A.aa = false;
     else if (!A.aa && o.y > 0.3 && !o.launched && d < 2.4 && this.free(f)) { A.aa = true; if (rng() < 0.5) this.rise(f); }
+    // incoming drive impact: one read each (throw it up close, backdash out, or eat it)
+    if (o.act && o.act.type === 'impact' && !o.act.done && A.diSeen !== o.act && o.act.t > 0.08) {
+      A.diSeen = o.act; const r = rng();
+      if (d < THROW.reach && r < 0.35) this.throwStart(f); else if (r < 0.6) this.dash(f, -1);
+    }
     if (A.t <= 0) {
       A.t = 0.2 + rng() * 0.3; A.mx = A.mz = 0;
       const threat = o.act && d < 2;
       if (this.canBlow(f) && d < 2.2 && !o.launched && o.down <= 0 && rng() < 0.3) this.blow(f);
       else if (f.meter >= 100 && d < 3.2 && this.free(f) && !o.launched && rng() < 0.35) this.superMove(f);
       else if (threat && d < 1.4 && rng() < 0.08 && this.free(f)) this.rise(f); // reversal through pressure
+      // drive impact: through a blocking or recovering foe, or to splat him when his back is to the wall
+      else if (this.free(f) && f.meter >= IMPACT.cost && d > 1 && d < 2.4 && !o.launched && o.down <= 0
+        && (o.block || (o.act && o.act.done) || this.wallGap(o, tx, tz) < IMPACT.wall + 0.4) && rng() < IMPACT.cpu * 2) this.impact(f);
+      else if (this.free(f) && f.meter >= IMPACT.cost && d > 1 && d < 2.2 && rng() < IMPACT.cpu * 0.15) this.impact(f);
       else if (threat && MOVES[o.act.type] && !MOVES[o.act.type].track && !o.act.done && rng() < SIDE.cpu && this.sidestep(f, rng() < 0.5 ? 1 : -1)) {} // step off the line
       else if (threat && rng() < 0.15 && this.free(f)) this.dash(f, -1);
       else if (threat && rng() < 0.4) {
@@ -1155,6 +1232,17 @@ export class Game {
         if (!this.fatalStep(f, o, a)) f.act = null;
       } else if (a.type === 'blow') {
         if (!this.blowStep(f, o, a, dt)) { f.act = null; if (this.heat && a.beam) this.heat = null; }
+      } else if (a.type === 'impact') {
+        // coil, then drive forward behind the palm; aura sparks through the start-up
+        const [l0, l1, sp] = IMPACT.lunge;
+        if (a.t > l0 && a.t < l1 && d > 0.9) { f.x += Math.sin(f.yaw) * sp * dt; f.z += Math.cos(f.yaw) * sp * dt; }
+        if (!a.done && this.ctx.rng() < 0.6) { const c = f.H.chest.getWorldPosition(new THREE.Vector3()); fx.sparkBurst(c.x, c.y, c.z, 2, 1.6, f.key === 'bat' ? 0xffd23a : 0x6fa8ff); }
+        if (!a.done && a.t >= IMPACT.hit) {
+          a.done = true;
+          if (this.state === 'fight' && d < IMPACT.reach && !o.ko && o.down <= 0 && o.y < 1.2 && !o.heldBy) this.impactHit(f, o);
+          else fx.dustBurst(f.x, 0, f.z, 20, 1.6);
+        }
+        if (a.t >= IMPACT.dur) f.act = null;
       } else if (a.type === 'side') {
         // arc round the foe: rotate about him by the eased share of the step this frame (fast start, settling)
         const u = Math.min(1, a.t / SIDE.dur), e = 1 - (1 - u) * (1 - u), th = a.s * SIDE.ang * (e - a.e);
@@ -1323,6 +1411,7 @@ export class Game {
     }
     if (a && a.type === 'flykick') { const u = a.t / 0.75; return u < 0.15 ? T(POSES.tuck) : T(POSES.flykick, { h: 0.75 }); }
     if (a && a.type === 'heat') return T(POSES.heat);
+    if (a && a.type === 'impact') return T(a.t < 0.3 ? MP.diUp : a.t < 0.72 ? MP.di : MP.whiff);
     if (a && a.type === 'rise') return a.landT != null ? T(MP.crouch) : a.t < 0.05 ? T(MP.dip) : f.vy > -1.5 ? T(MP.riseUp) : T(POSES.tuck);
     if (f.brk > BREAK.inv - BREAK.pose && !a) return T(MP.burst);
     if (f.parryT > 0 && !a && f.stun <= 0) return T(f.parLow ? MP.parryLow : MP.parry);
@@ -1330,6 +1419,11 @@ export class Game {
       // reaction by where the blow landed, mirrored to the side it came from; heavy head shots whip all the way back.
       // Full strength while stunned, easing back into the guard over the last 40% of the stun.
       if (f.heldBy || !f.zone) return T(POSES[f.heavy ? 'hit' : 'flinch']);
+      const u = 1 - f.stun / (f.stunMax || 1);
+      // crumple: doubled over clutching the gut, then the knees give and he sinks onto them; back to the guard at the end
+      if (f.zone === 'crumple') return u < 0.3 ? T(MP.hitBody) : u < 0.85 ? mixPose(T(MP.hitBody), T(POSES.kneel, { lean: 0.7 }), clamp((u - 0.3) / 0.25, 0, 1)) : mixPose(T(POSES.kneel, { lean: 0.7 }), T(G), (u - 0.85) / 0.15);
+      // wall splat: flat against the wall, then sliding down it with the arms dropping
+      if (f.zone === 'splat') { const s = clamp((u - 0.35) / 0.5, 0, 1); return mixPose(T(MP.splat), T(POSES.kneel, { lean: -0.2 }), s * 0.8); }
       const R = f.zone === 'head' && f.heavy ? POSES.hit : REACT[f.zone], s = f.hitSide || 1;
       const r = T(R, { tw: (R.tw || 0) * s, roll: (R.roll || 0) * s, h: R.h - (f.heavy && f.zone !== 'head' ? 0.06 : 0) });
       return mixPose(T(G), r, clamp(f.stun / (0.4 * (f.stunMax || 0.3)), 0, 1));
