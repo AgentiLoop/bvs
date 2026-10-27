@@ -130,6 +130,13 @@ export async function loadFanModel(H, url, { yaw = null } = {}) {
       v.fromBufferAttribute(P, i);
       let best = 0;
       for (let b = 0; b < BN.length; b++) { d[b] = capsuleDist(v, BN[b]); if (d[b] < d[best]) best = b; }
+      // cape / cloth: behind the body and away from every bone -> ride rigidly on the torso (no leg/arm tearing)
+      if (v.z < -0.06 && d[best] > 0.06 && v.y < 0.85) {
+        const t = THREE.MathUtils.clamp((v.y - 0.1) / 0.5, 0, 1); // hips -> chest by height
+        const wc = t * t, wh = (1 - t) * (1 - t), ws = 1 - wc - wh;
+        [[0, wh], [1, ws], [2, wc]].forEach(([b, w], j) => { si[i * 4 + j] = b; sw[i * 4 + j] = w; });
+        continue;
+      }
       const cand = adj[best].map((b) => [b, Math.exp(-(d[b] - d[best]) / 0.035)]).sort((a, b) => b[1] - a[1]).slice(0, 4);
       const tot = cand.reduce((s, c) => s + c[1], 0);
       cand.forEach(([b, w], j) => { si[i * 4 + j] = b; sw[i * 4 + j] = w / tot; });

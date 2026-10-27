@@ -95,9 +95,10 @@ const bat = makeHero('batman'), sup = makeHero('superman');
 scene.add(bat.root, sup.root);
 // fan models: models/batman.glb + models/superman.glb (or ?bat=url&sup=url, ?byaw=deg&syaw=deg); procedural body if missing
 window.__fan = {};
+const DEFAULT_YAW = { bat: 0, sup: -Math.PI / 2 }; // verified facing for the bundled models (auto-detect is fooled by capes)
 for (const [H, key, file] of [[bat, 'bat', 'batman'], [sup, 'sup', 'superman']]) {
   if (qs.get(key) === '0') continue;
-  loadFanModel(H, qs.get(key) || `./models/${file}.glb`, { yaw: qs.has(key[0] + 'yaw') ? +qs.get(key[0] + 'yaw') * Math.PI / 180 : null })
+  loadFanModel(H, qs.get(key) || `./models/${file}.glb`, { yaw: qs.has(key[0] + 'yaw') ? +qs.get(key[0] + 'yaw') * Math.PI / 180 : qs.get(key) ? null : DEFAULT_YAW[key] })
     .then((n) => {
       window.__fan[key] = { n, yaw: Math.round(H.fanYaw * 180 / Math.PI) };
       const cape = key === 'bat' ? batCape : supCape; // fan models bring their own cape
