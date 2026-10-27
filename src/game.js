@@ -51,6 +51,12 @@ const MP = {
   // parry: the lead hand sweeps the blow up and out past the head (standing) or down past the knee (crouching)
   parry:   { ...G, h: 0.86, lean: -0.1, tw: 0.35, lh: [0.4, 0.86, 0.5], rh: [-0.12, 0.55, 0.28] },
   parryLow:{ ...G, h: 0.54, lean: 0.5, tw: 0.3, lh: [0.42, -0.02, 0.55], rh: [-0.12, 0.36, 0.3], lf: [0.22, -0.47, 0.36], rf: [-0.22, -0.47, -0.3] },
+  // fatal blow: Batman drags the head down into a rising knee, then drops a hammer elbow; Superman holds him up by the throat
+  kneeHold:{ ...G, h: 0.88, lean: 0.4, lh: [0.14, 0.62, 0.62], rh: [-0.14, 0.62, 0.62] },
+  knee:    { ...G, h: 0.9, lean: 0.5, lh: [0.14, 0.42, 0.55], rh: [-0.14, 0.42, 0.55], rf: [-0.12, -0.3, 0.48] },
+  elbowUp: { ...G, h: 0.92, lean: -0.1, tw: 0.45, lh: [0.25, 0.55, 0.45], rh: [-0.22, 1.18, 0.12] },
+  elbow:   { ...G, h: 0.76, lean: 0.7, tw: -0.3, lh: [0.24, 0.36, 0.2], rh: [0.02, 0.6, 0.46] },
+  choke:   { ...G, h: 0.98, lean: -0.15, tw: 0.3, lh: [0.04, 1.02, 0.66], rh: [-0.3, 0.42, 0.02], lf: [0.2, -0.86, 0.3], rf: [-0.2, -0.86, -0.3] },
   // hit reactions by where the blow lands: head whips back with the rear foot stepping out to catch the weight,
   // a body blow doubles him over clutching the gut, a low kick yanks the front leg out with the arms thrown wide
   hitHead: { h: 0.84, lean: -0.45, roll: 0.12, tw: 0.25, lh: [0.32, 0.68, 0.02], rh: [-0.34, 0.6, 0.08], lf: [0.18, -0.76, 0.32], rf: [-0.2, -0.76, -0.5] },
@@ -131,6 +137,19 @@ const DP = 0.4; // toward -> crouch -> punch must each follow within this many s
 // the attacker freezes for `frz` s (can't chain) so the parrier gets a free punish. Taps closer together than `lock` s
 // are ignored (no mashing), a successful parry clears the lock. cpu: chance the CPU parries a hit it is idle for.
 const PARRY = { win: 0.15, lock: 0.4, frz: 0.3, pose: 0.22, meter: 6, cpu: 0.1 };
+// MK11 Fatal Blow: once per match (spent only when it lands), at `hp` HP or less, F / LT+RT = an armoured lunge that
+// becomes a close-up cinematic string. steps: [time after contact, pose, hit (null = none), victim lift]; the last hit
+// launches. Blocked or whiffed = `rec` s of recovery, still available. pause: freeze per blow (slow-mo crunch).
+const BLOW = { hp: 30, lunge: 8, reach: 1.15, win: 0.5, rec: 0.9, pause: 0.16, chip: { dmg: 6, kb: 2, stun: 0.3, at: 'rh', blast: 0.5 },
+  bat: { name: 'FATAL BLOW · BREAKING POINT', end: 1.55, col: 0xffd23a, steps: [
+    [0, 'kneeHold', null, 0], [0.18, 'knee', { dmg: 8, kb: 0.2, stun: 0.6, at: 'rf', blast: 0.8, heavy: true }, 0],
+    [0.5, 'elbowUp', null, 0], [0.62, 'elbow', { dmg: 9, kb: 0.2, stun: 0.6, hi: true, at: 'rh', blast: 0.9, heavy: true }, 0],
+    [0.92, 'roundUp', null, 0], [1.04, 'round', { dmg: 18, kb: 9, up: 5, stun: 1, hi: true, heavy: true, at: 'rf', blast: 2.2, last: true }, 0]] },
+  sup: { name: 'FATAL BLOW · KRYPTONIAN JUDGEMENT', end: 1.7, col: 0x6fa8ff, steps: [
+    [0, 'choke', null, 0.5], [0.25, 'choke', { dmg: 5, kb: 0, stun: 0.5, at: 'lh', blast: 0.5, beam: true }, 0.55],
+    [0.42, 'choke', { dmg: 5, kb: 0, stun: 0.5, at: 'lh', blast: 0.6, beam: true }, 0.6], [0.59, 'choke', { dmg: 5, kb: 0, stun: 0.5, at: 'lh', blast: 0.8, beam: true }, 0.65],
+    [0.8, 'dip', null, 0], [0.95, 'upper', { dmg: 24, kb: 2, up: 11, stun: 1, heavy: true, at: 'rh', blast: 2.4, last: true }, 0]] },
+};
 // Power-ups: a glowing orb drops into the arena now and then (first at `first` s, then every `every` s if none is out);
 // walk through it to collect. rage: 1.5x damage for `time` s (red aura); meter: +50 super meter; heal: +15 HP.
 const ORB = { first: 8, every: 11, life: 9, y: 1.0, r: 0.75, fall: 1.2 };
@@ -175,7 +194,7 @@ export class Game {
     this.round = 1; this.wins = { bat: 0, sup: 0 }; this.clock = ROUND_TIME; this.fightT = 0; this.matchOver = false; this.winner = null;
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
       ko: false, cd: 0, down: 0, meter: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
-      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0,
+      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, blowUsed: false, blowSaid: false,
       ai: { t: 0, mx: 0, mz: 0, block: 0, crouch: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0, hx: 0, hy: 0, squash: 0 });
     this.F = { bat: mk(bat, 'bat', -7.4, Math.PI / 2), sup: mk(sup, 'sup', 2.2, -Math.PI / 2) };
     this.F.sup.y = 26; this.F.sup.cur = T(POSES.fly, { pitch: 0.35 });
@@ -207,6 +226,7 @@ export class Game {
     else if (k === 'i') this.press(this.me, 'S', true);
     else if (k === 'u') this.throwStart(this.me);
     else if (k === 'o') this.rise(this.me);
+    else if (k === 'f') this.blow(this.me);
     else if (k === ' ') this.press(this.me, 'A');
   }
   keyup(e) { this.keys.delete(e.key.toLowerCase()); }
@@ -242,6 +262,7 @@ export class Game {
     if (this.padHit(3)) this.press(this.me, 'K', this.blockHeld());
     if (this.padHit(1)) this.press(this.me, 'S', this.blockHeld());
     if (this.padHit(0)) this.press(this.me, 'A');
+    if (this.padNow[6] && this.padNow[7] && (this.padHit(6) || this.padHit(7))) this.blow(this.me); // both triggers = fatal blow
     return true;
   }
   blockHeld() { return this.keys.has('shift') || [4, 5, 6, 7].some((i) => this.padNow[i]); }
@@ -311,7 +332,7 @@ export class Game {
   grabbable(o) {
     const a = o.act;
     if (o.ko || o.down > 0 || o.launched || o.y > 0.05 || o.stun > 0 || o.heldBy) return false;
-    return !(a && (a.type === 'super' || a.type === 'flykick' || a.type === 'rise' || a.type === 'dash' && a.dir < 0 && a.t < DASH.invuln));
+    return !(a && (a.type === 'super' || a.type === 'blow' || a.type === 'flykick' || a.type === 'rise' || a.type === 'dash' && a.dir < 0 && a.t < DASH.invuln));
   }
   // Throw broken: both are shoved apart.
   tech(f, o) {
@@ -459,6 +480,67 @@ export class Game {
     }
     return true;
   }
+  // MK11 Fatal Blow (see BLOW). Armoured lunge; contact starts the close-up cinematic, a block or whiff only costs recovery.
+  canBlow(f) { return this.state === 'fight' && !this.finish && this.free(f) && !f.blowUsed && !f.dazed && f.hp > 0 && f.hp <= BLOW.hp; }
+  blow(f) {
+    if (!this.canBlow(f)) return false;
+    const B = BLOW[f.key], { fx } = this.ctx, c = f.H.chest.getWorldPosition(new THREE.Vector3());
+    f.act = { type: 'blow', t: 0, phase: 'lunge', k: -1, t0: 0, pose: null, beam: false };
+    f.block = f.crouch = false; f.buf = null; f.hits = 0;
+    this.hitstop = Math.max(this.hitstop, 0.22);
+    fx.flash(0.35); fx.waves.spawn(c.x, c.y, c.z, 2.8, B.col, 0.6); fx.sparkBurst(c.x, c.y, c.z, 50, 4, 0xff3a2a);
+    this.showCombo('FATAL BLOW', f.key);
+    if (f === this.me || f === this.cpu) this.rumble(0.6, 220);
+    return true;
+  }
+  blowStep(f, o, a, dt) {
+    const B = BLOW[f.key], { fx } = this.ctx, sx = Math.sin(f.yaw), sz = Math.cos(f.yaw), d = Math.hypot(o.x - f.x, o.z - f.z);
+    if (a.phase === 'rec') return a.t - a.t0 < BLOW.rec;
+    if (a.phase === 'lunge') {
+      if (d > 0.95) { const s = Math.min(BLOW.lunge * dt, d - 0.95); f.x += (o.x - f.x) / d * s; f.z += (o.z - f.z) / d * s; }
+      const open = !o.ko && o.down <= 0 && !o.heldBy && o.y < 1.2 && this.state === 'fight';
+      if (open && d <= BLOW.reach) {
+        if (o.block && !o.act && o.stun <= 0 && o.y <= 0.001) { // blocked: chip and recovery, still available
+          this.hurt(o, f, BLOW.chip, this.contact(f, o, BLOW.chip)); a.phase = 'rec'; a.t0 = a.t; return true;
+        }
+        a.phase = 'seq'; a.t0 = a.t; f.blowUsed = true; o.act = null; o.buf = null; o.block = o.crouch = false; o.frz = 0;
+        const c = o.H.chest.getWorldPosition(new THREE.Vector3());
+        fx.flash(0.5); fx.impact(c.x, c.y, c.z, 0.4); fx.waves.spawn(c.x, c.y, c.z, 3, B.col, 0.6);
+        this.hitstop = Math.max(this.hitstop, 0.25);
+        this.cine = { f, t: 0, a0: Math.atan2(this.camN.x, this.camN.y), end: Infinity, close: true };
+        this.showCombo(B.name, f.key);
+        if (f === this.me || o === this.me) this.rumble(0.8, 300);
+      } else if (a.t > BLOW.win) { a.phase = 'rec'; a.t0 = a.t; }
+      return true;
+    }
+    // cinematic string: step through the poses, each strike lands once (with a slow-mo crunch), the victim pinned in front
+    const u = a.t - a.t0;
+    let k = 0;
+    for (let i = 0; i < B.steps.length; i++) if (u >= B.steps[i][0]) k = i;
+    const [, pose, hit, lift] = B.steps[k];
+    a.pose = pose; a.beam = !!(hit && hit.beam);
+    const pin = () => { o.x = f.x + sx * 0.9; o.z = f.z + sz * 0.9; o.y = lift; o.vy = 0; o.kx = o.kz = 0; o.act = null; o.launched = false; o.block = false; o.stun = Math.max(o.stun, 0.5); };
+    const fin = hit && hit.last;
+    if (!(fin && k === a.k)) pin();
+    if (a.beam) {
+      const tg = o.H.chest.getWorldPosition(new THREE.Vector3()); tg.y += 0.35;
+      this.heat = [tg.x, tg.y, tg.z];
+      if (this.ctx.rng() < 0.6) fx.sparkBurst(tg.x, tg.y, tg.z, 3, 2.5, 0xff8030);
+    }
+    if (k !== a.k) {
+      a.k = k;
+      if (hit) {
+        const at = this.contact(f, o, hit);
+        this.hurt(o, f, hit, at);
+        this.hitstop = Math.max(this.hitstop, fin ? 0.3 : BLOW.pause);
+        this.camKick(at, fin ? 1.6 : 1.1, hit.at === 'lh' ? -1 : 1);
+        if (fin) { fx.waves.spawn(at.x, at.y, at.z, 5, B.col, 1); fx.dustBurst(o.x, 0, o.z, 90, 4); fx.flash(0.55); this.endCine(1.3); }
+        if (o.ko || o.dazed) { this.endCine(1.3); a.beam = false; return false; }
+        if (!fin) pin();
+      }
+    }
+    return u < B.end;
+  }
   endCine(after) { if (this.cine) this.cine.end = Math.min(this.cine.end, this.cine.t + after); }
   // MK "FINISH HIM!": the match-winning blow leaves the loser standing, dazed, at 0 HP.
   finishHim(def, att) {
@@ -561,7 +643,7 @@ export class Game {
   hurt(def, att, M, at, trade = false) {
     const { fx } = this.ctx;
     if (def.ko || def.down > 0) return;
-    if (def.act && def.act.type === 'super') { this.ctx.fx.sparkBurst(at.x, at.y, at.z, 10, 2, 0xffffff); return; } // armoured
+    if (def.act && (def.act.type === 'super' || def.act.type === 'blow')) { this.ctx.fx.sparkBurst(at.x, at.y, at.z, 10, 2, 0xffffff); return; } // armoured
     if (def.act && def.act.type === 'dash' && def.act.dir < 0 && def.act.t < DASH.invuln) return; // backdash invulnerability
     if (def.act && def.act.type === 'rise' && def.act.t < RISE[def.key].inv) { fx.sparkBurst(at.x, at.y, at.z, 8, 2, 0xffffff); return; } // invincible start-up
     if (this.canParry(def, M)) { this.parry(def, att, M, at); return; }
@@ -605,7 +687,7 @@ export class Game {
     if (M.heavy || att.hits >= 3) this.camKick(at, M.heavy ? 1 : 0.5, M.at === 'lh' ? -1 : 1);
     if (mine) this.rumble(M.heavy ? 0.9 : 0.45, M.heavy ? 220 : 110);
     def.hp = Math.max(0, def.hp - dmg);
-    if (!(att.act && att.act.type === 'super')) { att.meter = Math.min(100, att.meter + dmg * 1.4); def.meter = Math.min(100, def.meter + dmg * 0.8); }
+    if (!(att.act && (att.act.type === 'super' || att.act.type === 'blow'))) { att.meter = Math.min(100, att.meter + dmg * 1.4); def.meter = Math.min(100, def.meter + dmg * 0.8); }
     this.updateBars();
     if (att.hits >= 2) this.showCombo(`${att.hits} HIT COMBO`, att.key);
     else if (guarding) this.showCombo(def.crouch ? 'OVERHEAD!' : 'LOW!', att.key); // guard broken by the wrong height
@@ -697,6 +779,9 @@ export class Game {
         this.fightT += sdt;
         if (!this.cine && !this.finish) this.clock = Math.max(0, this.clock - sdt);
         // nobody finished him in time: he collapses (plain K.O.)
+        for (const f of [this.me, this.cpu]) if (!f.blowSaid && !f.blowUsed && !f.ko && !f.dazed && f.hp > 0 && f.hp <= BLOW.hp) {
+          f.blowSaid = true; if (f === this.me) this.showCombo('FATAL BLOW READY · F / LT+RT', f.key);
+        }
         const F = this.finish;
         if (F && !F.go && (F.t += sdt) > FINISH.time && F.def.down <= 0 && !F.def.launched) this.hurt(F.def, F.att, FALL, F.def.H.chest.getWorldPosition(new THREE.Vector3()));
         if (this.clock <= 0) {
@@ -708,7 +793,7 @@ export class Game {
       this.pending = [];
       for (const [f, o] of [[this.me, this.cpu], [this.cpu, this.me]]) this.physics(f, o, sdt);
       // beam ends if heat vision was interrupted (hit / KO clears act without clearing the beam)
-      if (![this.me, this.cpu].some((f) => f.act && f.act.type === 'heat')) this.heat = null;
+      if (![this.me, this.cpu].some((f) => f.act && (f.act.type === 'heat' || f.act.beam))) this.heat = null;
       this.resolve();
       this.shotsStep(sdt);
       this.orbStep(sdt);
@@ -753,7 +838,7 @@ export class Game {
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
     if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN',
-      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
+      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }
   }
@@ -823,7 +908,8 @@ export class Game {
     if (A.t <= 0) {
       A.t = 0.2 + rng() * 0.3; A.mx = A.mz = 0;
       const threat = o.act && d < 2;
-      if (f.meter >= 100 && d < 3.2 && this.free(f) && !o.launched && rng() < 0.35) this.superMove(f);
+      if (this.canBlow(f) && d < 2.2 && !o.launched && o.down <= 0 && rng() < 0.3) this.blow(f);
+      else if (f.meter >= 100 && d < 3.2 && this.free(f) && !o.launched && rng() < 0.35) this.superMove(f);
       else if (threat && d < 1.4 && rng() < 0.08 && this.free(f)) this.rise(f); // reversal through pressure
       else if (threat && rng() < 0.15 && this.free(f)) this.dash(f, -1);
       else if (threat && rng() < 0.4) {
@@ -911,6 +997,8 @@ export class Game {
         if (!this.superStep(f, o, a, dt)) f.act = null;
       } else if (a.type === 'fatal') {
         if (!this.fatalStep(f, o, a)) f.act = null;
+      } else if (a.type === 'blow') {
+        if (!this.blowStep(f, o, a, dt)) { f.act = null; if (this.heat && a.beam) this.heat = null; }
       } else if (a.type === 'dash') {
         if (!a.go) {
           a.go = true;
@@ -1047,6 +1135,7 @@ export class Game {
       for (const [t, p] of MOVES[name].keys) if (a.kt >= t * (a.phase === 'seq' ? 0.8 : 1)) n = p;
       return T(MP[n] || POSES[n]);
     }
+    if (a && a.type === 'blow') return T(a.phase === 'lunge' ? MP.rush : a.phase === 'rec' ? MP.whiff : MP[a.pose] || MP.grab);
     if (a && a.type === 'shoot') {
       let n = null;
       for (const [t, p] of SHOT[f.key].keys) if (a.t >= t) n = p;
@@ -1164,8 +1253,9 @@ export class Game {
     if (this.cine) {
       // super cinematic: orbit the pair (real time, so it keeps turning through hitstop)
       const c = this.cine; c.t += dt;
-      const ang = c.a0 + c.t * 1.5 * (c.f.key === 'bat' ? 1 : -1), r = 3.2 + 0.6 * Math.sin(c.t * 2);
-      const cp = new THREE.Vector3(mid.x + Math.sin(ang) * r, 1.3 + 0.4 * Math.sin(c.t * 1.3) + Math.max(0, mid.y - 1.5) * 0.7, mid.z + Math.cos(ang) * r);
+      // fatal blow (close): tighter, lower and slower, so every strike fills the frame
+      const ang = c.a0 + c.t * (c.close ? 0.8 : 1.5) * (c.f.key === 'bat' ? 1 : -1), r = c.close ? 2.1 + 0.25 * Math.sin(c.t * 2) : 3.2 + 0.6 * Math.sin(c.t * 2);
+      const cp = new THREE.Vector3(mid.x + Math.sin(ang) * r, (c.close ? 1.05 : 1.3) + 0.4 * Math.sin(c.t * 1.3) + Math.max(0, mid.y - 1.5) * 0.7, mid.z + Math.cos(ang) * r);
       const k = Math.min(1, dt * 6);
       this.camPos.lerp(cp, k); this.camLook.lerp(new THREE.Vector3(mid.x, Math.max(1, mid.y), mid.z), k);
       if (c.t >= c.end || c.t > 6) this.cine = null;
