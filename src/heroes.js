@@ -212,7 +212,7 @@ export function makeHero(kind) {
     }
     // Superman: everything on the face projects forward (no dents). Strong brow ridge, straight
     // nose bridge, high cheekbones, full lips and a jutting square chin with a cleft.
-    const c = Math.cos(a), line = c > 0 ? 0.118 + 0.064 * c ** 2 : 0.118 + 0.045 * c;
+    const c = Math.cos(a), line = c > 0 ? 0.122 + 0.08 * c ** 2 - 0.006 * c ** 8 : 0.122 + 0.045 * c; // high forehead, slight widow-peak-free arch
     const isHair = p.y > line;
     hairMask.push(isHair);
     const ax = Math.abs(p.x);
