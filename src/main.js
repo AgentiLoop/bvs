@@ -182,12 +182,19 @@ const blastTex = (() => {
   for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI * 2, r = i % 2 ? 40 : 62; g.beginPath(); g.moveTo(64, 64); g.lineTo(64 + Math.cos(a) * r, 64 + Math.sin(a) * r); g.stroke(); }
   return new THREE.CanvasTexture(c);
 })();
-const blasts = [0, 1].map(() => {
+// Slots 0-1: the finale's fist blasts. 2+: playable-mode hit explosions (size / life / tint per blast).
+const blasts = Array.from({ length: 12 }, () => {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: blastTex, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, transparent: true }));
   s.visible = false; s.renderOrder = 10; s.userData.age = 0; scene.add(s);
   return s;
 });
 const CLASH_T = 18.2, BLAST_LIFE = 0.9; // sim seconds (clash happens in slow-mo, so this plays out long)
+let blastN = 2;
+function blast(x, y, z, size = 1, life = 0.45, tint = 0xffffff) {
+  const b = blasts[blastN]; blastN = blastN + 1 < blasts.length ? blastN + 1 : 2;
+  b.position.set(x, y, z); b.material.color.set(tint); b.material.rotation = 0;
+  Object.assign(b.userData, { age: 0, size, life }); b.visible = true;
+}
 
 // ---------- sim state ----------
 let rng, simT, realT, shake, postFlash, flashI, lightning, fired, acc = 0;
@@ -328,8 +335,8 @@ function reset() {
 
 // Playable mode (B / S on the title loop): the game drives the heroes; fx, capes and world keep running here.
 const game = new Game({
-  bat, sup, batCape, supCape, rng: () => rng(), restart: (c) => startGame(c),
-  fx: { sparkBurst, dustBurst, rubble, impact, waves, decals, flash: (v) => (postFlash = Math.max(postFlash, v)) },
+  bat, sup, batCape, supCape, rng: () => rng(), restart: (c) => startGame(c), quit: () => quitGame(),
+  fx: { sparkBurst, dustBurst, rubble, impact, waves, decals, blast, flash: (v) => (postFlash = Math.max(postFlash, v)) },
 });
 
 let stepCount = 0;
@@ -338,6 +345,8 @@ function step() {
   if (game.active) {
     sdt = game.step(DT); t = game.t; realT += DT; stepCount++;
   } else {
+    const pick = playUI.style.display !== 'none' && game.menuPad(); // gamepad on the title loop: X Batman, B Superman
+    if (pick) { startGame(pick); return; }
     const scale = simT < SLOWMO - 0.3 ? 1 : simT < SLOWMO ? 1 - 0.88 * (simT - (SLOWMO - 0.3)) / 0.3 : 0.12;
     sdt = DT * scale;
     simT += sdt; realT += DT; stepCount++; t = simT;
@@ -349,9 +358,9 @@ function step() {
   const wind = [1.6 + Math.sin(t * 0.9) * 1.2, 0.3, 1.2 + Math.cos(t * 0.6)];
   for (let s = 0; s < 2; s++) { batCape.step(sdt / 2, t, wind, groundAt); supCape.step(sdt / 2, t, wind, groundAt); }
   shake *= Math.exp(-DT * 6); postFlash *= Math.exp(-DT * (!game.active && simT > SLOWMO ? 1.2 : 7)); flashI *= Math.exp(-DT * 6); lightning *= Math.exp(-DT * 5);
-  blasts.forEach((b) => { if (!b.visible) return; const u = (b.userData.age += sdt) / BLAST_LIFE;
+  blasts.forEach((b) => { if (!b.visible) return; const u = (b.userData.age += sdt) / (b.userData.life || BLAST_LIFE);
     if (u >= 1) { b.visible = false; return; }
-    b.scale.setScalar(0.25 + 1.6 * Math.sqrt(u)); b.material.opacity = 1 - u * u; b.material.rotation = u * 0.8; });
+    b.scale.setScalar((0.25 + 1.6 * Math.sqrt(u)) * (b.userData.size || 1)); b.material.opacity = 1 - u * u; b.material.rotation = u * 0.8; });
   chestPos(bat, _v); chestPos(sup, _w);
   world.update(t, sdt, _v.lerp(_w, 0.5).setY(0.5));
   if (!game.active && realT >= LOOP_END) reset();

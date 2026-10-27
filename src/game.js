@@ -1,30 +1,63 @@
 // Playable mode: pick Batman or Superman, both heroes make their entrance, then fight the CPU.
 // Poses are the same hip-relative IK poses as the film (POSES), blended toward a target every step.
+// Combat: chained punches/kicks, launchers, sweeps, air attacks, juggles, bounces, hitstop, trades; keyboard + gamepad.
 import * as THREE from 'three';
 import { applyPose } from './heroes.js';
 import { POSES, face } from './timeline.js';
 import { groundAt } from './world.js';
 
-const NUM = ['h', 'lean', 'roll', 'pitch', 'gait'];
+const NUM = ['h', 'lean', 'roll', 'pitch', 'gait', 'tw'];
 const ARR = ['lh', 'rh', 'lf', 'rf'];
 const ARENA = { x0: -6.5, x1: 6.5, z0: -2.2, z1: 3.0 };
 const BLOCK = { lean: 0.3, lh: [0.1, 0.66, 0.28], rh: [-0.1, 0.64, 0.26] };
-const ENTER_END = 3.4;
-const MOVES = {
-  punch: { dur: 0.36, hit: 0.13, range: 1.3, dmg: 7, heavy: false },
-  kick: { dur: 0.6, hit: 0.24, range: 1.55, dmg: 11, heavy: true },
+const ENTER_END = 3.4, GRAV = 14;
+const P = POSES, G = POSES.guard;
+// Strike poses (hip-relative like POSES; tw = body twist about the vertical axis).
+const MP = {
+  jab:     { ...G, lean: 0.46, tw: 0.25, lh: [0.02, 0.56, 0.98], rh: [-0.12, 0.46, 0.3] },
+  cross:   { ...P.punchR, tw: -0.35 },
+  hookUp:  { ...G, tw: 0.35, rh: [-0.44, 0.52, 0.2] },
+  hook:    { ...G, lean: 0.5, tw: -0.55, roll: 0.08, lh: [0.16, 0.44, 0.26], rh: [0.18, 0.6, 0.72] },
+  dip:     { ...G, h: 0.6, lean: 0.5, tw: 0.2, rh: [-0.14, 0.05, 0.3] },
+  upper:   { ...P.upper, tw: -0.25 },
+  chamber: { ...G, h: 0.84, lean: 0.1, rf: [-0.18, -0.2, 0.42] },
+  front:   { ...P.kickR },
+  roundUp: { ...G, h: 0.86, lean: -0.1, tw: 0.4, rf: [-0.3, -0.15, 0.3] },
+  round:   { h: 0.95, lean: -0.45, roll: -0.15, tw: -0.9, lh: [0.38, 0.32, -0.08], rh: [-0.3, 0.42, 0.05], lf: [0.12, -0.9, -0.05], rf: [0.02, 0.6, 0.78] },
+  sweep:   { h: 0.44, lean: 0.6, roll: 0, tw: -0.5, lh: [0.4, -0.3, 0.3], rh: [-0.1, -0.36, 0.42], lf: [0.22, -0.4, 0.3], rf: [-0.72, -0.4, 0.42] },
+  dive:    { ...P.tuck, h: 0.55, lean: 0.75, lh: [0.3, 0.3, 0.1], rh: [-0.04, 0.12, 0.95] },
+  airkick: { h: 0.62, lean: -0.3, roll: 0, lh: [0.3, 0.4, -0.1], rh: [-0.25, 0.35, 0.1], lf: [0.14, -0.4, 0.2], rf: [-0.06, -0.3, 0.82] },
+  air:     { ...P.hit, h: 0.6 },
 };
+// keys: [time, pose]; hit: active frame; cancel: earliest chain into `next` (J punch / K kick); reach: horizontal range;
+// kb: knockback m/s; up: launch m/s (<0 spikes airborne targets down); at: striking limb; blast: hit-explosion size.
+const MOVES = {
+  jab:     { dur: 0.28, hit: 0.09, cancel: 0.13, reach: 1.25, dmg: 4, kb: 1.2, stun: 0.28, lunge: 1.5, at: 'lh', blast: 0.35, next: { J: 'cross', K: 'front' }, keys: [[0, 'guard'], [0.03, 'jab'], [0.18, 'guard']] },
+  cross:   { dur: 0.34, hit: 0.11, cancel: 0.16, reach: 1.35, dmg: 6, kb: 1.8, stun: 0.32, lunge: 2.5, at: 'rh', blast: 0.5, next: { J: 'hook', K: 'round' }, keys: [[0, 'windup'], [0.06, 'cross'], [0.24, 'guard']] },
+  hook:    { dur: 0.42, hit: 0.15, cancel: 0.21, reach: 1.25, dmg: 8, kb: 2.6, stun: 0.42, lunge: 2, at: 'rh', blast: 0.65, next: { J: 'upper', K: 'round' }, keys: [[0, 'hookUp'], [0.08, 'hook'], [0.3, 'guard']] },
+  upper:   { dur: 0.55, hit: 0.16, reach: 1.2, dmg: 11, kb: 1.6, up: 7, stun: 0.6, lunge: 2.5, at: 'rh', blast: 1, heavy: true, keys: [[0, 'dip'], [0.1, 'upper'], [0.42, 'guard']] },
+  front:   { dur: 0.5, hit: 0.2, cancel: 0.27, reach: 1.55, dmg: 9, kb: 3.4, stun: 0.45, lunge: 1.2, at: 'rf', blast: 0.75, next: { K: 'round', J: 'hook' }, keys: [[0, 'chamber'], [0.12, 'front'], [0.38, 'guard']] },
+  round:   { dur: 0.62, hit: 0.24, reach: 1.6, dmg: 13, kb: 6.5, up: 2.5, stun: 0.7, lunge: 1.5, at: 'rf', blast: 1.1, heavy: true, keys: [[0, 'roundUp'], [0.14, 'round'], [0.46, 'guard']] },
+  sweep:   { dur: 0.6, hit: 0.2, reach: 1.6, dmg: 8, kb: 1.5, up: 3.2, stun: 0.6, lunge: 0.8, at: 'rf', blast: 0.6, heavy: true, trip: true, keys: [[0, 'dip'], [0.1, 'sweep'], [0.45, 'guard']] },
+  dive:    { air: true, dur: 0.45, hit: 0.12, reach: 1.4, dmg: 9, kb: 3, up: -4, stun: 0.5, at: 'rh', blast: 0.8, heavy: true, keys: [[0, 'tuck'], [0.06, 'dive']] },
+  airkick: { air: true, dur: 0.5, hit: 0.14, reach: 1.6, dmg: 10, kb: 5, up: 1.5, stun: 0.55, at: 'rf', blast: 0.9, heavy: true, keys: [[0, 'tuck'], [0.08, 'airkick']] },
+};
+const FLYKICK = { dmg: 16, kb: 6, up: 3, stun: 0.7, heavy: true, at: 'rf', blast: 1.3 };
+const HEATKO = { dmg: 0.01, kb: 2, up: 2, stun: 0.5, heavy: true, blast: 1 };
+const LIMB = { lh: (H) => H.arms.L.hand, rh: (H) => H.arms.R.hand, lf: (H) => H.legs.L.an, rf: (H) => H.legs.R.an };
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const T = (p, x) => ({ tw: 0, pitch: 0, gait: 0, ...p, ...x });
 
 export class Game {
   constructor(ctx) {
-    this.ctx = ctx; // { bat, sup, batCape, supCape, rng, fx: { sparkBurst, dustBurst, rubble, impact, waves, decals, flash } }
+    this.ctx = ctx; // { bat, sup, batCape, supCape, rng, restart, quit, fx: { sparkBurst, dustBurst, rubble, impact, waves, decals, flash, blast } }
     this.active = false;
     this.keys = new Set();
+    this.pad = null; this.padNow = []; this.padPrev = [];
     this.camPos = new THREE.Vector3(0, 3, 11); this.camLook = new THREE.Vector3(0, 2, 0); this.camN = new THREE.Vector2(0, 1);
     this.ui = {
-      hud: document.getElementById('game'), banner: document.getElementById('banner'),
+      hud: document.getElementById('game'), banner: document.getElementById('banner'), combo: document.getElementById('combo'),
       bars: { bat: document.querySelector('#hpBat i'), sup: document.querySelector('#hpSup i') },
       tags: { bat: document.getElementById('tagBat'), sup: document.getElementById('tagSup') },
     };
@@ -33,10 +66,12 @@ export class Game {
   start(choice) {
     const { bat, sup } = this.ctx;
     this.active = true; this.choice = choice; this.t = 0; this.state = 'enter'; this.overT = 0; this.ts = 1; this.landed = false; this.shownWin = false;
+    this.hitstop = 0; this.comboT = 0; this.pending = [];
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
-      ko: false, cd: 0, ai: { t: 0, mx: 0, mz: 0, block: 0 }, cur: { ...POSES.guard, pitch: 0, gait: 0 }, moving: 0 });
+      ko: false, cd: 0, down: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
+      ai: { t: 0, mx: 0, mz: 0, block: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0 });
     this.F = { bat: mk(bat, 'bat', -7.4, Math.PI / 2), sup: mk(sup, 'sup', 2.2, -Math.PI / 2) };
-    this.F.sup.y = 26; this.F.sup.cur = { ...POSES.fly, pitch: 0.35, gait: 0 };
+    this.F.sup.y = 26; this.F.sup.cur = T(POSES.fly, { pitch: 0.35 });
     this.me = this.F[choice]; this.cpu = this.F[choice === 'bat' ? 'sup' : 'bat'];
     this.camPos.set(0, 3.5, 13); this.camLook.set(0, 3, 0); this.camN.set(0, 1);
     this.heat = null;
@@ -45,6 +80,7 @@ export class Game {
     this.ui.hud.style.display = 'block';
     this.ui.tags.bat.textContent = choice === 'bat' ? 'BATMAN · YOU' : 'BATMAN · CPU';
     this.ui.tags.sup.textContent = choice === 'sup' ? 'SUPERMAN · YOU' : 'SUPERMAN · CPU';
+    this.ui.combo.style.opacity = 0;
     this.say('');
     this.updateBars();
   }
@@ -53,59 +89,174 @@ export class Game {
 
   say(text, sub = '') { this.ui.banner.innerHTML = text ? `${text}${sub ? `<small>${sub}</small>` : ''}` : ''; this.ui.banner.style.opacity = text ? 1 : 0; }
 
+  // ---------- input ----------
   keydown(e) {
     const k = e.key.toLowerCase();
     this.keys.add(k);
     if (this.state === 'over' && this.overT > 1.5 && (k === 'enter' || k === 'r')) { this.ctx.restart(this.choice); return; }
-    if (this.state !== 'fight' || this.me.ko || e.repeat) return;
-    if (k === 'j') this.attack(this.me, 'punch');
-    else if (k === 'k') this.attack(this.me, 'kick');
-    else if (k === 'l') this.special(this.me);
-    else if (k === ' ') this.jump(this.me);
+    if (e.repeat) return;
+    if (k === 'j') this.press(this.me, 'J', this.blockHeld());
+    else if (k === 'k') this.press(this.me, 'K', this.blockHeld());
+    else if (k === 'l') this.press(this.me, 'S');
+    else if (k === ' ') this.press(this.me, 'A');
   }
   keyup(e) { this.keys.delete(e.key.toLowerCase()); }
 
-  free(f) { return !f.act && f.stun <= 0 && !f.ko && f.y <= 0.001; }
-  attack(f, type) { if (this.free(f) && !f.block) f.act = { type, t: 0, done: false }; }
-  jump(f) { if (this.free(f)) f.vy = 5.2; }
+  readPad() {
+    const list = navigator.getGamepads ? navigator.getGamepads() : [];
+    let p = null;
+    for (const g of list) if (g && g.connected) { p = g; break; }
+    this.pad = p; this.padPrev = this.padNow;
+    this.padNow = p ? p.buttons.map((b) => b.pressed || b.value > 0.5) : [];
+  }
+  padHit(i) { return !!this.padNow[i] && !this.padPrev[i]; }
+  // Title screen: X / d-pad left = Batman, B / d-pad right = Superman.
+  menuPad() {
+    this.readPad();
+    if (this.padHit(2) || this.padHit(14)) return 'bat';
+    if (this.padHit(1) || this.padHit(15)) return 'sup';
+    return null;
+  }
+  // In game (standard mapping): X punch, Y kick, B special, A jump, LB/RB/LT/RT block, Start rematch, Back menu.
+  gamePad() {
+    this.readPad();
+    if (!this.pad) return true;
+    if (this.padHit(8)) { this.ctx.quit(); return false; }
+    if (this.state === 'over' && this.overT > 1.5 && (this.padHit(9) || this.padHit(0))) { this.ctx.restart(this.choice); return true; }
+    if (this.padHit(2)) this.press(this.me, 'J', this.blockHeld());
+    if (this.padHit(3)) this.press(this.me, 'K', this.blockHeld());
+    if (this.padHit(1)) this.press(this.me, 'S');
+    if (this.padHit(0)) this.press(this.me, 'A');
+    return true;
+  }
+  blockHeld() { return this.keys.has('shift') || [4, 5, 6, 7].some((i) => this.padNow[i]); }
+  rumble(strong, ms) {
+    const a = this.pad && this.pad.vibrationActuator;
+    if (a && a.playEffect) a.playEffect('dual-rumble', { duration: ms, strongMagnitude: strong, weakMagnitude: Math.min(1, strong + 0.3) }).catch(() => {});
+  }
+
+  // ---------- moves ----------
+  free(f) { return !f.act && f.stun <= 0 && !f.ko && f.y <= 0.001 && f.down <= 0 && !f.launched; }
+  press(f, btn, mod = false) {
+    if (this.state !== 'fight' || f.ko) return;
+    if (btn === 'S') return this.special(f);
+    if (btn === 'A') return this.jump(f, f.inX, f.inZ);
+    f.buf = btn; f.bufT = 0.3; f.bufMod = mod;
+    this.tryStart(f);
+  }
+  // Consume the buffered button: fresh move when idle (air attack if airborne, block+J uppercut, block+K sweep),
+  // or the chain continuation once the current move has hit and passed its cancel point.
+  tryStart(f) {
+    if (!f.buf || f.ko) return;
+    const a = f.act, M = a && MOVES[a.type];
+    let name = null;
+    if (!a) {
+      if (f.stun > 0 || f.down > 0 || f.launched) return;
+      if (f.y > 0.3) name = f.buf === 'J' ? 'dive' : 'airkick';
+      else if (f.y <= 0.001) name = f.bufMod ? (f.buf === 'J' ? 'upper' : 'sweep') : (f.buf === 'J' ? 'jab' : 'front');
+    } else if (M && M.next && a.done && a.t >= M.cancel) name = M.next[f.buf];
+    if (name) { f.buf = null; this.begin(f, name); }
+  }
+  begin(f, name) {
+    f.act = { type: name, t: 0, done: false };
+    if (name === 'dive') { f.vy = Math.min(f.vy, -2); f.kx += Math.sin(f.yaw) * 4; f.kz += Math.cos(f.yaw) * 4; }
+    if (name === 'airkick') { f.vy = Math.max(f.vy, 1.5); f.kx += Math.sin(f.yaw) * 3; f.kz += Math.cos(f.yaw) * 3; }
+  }
+  jump(f, mx = 0, mz = 0) { if (this.free(f) && !f.block) { f.vy = 6; f.kx += mx * 3; f.kz += mz * 3; } }
   special(f) {
     if (!this.free(f) || f.cd > 0) return;
     f.cd = 4;
     f.act = { type: f.key === 'bat' ? 'flykick' : 'heat', t: 0, done: false };
   }
 
-  hurt(def, att, dmg, heavy, at) {
+  reaches(f, o, M, d) {
+    if (o.ko || o.down > 0) return false;
+    if (M.air) return d < M.reach && Math.abs(o.y - f.y) < 1.2;
+    if (M.trip) return d < M.reach && o.y < 0.15;
+    return d < M.reach && o.y < (M.at[1] === 'f' || M.up > 5 ? 1.6 : 1.2);
+  }
+  contact(att, def, M) {
+    const p = LIMB[M.at || 'rh'](att.H).getWorldPosition(new THREE.Vector3());
+    return p.lerp(def.H.chest.getWorldPosition(new THREE.Vector3()), 0.35);
+  }
+
+  hurt(def, att, M, at, trade = false) {
     const { fx } = this.ctx;
-    if (def.ko) return;
-    const dx = def.x - att.x, dz = def.z - att.z, d = Math.hypot(dx, dz) || 1;
-    if (def.block && !def.act && def.stun <= 0) {
-      dmg *= 0.2;
+    if (def.ko || def.down > 0) return;
+    const dx = def.x - att.x, dz = def.z - att.z, d = Math.hypot(dx, dz) || 1, nx = dx / d, nz = dz / d;
+    const mine = def === this.me || att === this.me;
+    if (def.block && !def.act && def.stun <= 0 && def.y <= 0.001 && !M.trip) {
+      def.hp = Math.max(1, def.hp - M.dmg * 0.15);
+      def.kx += nx * M.kb * 0.45; def.kz += nz * M.kb * 0.45; att.kx -= nx * 0.6; att.kz -= nz * 0.6;
       fx.sparkBurst(at.x, at.y, at.z, 14, 3, 0xbfd8ff);
-      def.kx += dx / d * 1.2; def.kz += dz / d * 1.2;
-    } else {
-      def.act = null; def.stun = heavy ? 0.55 : 0.3; def.heavy = heavy;
-      const kb = heavy ? 4.2 : 1.8;
-      def.kx += dx / d * kb; def.kz += dz / d * kb;
-      fx.sparkBurst(at.x, at.y, at.z, heavy ? 50 : 22, heavy ? 5 : 3.5, att.key === 'bat' ? 0xfff0c0 : 0xbfd8ff);
-      fx.impact(at.x, at.y, at.z, heavy ? 0.35 : 0.15);
-      if (heavy) { fx.waves.spawn(at.x, at.y, at.z, 2, 0xffffff, 0.5); fx.flash(0.15); }
+      fx.blast(at.x, at.y, at.z, 0.3, 0.3, 0x6fa8ff);
+      fx.impact(at.x, at.y, at.z, 0.06);
+      this.hitstop = Math.max(this.hitstop, 0.04);
+      if (mine) this.rumble(0.2, 80);
+      this.updateBars();
+      return;
     }
+    const juggle = def.stun > 0 || def.launched || def.y > 0.05;
+    att.hits = juggle ? att.hits + 1 : 1;
+    const dmg = M.dmg * Math.max(0.45, 1 - 0.1 * (att.hits - 1));
+    def.act = null; def.buf = null; def.stun = M.stun; def.heavy = !!M.heavy;
+    def.kx = def.kx * 0.3 + nx * M.kb; def.kz = def.kz * 0.3 + nz * M.kb;
+    att.kx -= nx * 0.5; att.kz -= nz * 0.5;
+    const up = M.up || 0, air = def.y > 0.05;
+    if (up > 0 || (air && up === 0)) { def.vy = Math.max(def.vy, air ? 2.8 + up * 0.45 : up); def.y = Math.max(def.y, 0.001); def.launched = true; }
+    else if (up < 0 && air) { def.vy = up * 1.5; def.launched = true; }
+    // the blow snaps the body back / twists it; the pose spring brings it round again
+    def.cur.lean -= M.heavy ? 0.6 : 0.3; def.cur.tw += (M.at === 'lh' ? -0.3 : 0.3);
+    const col = att.key === 'bat' ? 0xfff0c0 : 0xbfd8ff, size = (M.blast || 0.6) * (trade ? 1.35 : 1);
+    fx.sparkBurst(at.x, at.y, at.z, M.heavy ? 50 : 22, M.heavy ? 5 : 3.5, col);
+    fx.blast(at.x, at.y, at.z, size, 0.3 + size * 0.25);
+    fx.impact(at.x, at.y, at.z, M.heavy ? 0.35 : 0.15);
+    if (M.heavy) { fx.waves.spawn(at.x, at.y, at.z, 1.6 * size, 0xffffff, 0.5); fx.flash(0.15); }
+    if (M.trip) fx.dustBurst(def.x, 0, def.z, 30, 2);
+    this.hitstop = Math.max(this.hitstop, M.heavy ? 0.12 : 0.06);
+    if (mine) this.rumble(M.heavy ? 0.9 : 0.45, M.heavy ? 220 : 110);
     def.hp = Math.max(0, def.hp - dmg);
     this.updateBars();
+    if (att.hits >= 2) this.showCombo(`${att.hits} HIT COMBO`, att.key);
     if (def.hp <= 0) {
-      def.ko = true; def.act = null; def.kx *= 1.6; def.kz *= 1.6; def.vy = 3;
+      def.ko = true; def.act = null; def.launched = true; def.kx *= 1.6; def.kz *= 1.6; def.vy = Math.max(def.vy, 4); def.y = Math.max(def.y, 0.001);
       this.state = 'over'; this.overT = 0; this.winner = att;
       fx.flash(0.6); fx.impact(at.x, at.y, at.z, 0.6); fx.waves.spawn(at.x, at.y, at.z, 4, 0xffffff, 1);
-      fx.sparkBurst(at.x, at.y, at.z, 120, 7, 0xffffff);
+      fx.sparkBurst(at.x, at.y, at.z, 120, 7, 0xffffff); fx.blast(at.x, at.y, at.z, 2, 0.9);
+      this.hitstop = 0.2;
+      if (mine) this.rumble(1, 500);
       this.say('K.O.');
     }
+  }
+
+  // Both fighters connect in the same instant: a blast on each side plus a shock ring between them.
+  clash(h1, h2) {
+    const { fx } = this.ctx;
+    const m = h1.at.clone().lerp(h2.at, 0.5);
+    for (const h of [h1, h2]) { fx.sparkBurst(h.at.x, h.at.y, h.at.z, 60, 6, 0xffffff); fx.waves.spawn(h.at.x, h.at.y, h.at.z, 2.2, 0xffffff, 0.7); }
+    fx.waves.spawn(m.x, 0.05, m.z, 4, 0xfff2d0, 0.8); fx.dustBurst(m.x, 0, m.z, 50, 3);
+    fx.impact(m.x, m.y, m.z, 0.55); fx.flash(0.3);
+    this.hitstop = Math.max(this.hitstop, 0.18);
+    this.rumble(1, 300);
+    this.showCombo('CLASH!', null);
+  }
+
+  showCombo(text, side) {
+    const c = this.ui.combo;
+    c.textContent = text; c.style.opacity = 1; this.comboT = 1.2;
+    c.style.textAlign = side === 'bat' ? 'left' : side === 'sup' ? 'right' : 'center';
+    c.style.color = side === 'bat' ? '#ffd23a' : side === 'sup' ? '#6fa8ff' : '#fff';
   }
 
   updateBars() { for (const k of ['bat', 'sup']) this.ui.bars[k].style.width = this.F[k].hp + '%'; }
 
   // ---------- per fixed step ----------
   step(dt) {
-    if (this.state === 'over') { this.overT += dt; this.ts = this.overT < 1.4 ? 0.3 : 1; }
+    if (!this.gamePad()) return 0;
+    const hs = this.hitstop > 0; this.hitstop -= dt;
+    this.comboT -= dt; if (this.comboT <= 0) this.ui.combo.style.opacity = 0;
+    if (this.state === 'over') this.overT += dt;
+    this.ts = hs ? 0.04 : this.state === 'over' && this.overT < 1.4 ? 0.3 : 1;
     const sdt = dt * this.ts;
     this.t += sdt;
     if (this.state === 'enter') this.entrance(sdt);
@@ -113,18 +264,34 @@ export class Game {
       for (const f of [this.me, this.cpu]) f.cd = Math.max(0, f.cd - sdt);
       if (this.state === 'fight') { this.player(sdt); this.ai(sdt); }
       else { this.me.block = this.cpu.block = false; }
+      this.pending = [];
       for (const [f, o] of [[this.me, this.cpu], [this.cpu, this.me]]) this.physics(f, o, sdt);
+      this.resolve();
       this.separate();
       if (this.state === 'fight' && this.t > ENTER_END + 1) this.say('');
       if (this.state === 'over' && this.overT > 1.5 && !this.shownWin) {
         this.shownWin = true;
         const w = this.winner.key === 'bat' ? 'BATMAN' : 'SUPERMAN';
-        this.say(`${w} WINS`, this.winner === this.me ? 'YOU WIN · ENTER REMATCH · ESC MENU' : 'YOU LOSE · ENTER REMATCH · ESC MENU');
+        this.say(`${w} WINS`, this.winner === this.me ? 'YOU WIN · ENTER / START REMATCH · ESC / BACK MENU' : 'YOU LOSE · ENTER / START REMATCH · ESC / BACK MENU');
       }
     }
     this.pose(sdt);
     this.camera(dt);
     return sdt;
+  }
+
+  // Hits found this step. A lone hit still trades if the defender's own strike was a few frames from landing.
+  resolve() {
+    const H = this.pending;
+    if (this.state !== 'fight' || !H.length) return;
+    if (H.length === 1) {
+      const o = H[0].def, f = H[0].att, oa = o.act, OM = oa && MOVES[oa.type];
+      if (OM && !oa.done && oa.t >= OM.hit - 0.07 && this.reaches(o, f, OM, Math.hypot(f.x - o.x, f.z - o.z))) { oa.done = true; H.push({ att: o, def: f, M: OM }); }
+    }
+    for (const h of H) h.at = this.contact(h.att, h.def, h.M);
+    const trade = H.length === 2;
+    for (const h of H) this.hurt(h.def, h.att, h.M, h.at, trade);
+    if (trade) this.clash(H[0], H[1]);
   }
 
   entrance(dt) {
@@ -138,35 +305,45 @@ export class Game {
       fx.rubble(sup.x, 0, sup.z, 60, 6, 0.06, 0.26, 5); fx.dustBurst(sup.x, 0, sup.z, 110, 3.5); fx.sparkBurst(sup.x, 0.1, sup.z, 40, 5);
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
-    if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN', 'MOVE WASD / ARROWS · J PUNCH · K KICK · L SPECIAL · SPACE JUMP · SHIFT BLOCK');
+    if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN',
+      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) this.state = 'fight';
   }
 
   player(dt) {
-    const f = this.me, K = this.keys;
-    const ix = (K.has('d') || K.has('arrowright') ? 1 : 0) - (K.has('a') || K.has('arrowleft') ? 1 : 0);
-    const iy = (K.has('w') || K.has('arrowup') ? 1 : 0) - (K.has('s') || K.has('arrowdown') ? 1 : 0);
-    f.block = K.has('shift') && this.free(f);
+    const f = this.me, K = this.keys, p = this.pad, b = this.padNow;
+    let ix = (K.has('d') || K.has('arrowright') || b[15] ? 1 : 0) - (K.has('a') || K.has('arrowleft') || b[14] ? 1 : 0);
+    let iy = (K.has('w') || K.has('arrowup') || b[12] ? 1 : 0) - (K.has('s') || K.has('arrowdown') || b[13] ? 1 : 0);
+    if (p && p.axes.length >= 2 && Math.hypot(p.axes[0], p.axes[1]) > 0.25) { ix += p.axes[0]; iy -= p.axes[1]; }
+    f.block = this.blockHeld() && this.free(f);
     // screen-relative: right = camera right on the ground, up = into the screen
     const fx = this.camLook.x - this.camPos.x, fz = this.camLook.z - this.camPos.z, fl = Math.hypot(fx, fz) || 1;
     const rx = -fz / fl, rz = fx / fl;
-    this.walk(f, ix * rx + iy * fx / fl, ix * rz + iy * fz / fl, dt);
+    f.inX = ix * rx + iy * fx / fl; f.inZ = ix * rz + iy * fz / fl;
+    this.walk(f, f.inX, f.inZ, dt);
   }
 
   ai(dt) {
     const f = this.cpu, o = this.me, A = f.ai, rng = this.ctx.rng;
-    const d = Math.hypot(o.x - f.x, o.z - f.z);
+    const d = Math.hypot(o.x - f.x, o.z - f.z), tx = (o.x - f.x) / (d || 1), tz = (o.z - f.z) / (d || 1);
     A.t -= dt; A.block -= dt;
     f.block = A.block > 0 && this.free(f);
+    // keep strings going once the first hit is out
+    if (f.act && MOVES[f.act.type] && f.act.done && A.chain > 0 && !f.buf) { A.chain--; f.buf = rng() < 0.6 ? 'J' : 'K'; f.bufT = 0.3; f.bufMod = false; }
+    if (A.air && f.y > 0.5 && d < 1.9 && !f.act) { A.air = false; this.press(f, rng() < 0.5 ? 'J' : 'K'); }
     if (A.t <= 0) {
-      A.t = 0.22 + rng() * 0.3; A.mx = A.mz = 0;
+      A.t = 0.2 + rng() * 0.3; A.mx = A.mz = 0;
       const threat = o.act && d < 2;
       if (threat && rng() < 0.4) A.block = 0.45;
-      else if (d > 3 && f.cd <= 0 && rng() < 0.35) this.special(f);
-      else if (d > 1.15) { A.mx = (o.x - f.x) / d; A.mz = (o.z - f.z) / d; if (rng() < 0.25) { A.mx += -A.mz * 0.7; A.mz += A.mx * 0.7; } }
-      else if (rng() < 0.7) this.attack(f, rng() < 0.6 ? 'punch' : 'kick');
-      else { A.mx = -(o.x - f.x) / d; A.mz = -(o.z - f.z) / d; }
+      else if (o.launched && d < 1.4 && this.free(f)) { A.chain = 1; this.press(f, 'J'); }
+      else if (d > 3 && f.cd <= 0 && rng() < 0.3) this.special(f);
+      else if (d > 2 && d < 3.6 && rng() < 0.15 && this.free(f)) { this.jump(f, tx, tz); A.air = true; }
+      else if (d > 1.15) { A.mx = tx; A.mz = tz; if (rng() < 0.25) { A.mx += -tz * 0.7; A.mz += tx * 0.7; } }
+      else if (rng() < 0.75 && this.free(f)) {
+        const r = rng(); A.chain = Math.floor(rng() * 3);
+        if (r < 0.14) this.begin(f, 'upper'); else if (r < 0.26) this.begin(f, 'sweep'); else this.press(f, r < 0.65 ? 'J' : 'K');
+      } else { A.mx = -tx; A.mz = -tz; }
     }
     if (!f.block) this.walk(f, A.mx, A.mz, dt);
   }
@@ -179,36 +356,53 @@ export class Game {
     f.x += mx * sp * dt; f.z += mz * sp * dt; f.moving = Math.min(1, m);
   }
 
+  // Touchdown: launched bodies bounce once if they come down hard, then lie down and get back up.
+  land(f) {
+    const { fx } = this.ctx, v = -f.vy;
+    if (f.launched) {
+      if (v > 4.5) {
+        f.vy = v * 0.35; f.y = 0.001;
+        fx.dustBurst(f.x, 0, f.z, 40, 2.5); fx.rubble(f.x, 0, f.z, 8, 2, 0.04, 0.12, 2.5); fx.impact(f.x, 0, f.z, 0.2);
+        fx.blast(f.x, 0.3, f.z, 0.5, 0.35); fx.decals.add(f.x, f.z, 0.4);
+        if (f === this.me) this.rumble(0.5, 120);
+        return;
+      }
+      f.launched = false; if (!f.ko) f.down = 0.9;
+      fx.dustBurst(f.x, 0, f.z, 30, 1.8);
+    } else if (v > 3) fx.dustBurst(f.x, 0, f.z, 12, 1.2);
+    f.vy = 0;
+    if (f.act && MOVES[f.act.type] && MOVES[f.act.type].air) f.act = null;
+  }
+
   physics(f, o, dt) {
     const { fx } = this.ctx;
-    // jump / airborne
-    if (f.y > 0 || f.vy > 0) { if (!(f.act && f.act.type === 'flykick')) { f.vy -= 14 * dt; f.y = Math.max(0, f.y + f.vy * dt); if (f.y === 0) f.vy = 0; } }
-    // knockback
+    // airborne
+    if ((f.y > 0 || f.vy > 0) && !(f.act && f.act.type === 'flykick')) {
+      f.vy -= GRAV * dt; f.y += f.vy * dt;
+      if (f.y <= 0) { f.y = 0; this.land(f); }
+    }
+    // knockback / momentum (little drag in the air so launched bodies carry it)
     f.x += f.kx * dt; f.z += f.kz * dt;
-    const damp = Math.exp(-dt * 5); f.kx *= damp; f.kz *= damp;
-    f.stun -= dt;
-    if (!f.ko) f.yaw += wrap(face([f.x, 0, f.z], [o.x, 0, o.z]) - f.yaw) * Math.min(1, dt * 12);
+    const damp = Math.exp(-dt * (f.y > 0 ? 0.8 : 5)); f.kx *= damp; f.kz *= damp;
+    f.stun -= dt; f.down -= dt;
+    if (f.bufT > 0 && (f.bufT -= dt) <= 0) f.buf = null;
+    if (!f.ko && !f.launched && f.down <= 0) f.yaw += wrap(face([f.x, 0, f.z], [o.x, 0, o.z]) - f.yaw) * Math.min(1, dt * 12);
     const a = f.act;
     if (a) {
       a.t += dt;
       const d = Math.hypot(o.x - f.x, o.z - f.z);
-      if (MOVES[a.type]) {
-        const M = MOVES[a.type];
-        if (!a.done && a.t >= M.hit) {
-          a.done = true;
-          if (d < M.range && o.y < (a.type === 'kick' ? 1.4 : 0.8)) {
-            const at = (a.type === 'kick' ? f.H.legs.R.an : f.H.arms.R.hand).getWorldPosition(new THREE.Vector3());
-            this.hurt(o, f, M.dmg, M.heavy, at);
-          }
-        }
+      const M = MOVES[a.type];
+      if (M) {
+        if (M.lunge && a.t < M.hit && d > 0.85) { f.x += Math.sin(f.yaw) * M.lunge * dt; f.z += Math.cos(f.yaw) * M.lunge * dt; }
+        if (!a.done && a.t >= M.hit) { a.done = true; if (this.state === 'fight' && this.reaches(f, o, M, d)) this.pending.push({ att: f, def: o, M }); }
         if (a.t >= M.dur) f.act = null;
       } else if (a.type === 'flykick') {
         const u = clamp(a.t / 0.75, 0, 1);
         if (u > 0.15 && u < 0.8 && d > 0.9) { const s = Math.min(8 * dt, d - 0.9); f.x += (o.x - f.x) / d * s; f.z += (o.z - f.z) / d * s; }
         f.y = Math.sin(Math.PI * u) * 1.1;
-        if (!a.done && u > 0.3 && d < 1.3) {
+        if (!a.done && u > 0.3 && d < 1.3 && !o.ko && o.down <= 0) {
           a.done = true;
-          this.hurt(o, f, 16, true, f.H.legs.R.an.getWorldPosition(new THREE.Vector3()));
+          this.hurt(o, f, FLYKICK, this.contact(f, o, FLYKICK));
         }
         if (u >= 1) { f.act = null; f.y = 0; fx.dustBurst(f.x, 0, f.z, 20, 1.5); }
       } else if (a.type === 'heat') {
@@ -217,52 +411,69 @@ export class Game {
           const tg = o.H.chest.getWorldPosition(new THREE.Vector3()); tg.y += 0.1;
           this.heat = [tg.x, tg.y, tg.z];
           const blocked = o.block && o.stun <= 0;
-          o.hp = Math.max(0, o.hp - (blocked ? 4 : 15) * dt);
+          if (o.down <= 0) {
+            o.hp = Math.max(0, o.hp - (blocked ? 4 : 15) * dt);
+            if (!blocked) o.stun = Math.max(o.stun, 0.12), o.heavy = false;
+          }
           if (this.ctx.rng() < 0.5) fx.sparkBurst(tg.x, tg.y, tg.z, 2, 2.5, 0xff8030);
-          if (!blocked) o.stun = Math.max(o.stun, 0.12), o.heavy = false;
           this.updateBars();
-          if (o.hp <= 0) this.hurt(o, f, 0.01, true, tg);
+          if (o.hp <= 0) this.hurt(o, f, HEATKO, tg);
         }
         if (a.t >= 1.5) { f.act = null; this.heat = null; }
       }
     }
-    f.x = clamp(f.x, ARENA.x0, ARENA.x1); f.z = clamp(f.z, ARENA.z0, ARENA.z1);
+    this.tryStart(f);
+    // arena edge: hard knockback slams into it and rebounds
+    for (const [ax, lo, hi, kv] of [['x', ARENA.x0, ARENA.x1, 'kx'], ['z', ARENA.z0, ARENA.z1, 'kz']]) {
+      if (f[ax] >= lo && f[ax] <= hi) continue;
+      f[ax] = clamp(f[ax], lo, hi);
+      if (Math.abs(f[kv]) > 3) {
+        fx.dustBurst(f.x, 0, f.z, 25, 2); fx.rubble(f.x, f.y + 0.6, f.z, 6, 2, 0.04, 0.1, 2);
+        fx.blast(f.x, f.y + 1, f.z, 0.5, 0.35); fx.impact(f.x, f.y + 1, f.z, 0.2);
+        f[kv] *= -0.35;
+      } else f[kv] = 0;
+    }
   }
 
   separate() {
     const a = this.me, b = this.cpu, dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
-    if (a.y > 0.5 || b.y > 0.5 || a.ko || b.ko || d >= 0.75 || d === 0) return;
+    if (a.y > 0.5 || b.y > 0.5 || a.ko || b.ko || a.down > 0 || b.down > 0 || d >= 0.75 || d === 0) return;
     const p = (0.75 - d) / 2;
     a.x -= dx / d * p; a.z -= dz / d * p; b.x += dx / d * p; b.z += dz / d * p;
   }
 
   target(f) {
     if (this.state === 'enter' && f.key === 'sup') {
-      if (f.y > 1.5) return { ...POSES.fly, pitch: 0.35, rh: [-0.12, 0.6, 0.45], gait: 0, base: f.y };
-      if (this.t < 2.7) return { ...POSES.land, pitch: 0, gait: 0 };
-      return { ...POSES.heroic, pitch: 0, gait: 0 };
+      if (f.y > 1.5) return T(POSES.fly, { pitch: 0.35, rh: [-0.12, 0.6, 0.45], base: f.y });
+      if (this.t < 2.7) return T(POSES.land);
+      return T(POSES.heroic);
     }
-    if (f.ko) return { ...POSES.down, pitch: -1.5, gait: 0 };
-    if (this.state === 'over' && f === this.winner && this.overT > 1.4) return { ...POSES.heroic, pitch: 0, gait: 0 };
+    if (f.ko) return T(POSES.down, { pitch: -1.5 });
+    if (this.state === 'over' && f === this.winner && this.overT > 1.4) return T(POSES.heroic);
+    if (f.down > 0) return f.down > 0.3 ? T(POSES.down, { pitch: -1.5 }) : T(POSES.kneel);
+    if (f.launched && f.y > 0.05) return T(MP.air, { pitch: -0.5 });
     const a = f.act;
-    if (a && a.type === 'punch') return { ...POSES[a.t < 0.07 ? 'windup' : a.t < 0.27 ? 'punchR' : 'guard'], pitch: 0, gait: 0 };
-    if (a && a.type === 'kick') return { ...POSES[a.t < 0.12 ? 'guard' : a.t < 0.46 ? 'kickR' : 'guard'], pitch: 0, gait: 0 };
-    if (a && a.type === 'flykick') { const u = a.t / 0.75; return u < 0.15 ? { ...POSES.tuck, pitch: 0, gait: 0 } : { ...POSES.flykick, h: 0.75, pitch: 0, gait: 0 }; }
-    if (a && a.type === 'heat') return { ...POSES.heat, pitch: 0, gait: 0 };
-    if (f.stun > 0) return { ...POSES[f.heavy ? 'hit' : 'flinch'], pitch: 0, gait: 0 };
-    if (f.y > 0.05) return { ...POSES.tuck, pitch: 0, gait: 0 };
-    if (f.block) return { ...POSES.guard, ...BLOCK, pitch: 0, gait: 0 };
-    return { ...POSES.guard, pitch: 0, gait: f.moving };
+    if (a && MOVES[a.type]) {
+      let n = null;
+      for (const [t, p] of MOVES[a.type].keys) if (a.t >= t) n = p;
+      return T(MP[n] || POSES[n]);
+    }
+    if (a && a.type === 'flykick') { const u = a.t / 0.75; return u < 0.15 ? T(POSES.tuck) : T(POSES.flykick, { h: 0.75 }); }
+    if (a && a.type === 'heat') return T(POSES.heat);
+    if (f.stun > 0) return T(POSES[f.heavy ? 'hit' : 'flinch']);
+    if (f.y > 0.05) return T(POSES.tuck);
+    if (f.block) return T(POSES.guard, BLOCK);
+    return T(POSES.guard, { gait: f.moving });
   }
 
   pose(dt) {
-    const k = dt ? 1 - Math.exp(-dt * 16) : 1;
     for (const f of [this.F.bat, this.F.sup]) {
+      const k = dt ? 1 - Math.exp(-dt * (f.act || f.stun > 0 ? 26 : 16)) : 1;
       const tg = this.target(f), c = f.cur;
       for (const n of NUM) c[n] += (tg[n] - c[n]) * k;
       for (const n of ARR) c[n] = c[n].map((v, j) => v + (tg[n][j] - v) * k);
       const base = tg.base ?? f.y;
-      applyPose(f.H, { ...c, p: [f.x, base + c.h, f.z], yaw: f.yaw }, this.t, groundAt(f.x, f.z));
+      applyPose(f.H, { ...c, p: [f.x, base + c.h, f.z], yaw: f.yaw + c.tw }, this.t, groundAt(f.x, f.z));
     }
   }
 
