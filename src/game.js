@@ -51,6 +51,10 @@ const MP = {
   bThrow:  { ...G, lean: 0.45, tw: -0.5, rh: [-0.1, 0.62, 0.95] },
   clapUp:  { ...G, h: 0.9, lean: -0.05, lh: [0.6, 0.7, 0.2], rh: [-0.6, 0.7, 0.2] },
   clap:    { ...G, h: 0.82, lean: 0.4, lh: [0.03, 0.55, 0.72], rh: [-0.03, 0.55, 0.72] },
+  // grapnel gun: arm locked straight at the target (raised toward the skyline for a zip), then hanging off the line in flight
+  gunAim:  { ...G, lean: 0.2, tw: -0.3, rh: [-0.05, 0.66, 0.95] },
+  gunUp:   { ...G, lean: 0.05, tw: -0.2, rh: [-0.08, 1.15, 0.55] },
+  gunZip:  { ...G, h: 0.92, lean: -0.15, lh: [0.25, 0.5, 0.2], rh: [-0.12, 1.25, 0.3], lf: [0.14, -0.6, 0.15], rf: [-0.14, -0.5, -0.1] },
   // rising uppercut: fist driven straight up, body corkscrewing, lead knee tucked
   riseUp:  { ...P.upper, h: 0.88, lean: -0.05, tw: -0.45, lh: [0.22, 0.3, 0.2], rh: [-0.04, 1.2, 0.3], lf: [0.15, -0.45, 0.3], rf: [-0.15, -0.88, -0.1] },
   // parry: the lead hand sweeps the blow up and out past the head (standing) or down past the knee (crouching)
@@ -168,6 +172,14 @@ const SHOT = {
   sup: { name: 'SONIC CLAP', speed: 8, y: 0.45, r: 0.6, rel: 0.2, dur: 0.55, life: 1.6, low: true, dmg: 8, kb: 3, stun: 0.5, at: 'rh', blast: 0.8,
     keys: [[0, 'clapUp'], [0.16, 'clap'], [0.42, 'guard']] },
 };
+// Batman's Grapnel Gun (G, or R3 away from a drum; Batman only). Neutral / toward = a kryptonite hook fired like a laser,
+// dead straight at Superman's chest (jump, duck or sidestep it): it latches on, the kryptonite burns him (`drain` HP/s, he
+// can't act) and reels him in to `stop` m for `latch` s, leaving him stunned `release` s. Blocked = chip, it bounces off.
+// A direction held (not toward) = zip `zip.dist` m that way off a skyline anchor; block + G = swing over him, land behind.
+// One every `cd` s.
+const GRAPNEL = { cd: 1.8, rel: 0.16, speed: 34, back: 40, range: 9, r: 0.6, latch: 0.9, drain: 10, reel: 7, stop: 1.05, release: 0.45, rec: 0.18,
+  col: 0x39ff6a, hit: { dmg: 5, kb: 0, stun: 0.4, at: 'rh', blast: 0.5 }, ko: { dmg: 0.01, kb: 2, up: 2, stun: 0.5, heavy: true, blast: 1.2 },
+  zip: { dist: 5.5, behind: 1.6, anchor: 6, speed: 13, arc: 1.3, min: 0.35 } };
 const QCF = 0.35; // crouch must have been held within this many seconds of toward + punch
 // SF dragon punch (toward, then crouch + toward + punch, or O): a rising uppercut that is invulnerable for its first
 // `inv` s, so it beats jump-ins and pressure, but whiffing or getting it blocked leaves you falling and open (`rec` s
@@ -238,11 +250,11 @@ const PROP = { reach: 1.4, lift: 0.16, rel: 0.44, dur: 0.72, speed: 12, r: 0.6, 
   keys: [[0, 'pickUp'], [0.16, 'lift'], [0.34, 'heaveUp'], [0.44, 'heave'], [0.62, 'guard']] };
 // what a parry can deflect: normal strikes, the rising uppercut, projectiles and the flying kick (not throws, supers, fatalities)
 const PARRYABLE = new Set([...Object.values(MOVES), ...Object.values(RISE), ...Object.values(SHOT), FLYKICK]);
-// MK11 battle damage: each clean hit leaves a bruise / scuff where it landed on the body (raycast onto the skin and
-// anchored to the struck bone so it moves with him; hits within `merge` m deepen the same mark, cuts open once it is
+// MK11 battle damage: each clean hit leaves a bruise / scuff where it landed on the body (placed on the struck bone's
+// surface facing the attacker and anchored to that bone so it moves with him; hits within `merge` m deepen the same mark, cuts open once it is
 // deep), and the suit gathers grime with total damage taken (wear). Lasts the whole match: reset in start() only.
-const SCAR = { merge: 0.11, base: 0.3, per: 1 / 14, heavy: 0.2, wear: 1 / 160, cast: 1.2 };
-const _ray = new THREE.Raycaster(), _rv = new THREE.Vector3(), _rd = new THREE.Vector3(), BIG = new THREE.Sphere(new THREE.Vector3(), 1e4);
+const SCAR = { merge: 0.08, base: 0.25, per: 1 / 40, heavy: 0.1, wear: 1 / 160 };
+const _rv = new THREE.Vector3(), _rd = new THREE.Vector3();
 const LIMB = { lh: (H) => H.arms.L.hand, rh: (H) => H.arms.R.hand, lf: (H) => H.legs.L.an, rf: (H) => H.legs.R.an };
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -273,11 +285,11 @@ export class Game {
   start(choice) {
     const { bat, sup } = this.ctx;
     this.active = true; this.choice = choice; this.t = 0; this.state = 'enter'; this.overT = 0; this.ts = 1; this.landed = false; this.shownWin = false;
-    this.hitstop = 0; this.comboT = 0; this.pending = []; this.cine = null; this.kick = null; this.koCam = null; this.camRoll = 0; this.finish = null; this.shots = []; this.orb = null; this.orbT = ORB.first; this.resetProps();
+    this.hitstop = 0; this.comboT = 0; this.pending = []; this.cine = null; this.kick = null; this.koCam = null; this.camRoll = 0; this.finish = null; this.shots = []; this.grap = null; this.orb = null; this.orbT = ORB.first; this.resetProps();
     this.round = 1; this.wins = { bat: 0, sup: 0 }; this.clock = ROUND_TIME; this.fightT = 0; this.matchOver = false; this.winner = null;
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
       ko: false, cd: 0, down: 0, meter: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
-      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, lastLat: 0, lastLatT: -1, latS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, brk: 0, rollA: null, blowUsed: false, blowSaid: false, scars: [], wear: 0,
+      heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, lastLat: 0, lastLatT: -1, latS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, brk: 0, rollA: null, blowUsed: false, blowSaid: false, scars: [], wear: 0, gcd: 0,
       ai: { t: 0, mx: 0, mz: 0, block: 0, crouch: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0, hx: 0, hy: 0, squash: 0, gph: 0, gdx: 0, gdz: 1, gpx: null, gpz: null });
     this.F = { bat: mk(bat, 'bat', -7.4, Math.PI / 2), sup: mk(sup, 'sup', 2.2, -Math.PI / 2) };
     this.F.sup.y = 26; this.F.sup.cur = T(POSES.fly, { pitch: 0.35 });
@@ -293,7 +305,7 @@ export class Game {
     this.updateBars();
   }
 
-  stop() { this.active = false; this.heat = null; this.shots = []; this.orb = null; this.ui.hud.style.display = 'none'; this.say(''); }
+  stop() { this.active = false; this.heat = null; this.shots = []; this.grap = null; this.orb = null; this.ui.hud.style.display = 'none'; this.say(''); }
 
   say(text, sub = '') { this.ui.banner.innerHTML = text ? `${text}${sub ? `<small>${sub}</small>` : ''}` : ''; this.ui.banner.style.opacity = text ? 1 : 0; }
 
@@ -312,6 +324,7 @@ export class Game {
     else if (k === 'f') this.blow(this.me);
     else if (k === 'h') this.impact(this.me);
     else if (k === 'e') this.interact(this.me);
+    else if (k === 'g') this.grapnelIn(this.me);
     else if (k === ' ') this.press(this.me, 'A');
   }
   keyup(e) { this.keys.delete(e.key.toLowerCase()); }
@@ -347,7 +360,7 @@ export class Game {
     if (this.padHit(3)) this.press(this.me, 'K', this.blockHeld());
     if (this.padHit(1)) this.press(this.me, 'S', this.blockHeld());
     if (this.padHit(0)) this.press(this.me, 'A');
-    if (this.padHit(11)) this.interact(this.me); // R3 = stage interactable
+    if (this.padHit(11) && !this.interact(this.me)) this.grapnelIn(this.me); // R3 = stage interactable, else Batman's grapnel
     if (this.padNow[6] && this.padNow[7] && (this.padHit(6) || this.padHit(7))) this.blow(this.me); // both triggers = fatal blow
     if (this.padNow[4] && this.padNow[5] && (this.padHit(4) || this.padHit(5))) this.impact(this.me); // both bumpers = drive impact
     return true;
@@ -453,6 +466,94 @@ export class Game {
   shoot(f) {
     if (!this.free(f) || this.shots.some((s) => s.f === f)) return false;
     f.act = { type: 'shoot', t: 0, done: false }; f.buf = null; f.block = f.crouch = false; f.downT = -9;
+    return true;
+  }
+  // Player grapnel: block held = swing over the foe, a direction held (not toward) = zip that way, else the kryptonite hook.
+  grapnelIn(f) {
+    const m = Math.hypot(f.inX, f.inZ);
+    if (this.blockHeld()) return this.grapnel(f, 'zip');
+    if (m > 0.5 && f.tow < 0.5) return this.grapnel(f, 'zip', f.inX / m, f.inZ / m);
+    return this.grapnel(f, 'hook');
+  }
+  grapnel(f, mode, dx = 0, dz = 0) {
+    if (f.key !== 'bat' || this.state !== 'fight' || f.dazed || !this.free(f) || f.gcd > 0) return false;
+    const o = f === this.me ? this.cpu : this.me, Z = GRAPNEL.zip, a = { type: 'grapnel', t: 0, mode, phase: 'aim' };
+    if (mode === 'zip') {
+      const d = Math.hypot(o.x - f.x, o.z - f.z) || 1;
+      const tx = dx || dz ? f.x + dx * Z.dist : o.x + (o.x - f.x) / d * Z.behind, tz = dx || dz ? f.z + dz * Z.dist : o.z + (o.z - f.z) / d * Z.behind;
+      a.tx = clamp(tx, ARENA.x0 + 0.5, ARENA.x1 - 0.5); a.tz = clamp(tz, ARENA.z0 + 0.5, ARENA.z1 - 0.5);
+      if (Math.hypot(a.tx - f.x, a.tz - f.z) < 1) return false; // already against that wall
+    }
+    f.gcd = GRAPNEL.cd; f.act = a; f.buf = null; f.block = f.crouch = false;
+    this.ctx.fx.sparkBurst(f.x, 1.3, f.z, 6, 1, GRAPNEL.col);
+    return true;
+  }
+  // aim -> fly (the line shoots out) -> latch (hook: burn + reel) / pull (zip: swing to the anchor) / ret (missed, reel back)
+  // -> rec. Writes this.grap (hand, hook head) for main.js to draw. Returns false when the act is over.
+  grapnelStep(f, o, a, dt) {
+    const { fx } = this.ctx, R = GRAPNEL, Z = R.zip, rng = this.ctx.rng, col = R.col;
+    const hand = LIMB.rh(f.H).getWorldPosition(new THREE.Vector3());
+    if (a.phase === 'aim') {
+      if (a.t < R.rel) return true;
+      const tg = a.mode === 'hook' ? o.H.chest.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(a.tx, Z.anchor, a.tz);
+      const d = tg.sub(hand), len = d.length() || 1;
+      a.o = hand.clone(); a.dir = d.divideScalar(len); a.len = a.mode === 'hook' ? R.range : len; a.s = 0; a.phase = 'fly';
+      fx.sparkBurst(hand.x, hand.y, hand.z, 14, 2.5, col); fx.blast(hand.x, hand.y, hand.z, 0.35, 0.2, col);
+      this.showCombo(a.mode === 'hook' ? 'KRYPTONITE HOOK' : 'GRAPNEL', f.key);
+      if (f === this.me) this.rumble(0.3, 80);
+    }
+    let p = null;
+    if (a.phase === 'fly') {
+      const s0 = a.s; a.s = Math.min(a.len, a.s + R.speed * dt);
+      p = a.o.clone().addScaledVector(a.dir, a.s);
+      if (rng() < 0.7) fx.sparkBurst(p.x, p.y, p.z, 1, 0.5, col);
+      if (a.mode === 'zip') {
+        if (a.s >= a.len) { a.phase = 'pull'; a.u = 0; a.x0 = f.x; a.z0 = f.z; a.dur = Math.max(Z.min, Math.hypot(a.tx - f.x, a.tz - f.z) / Z.speed); fx.sparkBurst(p.x, p.y, p.z, 20, 2, col); }
+      } else {
+        // swept test along this step's stretch of the line against his chest
+        const c = o.H.chest.getWorldPosition(new THREE.Vector3()), k = clamp(c.clone().sub(a.o).dot(a.dir), s0, a.s);
+        const miss = o.ko || o.down > 0 || o.heldBy || this.evading(o) || (o.act && o.act.type === 'dash' && o.act.dir < 0 && o.act.t < DASH.invuln);
+        if (!miss && c.distanceTo(a.o.clone().addScaledVector(a.dir, k)) < R.r) {
+          const guarding = o.block && !o.act && o.stun <= 0 && o.y <= 0.001;
+          this.hurt(o, f, R.hit, c);
+          if (guarding || o.ko || o.dazed || o.stun <= 0) { a.phase = 'ret'; a.s = k; fx.sparkBurst(c.x, c.y, c.z, 16, 3, col); }
+          else {
+            a.phase = 'latch'; a.lt = 0; this.showCombo('KRYPTONITE!', f.key);
+            fx.blast(c.x, c.y, c.z, 0.9, 0.4, col); fx.waves.spawn(c.x, c.y, c.z, 1.4, col, 0.4); fx.sparkBurst(c.x, c.y, c.z, 40, 4, col);
+          }
+          p = c;
+        } else if (a.s >= a.len) a.phase = 'ret';
+      }
+    }
+    if (a.phase === 'latch') {
+      // the kryptonite burns while the line reels him in; he can't act until it lets go
+      a.lt += dt;
+      const c = o.H.chest.getWorldPosition(new THREE.Vector3()), dx = f.x - o.x, dz = f.z - o.z, d = Math.hypot(dx, dz) || 1;
+      if (d > R.stop) { const st = Math.min(R.reel * dt, d - R.stop); o.x += dx / d * st; o.z += dz / d * st; }
+      o.kx = o.kz = 0; o.stun = Math.max(o.stun, 0.15); o.stunMax = Math.max(o.stunMax || 0, 0.3); o.zone = 'body';
+      o.hp = Math.max(0, o.hp - R.drain * dt); this.updateBars();
+      if (rng() < 0.7) fx.sparkBurst(c.x + (rng() - 0.5) * 0.5, c.y + (rng() - 0.5) * 0.7, c.z + (rng() - 0.5) * 0.5, 2, 1.5, col);
+      p = c;
+      if (o.hp <= 0) { this.hurt(o, f, R.ko, c); a.phase = 'rec'; a.rt = 0; }
+      else if (a.lt >= R.latch || o.ko || o.dazed || o.down > 0) {
+        o.stun = Math.max(o.stun, R.release); o.stunMax = o.stun;
+        fx.sparkBurst(c.x, c.y, c.z, 20, 3, col); a.phase = 'rec'; a.rt = 0;
+      }
+    } else if (a.phase === 'ret') {
+      a.s -= R.back * dt;
+      if (a.s <= 0.3) { a.phase = 'rec'; a.rt = 0; } else p = a.o.clone().addScaledVector(a.dir, a.s);
+    } else if (a.phase === 'pull') {
+      // yanked along an arc under the anchor, line overhead, landing on the target spot
+      a.u = Math.min(1, a.u + dt / a.dur);
+      const e = a.u * a.u * (3 - 2 * a.u);
+      f.x = a.x0 + (a.tx - a.x0) * e; f.z = a.z0 + (a.tz - a.z0) * e; f.y = Math.sin(Math.PI * a.u) * Z.arc; f.vy = 0; f.kx = f.kz = 0;
+      p = new THREE.Vector3(a.tx, Z.anchor, a.tz);
+      if (rng() < 0.3) fx.dustBurst(f.x, 0, f.z, 2, 0.6);
+      if (a.u >= 1) { f.y = 0; a.phase = 'rec'; a.rt = 0; fx.dustBurst(f.x, 0, f.z, 24, 1.8); f.squash = Math.max(f.squash, 0.12); }
+    } else if (a.phase === 'rec') {
+      return (a.rt += dt) < R.rec;
+    }
+    if (p) this.grap = { a: [hand.x, hand.y, hand.z], b: [p.x, p.y, p.z], mode: a.mode, latch: a.phase === 'latch' };
     return true;
   }
   // Projectiles in flight: trails, cancelling each other, hitting (ducked / jumped / blocked by height).
@@ -908,6 +1009,7 @@ export class Game {
     else if (a.type === 'heat') k = 'counter';
     else if (a.type === 'impact') k = a.done ? 'punish' : 'counter';
     else if (a.type === 'prop') k = a.done ? 'punish' : 'counter';
+    else if (a.type === 'grapnel') k = a.phase === 'aim' ? 'counter' : a.phase === 'ret' || a.phase === 'rec' ? 'punish' : null;
     else if (a.type === 'side' && a.t > SIDE.evade[1]) k = 'punish';
     return k && COUNTER[k];
   }
@@ -1000,31 +1102,29 @@ export class Game {
     if (!H.dmg) return;
     def.wear = Math.min(1, def.wear + dmg * SCAR.wear);
     H.root.updateMatrixWorld(true);
-    let bone = H.chest, aim = H.chest.getWorldPosition(new THREE.Vector3());
-    if (def.zone === 'head') { bone = H.head; aim = H.head.getWorldPosition(aim); aim.y += 0.12; }
-    else if (def.zone === 'low') { // the knee nearer the attacker
+    // the struck bone (the knee nearer the attacker for lows) and the attacker's direction in its local frame
+    let bone = def.zone === 'head' ? H.head : H.chest;
+    if (def.zone === 'low') {
       const kl = H.legs.L.kn.getWorldPosition(new THREE.Vector3()), kr = H.legs.R.kn.getWorldPosition(new THREE.Vector3());
-      const l = Math.hypot(kl.x - att.x, kl.z - att.z) < Math.hypot(kr.x - att.x, kr.z - att.z);
-      bone = H.legs[l ? 'L' : 'R'].kn; aim = l ? kl : kr; aim.y -= 0.05;
-    } else aim.y = THREE.MathUtils.clamp(at.y, aim.y + 0.05, aim.y + 0.4);
-    // cast from the attacker's side (a little jitter so repeated blows spread) onto the skin
-    _rd.set(att.x - def.x, 0, att.z - def.z); if (_rd.lengthSq() < 1e-6) _rd.set(0, 0, 1); _rd.normalize();
-    aim.x += -_rd.z * (Math.random() - 0.5) * 0.12; aim.z += _rd.x * (Math.random() - 0.5) * 0.12; aim.y += (Math.random() - 0.5) * 0.08;
-    if (!H.hitMeshes) {
-      H.hitMeshes = [];
-      H.root.traverse((o) => { if (o.isMesh && o.material.isMeshStandardMaterial) { H.hitMeshes.push(o); if (o.isSkinnedMesh) o.boundingSphere = BIG; } });
+      bone = H.legs[Math.hypot(kl.x - att.x, kl.z - att.z) < Math.hypot(kr.x - att.x, kr.z - att.z) ? 'L' : 'R'].kn;
     }
-    for (const m of H.hitMeshes) if (m.isSkinnedMesh) m.skeleton.update();
-    _ray.set(_rv.copy(aim).addScaledVector(_rd, SCAR.cast), _rd.negate()); _ray.far = SCAR.cast + 0.3;
-    const hit = _ray.intersectObjects(H.hitMeshes.filter((m) => m.visible), false)[0];
-    const p = hit ? hit.point : aim.addScaledVector(_rd, -0.1);
-    const inc = dmg * SCAR.per + (M.heavy ? SCAR.heavy : 0);
+    const o = bone.worldToLocal(_rv.set(att.x, bone.getWorldPosition(_rd).y, att.z)), ang = Math.atan2(o.x, o.z) + (Math.random() - 0.5) * 0.9;
+    const dx = Math.sin(ang), dz = Math.cos(ang), jy = Math.random() - 0.5;
+    let lp;
+    if (bone === H.head) lp = new THREE.Vector3(dx * 0.085, 0.13 + jy * 0.1, dz * 0.085); // on the face / skull
+    else if (bone === H.chest) { // torso cross-section (hips space = chest local + 0.36), pecs / abs in front
+      const y = clamp(bone.worldToLocal(at.clone()).y, 0, 0.32) + jy * 0.1, hy = y + 0.36, [rx, rz] = H.torsoSection(hy);
+      const t = 1 / Math.hypot(dx / rx, dz / rz);
+      lp = new THREE.Vector3(dx * t, y, dz > 0 ? Math.max(dz * t, H.chestDepth(dx * t, hy)) : dz * t);
+    } else lp = new THREE.Vector3(dx * 0.058, 0.02 - (jy + 0.5) * 0.12, dz * 0.058); // knee / upper shin
+    const p = lp.clone().applyMatrix4(bone.matrixWorld), inc = dmg * SCAR.per + (M.heavy ? SCAR.heavy : 0);
     for (const s of def.scars) {
       if (s.bone === bone && _rv.copy(s.lp).applyMatrix4(bone.matrixWorld).distanceTo(p) < SCAR.merge) { s.s = Math.min(1, s.s + inc); return; }
     }
-    def.scars.push({ bone, lp: bone.worldToLocal(p.clone()), s: Math.min(1, SCAR.base + inc) });
+    def.scars.push({ bone, lp, s: Math.min(1, SCAR.base + inc) });
     if (def.scars.length > DMG_N) def.scars.splice(def.scars.reduce((k, s, i, a) => (s.s < a[k].s ? i : k), 0), 1); // fade the faintest
   }
+
 
   // Both fighters connect in the same instant: a blast on each side plus a shock ring between them.
   clash(h1, h2) {
@@ -1067,9 +1167,9 @@ export class Game {
     this.say(text, this.matchOver ? '' : winner ? `${winner.key === 'bat' ? 'BATMAN' : 'SUPERMAN'} TAKES ROUND ${this.round}` : 'NO WINNER');
   }
   nextRound() {
-    this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.winner = null; this.koCam = null; this.kick = null; this.finish = null; this.shots = []; this.orb = null; this.orbT = ORB.first; this.resetProps();
+    this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.winner = null; this.koCam = null; this.kick = null; this.finish = null; this.shots = []; this.grap = null; this.orb = null; this.orbT = ORB.first; this.resetProps();
     for (const [f, x] of [[this.F.bat, -2.2], [this.F.sup, 2.2]]) {
-      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, dazed: false, downT: -9, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, frz: 0, brk: 0, rollA: null, cur: T(POSES.guard) });
+      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, dazed: false, downT: -9, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, frz: 0, brk: 0, rollA: null, gcd: 0, cur: T(POSES.guard) });
       f.yaw = x < 0 ? Math.PI / 2 : -Math.PI / 2;
     }
     this.ctx.batCape.reset(); this.ctx.supCape.reset();
@@ -1092,7 +1192,7 @@ export class Game {
       if (this.readyT > 1.2) this.say('FIGHT!');
       if (this.readyT > 1.7) { this.state = 'fight'; this.fightT = 0; }
     } else {
-      for (const f of [this.me, this.cpu]) f.cd = Math.max(0, f.cd - sdt);
+      for (const f of [this.me, this.cpu]) { f.cd = Math.max(0, f.cd - sdt); f.gcd = Math.max(0, f.gcd - sdt); }
       if (this.state === 'fight') {
         this.player(sdt); this.ai(sdt);
         this.fightT += sdt;
@@ -1109,7 +1209,7 @@ export class Game {
         }
       }
       else { this.me.block = this.cpu.block = this.me.crouch = this.cpu.crouch = false; }
-      this.pending = [];
+      this.pending = []; this.grap = null;
       for (const [f, o] of [[this.me, this.cpu], [this.cpu, this.me]]) this.physics(f, o, sdt);
       // beam ends if heat vision was interrupted (hit / KO clears act without clearing the beam)
       if (![this.me, this.cpu].some((f) => f.act && (f.act.type === 'heat' || f.act.beam))) this.heat = null;
@@ -1158,7 +1258,7 @@ export class Game {
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
     if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN',
-      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>DOUBLE-TAP UP / DOWN = SIDESTEP · STRAIGHT HITS + PROJECTILES MISS, HOOKS / ROUNDHOUSE / SWEEP TRACK IT<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>HIT HIM WHILE HE WINDS UP = COUNTER · WHILE HE RECOVERS FROM A MISS = PUNISH COUNTER (MORE DAMAGE + STUN)<br>H / LB+RB = DRIVE IMPACT (QUARTER METER): ARMOURED, ABSORBS 2 HITS · COUNTER = CRUMPLE · NEAR A WALL = WALL SPLAT (EVEN BLOCKED)<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH · E / R3 BY A STEEL DRUM = HURL IT (BLOCK / SIDESTEP / JUMP IT)<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
+      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>DOUBLE-TAP UP / DOWN = SIDESTEP · STRAIGHT HITS + PROJECTILES MISS, HOOKS / ROUNDHOUSE / SWEEP TRACK IT<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>HIT HIM WHILE HE WINDS UP = COUNTER · WHILE HE RECOVERS FROM A MISS = PUNISH COUNTER (MORE DAMAGE + STUN)<br>H / LB+RB = DRIVE IMPACT (QUARTER METER): ARMOURED, ABSORBS 2 HITS · COUNTER = CRUMPLE · NEAR A WALL = WALL SPLAT (EVEN BLOCKED)<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH · E / R3 BY A STEEL DRUM = HURL IT (BLOCK / SIDESTEP / JUMP IT)<br>BATMAN G / R3 = GRAPNEL GUN: KRYPTONITE HOOK BURNS + REELS HIM IN · + DIRECTION = ZIP AWAY · BLOCK+G = SWING OVER HIM<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }
   }
@@ -1246,6 +1346,11 @@ export class Game {
     // anti-air: one read per jump-in; about half the time the CPU meets it with the rising uppercut
     if (o.y <= 0.001) A.aa = false;
     else if (!A.aa && o.y > 0.3 && !o.launched && d < 2.4 && this.free(f)) { A.aa = true; if (rng() < 0.5) this.rise(f); }
+    // incoming kryptonite hook: one read each (block it, sidestep the line, or eat it)
+    if (o.act && o.act.type === 'grapnel' && o.act.mode === 'hook' && o.act.phase === 'aim' && A.ghSeen !== o.act) {
+      A.ghSeen = o.act; const r = rng();
+      if (r < 0.3) { A.block = 0.5; A.crouch = 0; } else if (r < 0.5) this.sidestep(f, rng() < 0.5 ? 1 : -1);
+    }
     // incoming drive impact: one read each (throw it up close, backdash out, or eat it)
     if (o.act && o.act.type === 'impact' && !o.act.done && A.diSeen !== o.act && o.act.t > 0.08) {
       A.diSeen = o.act; const r = rng();
@@ -1277,6 +1382,8 @@ export class Game {
       else if (pr && d > 2.2 && this.free(f) && rng() < PROP.cpu) { // hurl a stage drum (walk over to it first)
         if (!this.interact(f)) { const px = pr.x - f.x, pz = pr.z - f.z, pd = Math.hypot(px, pz) || 1; A.mx = px / pd; A.mz = pz / pd; }
       }
+      else if (f.key === 'bat' && d < 2.4 && this.wallGap(f, -tx, -tz) < 1.2 && rng() < 0.15 && this.grapnel(f, 'zip')) {} // cornered: swing over him
+      else if (f.key === 'bat' && d > 3 && rng() < 0.2 && this.grapnel(f, 'hook')) {} // kryptonite hook from range
       else if (d > 3 && rng() < 0.3 && this.free(f) && this.shoot(f)) {} // zoning from range
       else if (d > 2.6 && d < 5 && rng() < 0.22 && this.free(f)) this.dash(f, 1);
       else if (o.launched && d < 1.4 && this.free(f)) { A.chain = 1; this.press(f, 'J'); }
@@ -1326,7 +1433,7 @@ export class Game {
     f.parryT -= dt; f.brk -= dt;
     if (f.frz > 0) { f.frz -= dt; return; } // parried: frozen mid-move
     // airborne
-    if ((f.y > 0 || f.vy > 0) && !(f.act && (f.act.type === 'flykick' || f.act.type === 'fatal'))) {
+    if ((f.y > 0 || f.vy > 0) && !(f.act && (f.act.type === 'flykick' || f.act.type === 'fatal' || f.act.type === 'grapnel' && f.act.phase === 'pull'))) {
       f.vy -= GRAV * dt; f.y += f.vy * dt;
       if (f.y <= 0) { f.y = 0; this.land(f); }
     }
@@ -1376,6 +1483,8 @@ export class Game {
           else fx.dustBurst(f.x, 0, f.z, 20, 1.6);
         }
         if (a.t >= IMPACT.dur) f.act = null;
+      } else if (a.type === 'grapnel') {
+        if (!this.grapnelStep(f, o, a, dt)) f.act = null;
       } else if (a.type === 'side') {
         // arc round the foe: rotate about him by the eased share of the step this frame (fast start, settling)
         const u = Math.min(1, a.t / SIDE.dur), e = 1 - (1 - u) * (1 - u), th = a.s * SIDE.ang * (e - a.e);
@@ -1550,6 +1659,7 @@ export class Game {
       for (const [t, p] of PROP.keys) if (a.t >= t) n = p;
       return T(MP[n] || POSES[n]);
     }
+    if (a && a.type === 'grapnel') return T(a.phase === 'pull' ? MP.gunZip : a.mode === 'zip' ? (a.phase === 'rec' ? POSES.land : MP.gunUp) : MP.gunAim);
     if (a && a.type === 'dash') return a.dir > 0 ? T(MP.rush, { gait: 0 }) : T(MP.backdash);
     if (a && a.type === 'side') { // leaning into the step, feet trailing, then planting
       const s = a.s * (1 - a.e * 0.6);

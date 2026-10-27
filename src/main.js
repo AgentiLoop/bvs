@@ -19,7 +19,7 @@ const SEED = +(qs.get('seed') || 1337);
 const DT = 1 / 60;
 const LOOP_END = 21.5; // real seconds
 let pixelMode = qs.get('pixel') === '1', comicMode = !qs.has('pixel') || qs.get('pixel') === '2'; // comic by default; ?pixel=0 normal. P cycles: normal → pixel-art → comic → normal
-let PIX = +(qs.get('px') || 4), CPIX = 1; // pixel size for pixel-art / comic modes (- / + keys)
+let PIX = +(qs.get('px') || 4), CPIX = 1; const CSTEPS = [1, 1.25, 1.5, 2, 3, 4, 5, 6, 7, 8]; // pixel size for pixel-art / comic modes (- / + keys); comic gets fine steps after 1
 let paused = false, freeCam = false;
 
 // ---------- renderer ----------
@@ -207,6 +207,22 @@ const shotMesh = (() => {
   sup.add(new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.025, 6, 28), new THREE.MeshBasicMaterial({ color: 0xffffff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.7 })));
   for (const g of [bat, sup]) { g.visible = false; scene.add(g); }
   return { bat, sup };
+})();
+// Playable mode: Batman's grapnel line (a green kryptonite laser with a white-hot core) and its glowing kryptonite hook head.
+const grapMesh = (() => {
+  const line = new THREE.Group(), geo = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true).translate(0, 0.5, 0);
+  line.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x39ff6a, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false })));
+  line.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xeaffef, blending: THREE.AdditiveBlending, depthWrite: false })));
+  const hook = new THREE.Group();
+  hook.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.08).scale(1, 2, 1), new THREE.MeshBasicMaterial({ color: 0x8dffad })));
+  for (let i = 0; i < 3; i++) { // three claw prongs swept back from the crystal tip
+    const c = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.16, 5), new THREE.MeshBasicMaterial({ color: 0x2a3a30 }));
+    const a = i / 3 * Math.PI * 2; c.position.set(Math.cos(a) * 0.07, 0.06, Math.sin(a) * 0.07); c.rotation.set(Math.sin(a) * 0.9, 0, -Math.cos(a) * 0.9); hook.add(c);
+  }
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: blastTex, color: 0x39ff6a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.8 }));
+  const light = new THREE.PointLight(0x39ff6a, 0, 6, 2);
+  hook.add(glow, light); line.visible = hook.visible = false; scene.add(line, hook);
+  return { line, hook, glow, light };
 })();
 // Playable-mode power-up orb: a bright core inside a translucent shell with a halo, tinted per power-up type.
 const orbMesh = (() => {
@@ -505,6 +521,18 @@ function updateVisuals() {
     if (k === 'bat') m.rotation.set(0, s.t * 28, 0); // spins flat as it flies
     else { m.rotation.set(0, Math.atan2(s.vx, s.vz), 0); m.scale.setScalar(0.85 + s.t * 0.35 + Math.sin(s.t * 40) * 0.04); }
   }
+  const gp = game.active && game.grap;
+  grapMesh.line.visible = grapMesh.hook.visible = !!gp;
+  grapMesh.light.intensity = 0;
+  if (gp) {
+    _v.set(gp.a[0], gp.a[1], gp.a[2]); _w.set(gp.b[0], gp.b[1], gp.b[2]).sub(_v);
+    const len = _w.length(), w = (gp.mode === 'hook' ? 0.035 : 0.016) * (1 + Math.sin(game.t * 70) * 0.15);
+    grapMesh.line.position.copy(_v); grapMesh.line.quaternion.setFromUnitVectors(UP, _w.normalize());
+    grapMesh.line.children[0].scale.set(w, len, w); grapMesh.line.children[1].scale.set(w * 0.3, len, w * 0.3);
+    grapMesh.hook.position.set(gp.b[0], gp.b[1], gp.b[2]); grapMesh.hook.quaternion.copy(grapMesh.line.quaternion);
+    grapMesh.glow.scale.setScalar(gp.latch ? 1.1 + Math.sin(game.t * 40) * 0.2 : 0.6);
+    grapMesh.light.intensity = gp.latch ? 10 : 5;
+  }
   const orb = game.active && game.orb;
   orbMesh.g.visible = !!orb;
   if (orb) {
@@ -567,8 +595,8 @@ addEventListener('keydown', (e) => {
   else if (e.key === 's' || e.key === 'S' || e.key === '2') startGame('sup');
   else if (e.code === 'Space') { paused = !paused; sound.pause(paused); }
   else if (e.key === 'p' || e.key === 'P') { if (pixelMode) { pixelMode = false; comicMode = true; } else if (comicMode) comicMode = false; else pixelMode = true; resize(); }
-  else if (e.key === '-' || e.key === '_') { if (comicMode) CPIX = Math.max(1, CPIX - 1); else PIX = Math.max(1, PIX - 1); resize(); }
-  else if (e.key === '=' || e.key === '+') { if (comicMode) CPIX = Math.min(8, CPIX + 1); else PIX = Math.min(8, PIX + 1); resize(); }
+  else if (e.key === '-' || e.key === '_') { if (comicMode) CPIX = CSTEPS[Math.max(0, CSTEPS.indexOf(CPIX) - 1)]; else PIX = Math.max(1, PIX - 1); resize(); }
+  else if (e.key === '=' || e.key === '+') { if (comicMode) CPIX = CSTEPS[Math.min(CSTEPS.length - 1, CSTEPS.indexOf(CPIX) + 1)]; else PIX = Math.min(8, PIX + 1); resize(); }
   else if (e.key === 'r' || e.key === 'R') reset();
   else if (e.key === 'c' || e.key === 'C') { freeCam = !freeCam; controls.enabled = freeCam; }
 });

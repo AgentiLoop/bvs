@@ -40,11 +40,15 @@ const DMG_APPLY = `
   float dmgN1 = dmgNoise(vDmgR * 31.0);
   for (int i = 0; i < ${DMG_N}; i++) {
     float r = 0.05 + 0.06 * dmgS[i];
-    dmgA = max(dmgA, dmgS[i] * smoothstep(r, r * 0.25, distance(vDmgW, dmgP[i]) + (dmgN1 - 0.5) * 0.06));
+    dmgA = max(dmgA, dmgS[i] * (1.0 - smoothstep(r * 0.25, r, distance(vDmgW, dmgP[i]) + (dmgN1 - 0.5) * 0.06))); // edges ascending: reversed smoothstep is undefined (black on Metal)
   }
   float dmgCut = smoothstep(0.35, 0.8, dmgA) * smoothstep(0.66, 0.74, dmgNoise(vDmgR * vec3(150.0, 18.0, 150.0)));
   float dmgGrime = dmgWear * smoothstep(0.45, 0.8, dmgNoise(vDmgR * 7.0 + 3.1));
-  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.78, 0.5, 0.55) + vec3(0.035, 0.008, 0.012), dmgA * 0.85);
+  // skin and bright suits bruise (darker, red-purple); near-black suit and cowl scuff lighter (abraded fabric)
+  float dmgLum = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
+  vec3 dmgBruise = diffuseColor.rgb * vec3(0.78, 0.5, 0.55) + vec3(0.035, 0.008, 0.012);
+  vec3 dmgScuff = mix(diffuseColor.rgb, vec3(0.15, 0.14, 0.13), 0.35 + 0.5 * smoothstep(0.4, 0.7, dmgNoise(vDmgR * vec3(90.0, 25.0, 90.0))));
+  diffuseColor.rgb = mix(diffuseColor.rgb, mix(dmgScuff, dmgBruise, smoothstep(0.03, 0.12, dmgLum)), dmgA * 0.85);
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.3, 0.025, 0.02), dmgCut * 0.9);
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.145, 0.13), dmgGrime * 0.35);
 `;
@@ -573,7 +577,7 @@ export function makeHero(kind) {
   const torsoSection = (y) => contour(torsoRows, y);
   const dmg = { dmgP: { value: Array.from({ length: DMG_N }, () => new THREE.Vector3(0, -99, 0)) }, dmgS: { value: new Float32Array(DMG_N) }, dmgWear: { value: 0 } };
   const patched = new Set();
-  root.traverse(o => { if (o.isMesh && o.material.isMeshStandardMaterial && !patched.has(o.material)) { patched.add(o.material); battleDamage(o.material, dmg); } });
+  root.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) if (m.isMeshStandardMaterial && !patched.has(m)) { patched.add(m); battleDamage(m, dmg); } });
   return { kind, root, hips, spine, chest, head, arms, legs, eyes, torsoSection, chestDepth, dmg };
 }
 
