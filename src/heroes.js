@@ -488,7 +488,7 @@ export function makeHero(kind) {
   }
   // Torso cross-section [halfWidth, halfDepth] at a hips-space height, for cloth collision.
   const torsoSection = (y) => contour(torsoRows, y);
-  return { kind, root, hips, spine, chest, head, arms, legs, eyes, torsoSection };
+  return { kind, root, hips, spine, chest, head, arms, legs, eyes, torsoSection, chestDepth };
 }
 
 // ---------- IK ----------

@@ -99,6 +99,7 @@ export class Cape {
 
   step(dt, t, wind, groundFn) {
     const P = this.pos, Q = this.prev, cols = this.cols, n = this.canon.length;
+    this.groundFn = groundFn;
     for (const c of this.colliders) { c.c.copy(c.off); c.bone.localToWorld(c.c); }
     for (const c of this.capsules) { c.a.getWorldPosition(c.p); c.b.getWorldPosition(c.q); }
     // The spheres under-fill the broad upper back, so the cape sank 1-2 cm (up to 11 cm on Batman) into
@@ -172,8 +173,12 @@ export class Cape {
     else _v.y = y;
     if (y <= 0.035 || y >= 0.83) return;
     const [rx, rz] = sec(y), e = Math.hypot(_v.x / (rx + 0.02), _v.z / (rz + 0.02));
-    if (e >= 1 || e < 1e-6) return;
-    _v.x /= e; _v.z /= e;
+    // The front has sculpted pecs/abs up to 6 cm proud of the ellipse; a cape wrapped round the front
+    // (after Batman's roll) sank into them.
+    const cd = this.hero.chestDepth, front = cd && _v.z > 0 && Math.abs(_v.x) < rx ? cd(_v.x, y) + 0.02 : 0;
+    if ((e >= 1 || e < 1e-6) && !(front && _v.z < front)) return;
+    if (e < 1 && e >= 1e-6) { _v.x /= e; _v.z /= e; }
+    if (front) _v.z = Math.max(_v.z, front);
     if (bone === this.hero.chest) _v.y -= CHEST_Y;
     _v.applyMatrix4(bone.matrixWorld);
     A[o] = _v.x; A[o + 1] = _v.y; A[o + 2] = _v.z;
@@ -199,6 +204,22 @@ export class Cape {
     }
     // The smooth surface can cut corners between sim points (e.g. across the back of the neck when the
     // cape flips over the shoulders), so the rendered points get the same torso push-out.
+    // The same for the limbs (torso push-out runs last so it wins near the shoulders): between sim points the surface could dip up to ~4 cm into a thigh or shin.
+    for (const c of this.capsules) {
+      c.a.getWorldPosition(c.p); c.b.getWorldPosition(c.q); _b.subVectors(c.q, c.p);
+      const L2 = _b.lengthSq() || 1e-9, r = c.r * 0.85;
+      for (let o = RC * 3; o < R.length; o += 3) {
+        _v.set(R[o], R[o + 1], R[o + 2]);
+        const u = Math.min(1, Math.max(0, _a.subVectors(_v, c.p).dot(_b) / L2));
+        _a.copy(c.p).addScaledVector(_b, u);
+        const dx = R[o] - _a.x, dy = R[o + 1] - _a.y, dz = R[o + 2] - _a.z, d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < r * r && d2 > 1e-10) {
+          const k = r / Math.sqrt(d2);
+          R[o] = _a.x + dx * k; R[o + 1] = _a.y + dy * k; R[o + 2] = _a.z + dz * k;
+          if (this.groundFn) R[o + 1] = Math.max(R[o + 1], this.groundFn(R[o], R[o + 2]) + 0.015); // not into the roof
+        }
+      }
+    }
     if (this.hero.torsoSection) { this.prepSection(); for (let o = RC * 3; o < R.length; o += 3) this.pushOut(R, o); }
     this.attr.needsUpdate = true;
     this.geo.computeVertexNormals();
