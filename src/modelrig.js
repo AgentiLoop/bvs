@@ -33,7 +33,25 @@ function capsuleDist(p, bn) {
   return _ap.copy(bn.a).addScaledVector(_ab, t).distanceTo(p) - bn.r;
 }
 
-export async function loadFanModel(H, url, { yaw = null } = {}) {
+// connected-component id per vertex (vertices welded by position, so UV seams don't split shells)
+function components(g) {
+  const P = g.attributes.position, n = P.count, key = new Map(), wid = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
+    const k = `${P.getX(i).toFixed(4)},${P.getY(i).toFixed(4)},${P.getZ(i).toFixed(4)}`;
+    if (!key.has(k)) key.set(k, key.size);
+    wid[i] = key.get(k);
+  }
+  const par = Int32Array.from({ length: key.size }, (_, i) => i);
+  const fd = (x) => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
+  const idx = g.index ? g.index.array : null, m = idx ? idx.length : n;
+  for (let t = 0; t < m; t += 3) {
+    const a = idx ? idx[t] : t, b = idx ? idx[t + 1] : t + 1, c = idx ? idx[t + 2] : t + 2;
+    const r = fd(wid[a]); par[fd(wid[b])] = r; par[fd(wid[c])] = r;
+  }
+  return Int32Array.from(wid, (w) => fd(w));
+}
+
+export async function loadFanModel(H, url, { yaw = null, capeMesh = null } = {}) {
   const gltf = await new GLTFLoader().loadAsync(url);
   const src = gltf.scene;
   const wrap = new THREE.Group();
@@ -123,21 +141,43 @@ export async function loadFanModel(H, url, { yaw = null } = {}) {
   const scene = H.root.parent;
   const meshes = [];
   const d = new Float32Array(BN.length);
+  const TORSO = [0, 1, 2, 3]; // hips, spine, chest, head
+  H.capeVerts = [];
   for (const m of parts) {
     const g = m.userData.g, P = g.attributes.position, n = P.count;
     const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
+    // cape shells: connected pieces where a large share of vertices hang behind the body away from every bone.
+    // They get torso/head weights only, so arms and legs can never drag the cloth around.
+    const comp = components(g);
+    const behind = new Map(), total = new Map(), ylo = new Map(), yhi = new Map();
     for (let i = 0; i < n; i++) {
       v.fromBufferAttribute(P, i);
-      let best = 0;
-      for (let b = 0; b < BN.length; b++) { d[b] = capsuleDist(v, BN[b]); if (d[b] < d[best]) best = b; }
-      // cape / cloth: behind the body and away from every bone -> ride rigidly on the torso (no leg/arm tearing)
-      if (v.z < -0.06 && d[best] > 0.06 && v.y < 0.85) {
-        const t = THREE.MathUtils.clamp((v.y - 0.1) / 0.5, 0, 1); // hips -> chest by height
-        const wc = t * t, wh = (1 - t) * (1 - t), ws = 1 - wc - wh;
-        [[0, wh], [1, ws], [2, wc]].forEach(([b, w], j) => { si[i * 4 + j] = b; sw[i * 4 + j] = w; });
-        continue;
+      ylo.set(comp[i], Math.min(ylo.get(comp[i]) ?? 9, v.y)); yhi.set(comp[i], Math.max(yhi.get(comp[i]) ?? -9, v.y));
+      let dm = Infinity;
+      for (let b = 0; b < BN.length; b++) dm = Math.min(dm, capsuleDist(v, BN[b]));
+      total.set(comp[i], (total.get(comp[i]) || 0) + 1);
+      if (v.z < -0.05 && dm > 0.04) behind.set(comp[i], (behind.get(comp[i]) || 0) + 1);
+    }
+    // explicit: capeMesh names the mesh whose largest shell is the cape; otherwise auto: mostly behind the
+    // body AND hanging from above the hips to below them (so boots/heels never qualify)
+    let biggest = -1;
+    for (const c of total.keys()) if (biggest < 0 || total.get(c) > total.get(biggest)) biggest = c;
+    const isCape = capeMesh
+      ? (c) => m.name === capeMesh && c === biggest
+      : (c) => total.get(c) > 200 && (behind.get(c) || 0) / total.get(c) > 0.3 && yhi.get(c) > 0.3 && ylo.get(c) < -0.3;
+    H.capeComps = (H.capeComps || []).concat([...total.keys()].filter(isCape).map((c) => [m.name, total.get(c), +((behind.get(c) || 0) / total.get(c)).toFixed(2)]));
+    H.allComps = (H.allComps || []).concat([...total.keys()].filter((c) => total.get(c) > 200).map((c) => [m.name, total.get(c), +((behind.get(c) || 0) / total.get(c)).toFixed(2)]));
+    for (let i = 0; i < n; i++) {
+      v.fromBufferAttribute(P, i);
+      const cape = isCape(comp[i]);
+      if (cape) H.capeVerts.push([meshes.length, i]);
+      let best = -1;
+      for (let b = 0; b < BN.length; b++) {
+        d[b] = capsuleDist(v, BN[b]);
+        if ((!cape || TORSO.includes(b)) && (best < 0 || d[b] < d[best])) best = b;
       }
-      const cand = adj[best].map((b) => [b, Math.exp(-(d[b] - d[best]) / 0.035)]).sort((a, b) => b[1] - a[1]).slice(0, 4);
+      const cand = adj[best].filter((b) => !cape || TORSO.includes(b))
+        .map((b) => [b, Math.exp(-(d[b] - d[best]) / (cape ? 0.12 : 0.035))]).sort((a, b) => b[1] - a[1]).slice(0, 4);
       const tot = cand.reduce((s, c) => s + c[1], 0);
       cand.forEach(([b, w], j) => { si[i * 4 + j] = b; sw[i * 4 + j] = w / tot; });
     }

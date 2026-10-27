@@ -95,10 +95,11 @@ const bat = makeHero('batman'), sup = makeHero('superman');
 scene.add(bat.root, sup.root);
 // fan models: models/batman.glb + models/superman.glb (or ?bat=url&sup=url, ?byaw=deg&syaw=deg); procedural body if missing
 window.__fan = {};
+const DEFAULT_CAPE = { bat: 'Cube_2', sup: null }; // Batman's cape shares a shell with the cowl, so name it
 const DEFAULT_YAW = { bat: 0, sup: -Math.PI / 2 }; // verified facing for the bundled models (auto-detect is fooled by capes)
 for (const [H, key, file] of [[bat, 'bat', 'batman'], [sup, 'sup', 'superman']]) {
   if (qs.get(key) === '0') continue;
-  loadFanModel(H, qs.get(key) || `./models/${file}.glb`, { yaw: qs.has(key[0] + 'yaw') ? +qs.get(key[0] + 'yaw') * Math.PI / 180 : qs.get(key) ? null : DEFAULT_YAW[key] })
+  loadFanModel(H, qs.get(key) || `./models/${file}.glb`, { yaw: qs.has(key[0] + 'yaw') ? +qs.get(key[0] + 'yaw') * Math.PI / 180 : qs.get(key) ? null : DEFAULT_YAW[key], capeMesh: qs.get(key) ? null : DEFAULT_CAPE[key] })
     .then((n) => {
       window.__fan[key] = { n, yaw: Math.round(H.fanYaw * 180 / Math.PI) };
       const cape = key === 'bat' ? batCape : supCape; // fan models bring their own cape
@@ -381,7 +382,11 @@ if (qs.has('debug')) {
       const b = new THREE.Box3(); let n = 0, vis = 0;
       H.root.updateMatrixWorld(true);
       (H.fanMeshes || []).forEach((o) => { n++; o.geometry.computeBoundingBox(); }); H.root.traverse((o) => { if (o.isMesh && o.visible) vis++; }); H.fanMeshes && H.fanMeshes.forEach((o) => { const p = new THREE.Vector3(); for (let i = 0; i < o.geometry.attributes.position.count; i += 50) { o.getVertexPosition(i, p); b.expandByPoint(p); } });
-      info[k] = { armDir: H.fanArm, n, procVisible: vis, min: b.min.toArray().map((v) => +v.toFixed(2)), max: b.max.toArray().map((v) => +v.toFixed(2)) };
+      const cv = H.capeVerts || [], q = new THREE.Vector3(); let front = 0;
+      H.chest.updateMatrixWorld(true); const inv = H.chest.matrixWorld.clone().invert();
+      for (let c = 0; c < cv.length; c += 7) { H.fanMeshes[cv[c][0]].getVertexPosition(cv[c][1], q); q.applyMatrix4(H.fanMeshes[cv[c][0]].matrixWorld).applyMatrix4(inv); if (q.z > 0.12) front++; }
+      const zs = []; for (let c = 0; c < cv.length; c += 7) { H.fanMeshes[cv[c][0]].getVertexPosition(cv[c][1], q); q.applyMatrix4(H.fanMeshes[cv[c][0]].matrixWorld).applyMatrix4(inv); zs.push(q.z); } zs.sort((a, b) => a - b);
+      info[k] = { comps: H.allComps, capeComps: H.capeComps, zq: [0.1, 0.5, 0.9, 1].map((f) => +(zs[Math.min(zs.length - 1, Math.floor(f * zs.length))] || 0).toFixed(2)), capeN: cv.length, capeFrontPct: cv.length ? +(100 * front / Math.ceil(cv.length / 7)).toFixed(1) : 0, n, procVisible: vis, min: b.min.toArray().map((v) => +v.toFixed(2)), max: b.max.toArray().map((v) => +v.toFixed(2)) };
     }
     document.getElementById('err').textContent += ' fan=' + JSON.stringify(window.__fan) + ' box=' + JSON.stringify(info);
   }, 6000);
