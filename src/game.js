@@ -102,12 +102,17 @@ export class Game {
   }
   keyup(e) { this.keys.delete(e.key.toLowerCase()); }
 
+  // Merge every connected pad: macOS can expose one controller as several gamepads (one of them dead),
+  // so reading only the first one can miss all input.
   readPad() {
-    const list = navigator.getGamepads ? navigator.getGamepads() : [];
-    let p = null;
-    for (const g of list) if (g && g.connected) { p = g; break; }
-    this.pad = p; this.padPrev = this.padNow;
-    this.padNow = p ? p.buttons.map((b) => b.pressed || b.value > 0.5) : [];
+    const list = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter((g) => g && g.connected);
+    this.padPrev = this.padNow; this.pads = list;
+    if (!list.length) { this.pad = null; this.padNow = []; return; }
+    const n = Math.max(...list.map((g) => g.buttons.length));
+    this.padNow = Array.from({ length: n }, (_, i) => list.some((g) => g.buttons[i] && (g.buttons[i].pressed || g.buttons[i].value > 0.5)));
+    let axes = [0, 0];
+    for (const g of list) if (g.axes.length >= 2 && Math.hypot(g.axes[0], g.axes[1]) > Math.hypot(axes[0], axes[1])) axes = [g.axes[0], g.axes[1]];
+    this.pad = { axes };
   }
   padHit(i) { return !!this.padNow[i] && !this.padPrev[i]; }
   // Title screen: X / d-pad left = Batman, B / d-pad right = Superman.
@@ -131,8 +136,10 @@ export class Game {
   }
   blockHeld() { return this.keys.has('shift') || [4, 5, 6, 7].some((i) => this.padNow[i]); }
   rumble(strong, ms) {
-    const a = this.pad && this.pad.vibrationActuator;
-    if (a && a.playEffect) a.playEffect('dual-rumble', { duration: ms, strongMagnitude: strong, weakMagnitude: Math.min(1, strong + 0.3) }).catch(() => {});
+    for (const g of this.pads || []) {
+      const a = g.vibrationActuator;
+      if (a && a.playEffect) a.playEffect('dual-rumble', { duration: ms, strongMagnitude: strong, weakMagnitude: Math.min(1, strong + 0.3) }).catch(() => {});
+    }
   }
 
   // ---------- moves ----------
