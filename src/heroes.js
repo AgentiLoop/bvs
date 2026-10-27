@@ -462,14 +462,15 @@ export function makeHero(kind) {
       p.z -= 0.007 * bump(p.y, -0.062, 0.005) * Math.max(0, cs) ** 2;            // fingertips tucked into the palm
       const ridge = knuckleX.reduce((v, b) => v + bump(p.x, b, 0.008), 0);
       p.z -= 0.006 * ridge * bump(p.y, -0.1, 0.011) * Math.max(0, -cs);          // knuckles on the back edge
-      p.y += 0.006 * blend(0.0, 0.045, s * p.x) * fingers;                       // pinky side shorter than the index side
+      p.y += 0.006 * blend(0.0, 0.045, -s * p.x) * fingers;                      // pinky side shorter than the index side
       return p;
     }, 48, 48);
     part(hand, fistGeo, handMat);
-    oval(hand, handMat, [-s * 0.036, -0.045, 0.026], [0.015, 0.026, 0.02]);   // thenar pad at the thumb base
-    line(hand, [[-s * 0.044, -0.045, 0.03], [-s * 0.04, -0.072, 0.058], [-s * 0.016, -0.084, 0.07],
-      [s * 0.008, -0.086, 0.068]], 0.0105, handMat);                          // thumb across the fingers
-    oval(hand, handMat, [s * 0.008, -0.086, 0.068], [0.0105, 0.0105, 0.0105]); // rounded thumb tip
+    // Thumb on the lateral (+s) side: with the palm at +z it used to sit medially, a mirror-image hand on each arm.
+    oval(hand, handMat, [s * 0.036, -0.045, 0.026], [0.015, 0.026, 0.02]);    // thenar pad at the thumb base
+    line(hand, [[s * 0.044, -0.045, 0.03], [s * 0.04, -0.072, 0.058], [s * 0.016, -0.084, 0.07],
+      [-s * 0.008, -0.086, 0.068]], 0.0105, handMat);                         // thumb across the fingers
+    oval(hand, handMat, [-s * 0.008, -0.086, 0.068], [0.0105, 0.0105, 0.0105]); // rounded thumb tip
     arms[side] = { sh, el, hand, s };
 
     const th = joint(hips, [s * 0.1, -0.04, 0]);
@@ -653,6 +654,15 @@ function pushOutOfTorso(H, w, margin) {
   return true;
 }
 const _C2 = new THREE.Vector3();
+// Same for the head (an ellipsoid round the skull in the head's frame; the elbow strike folded the fist 3 cm into the face).
+const HEAD_C = new THREE.Vector3(0, 0.12, 0), HEAD_R = [0.085, 0.125, 0.08];
+function pushOutOfHead(H, w, margin) {
+  H.head.worldToLocal(_C2.copy(w)).sub(HEAD_C);
+  const m = margin / H.head.scale.x, e = Math.hypot(_C2.x / (HEAD_R[0] + m), _C2.y / (HEAD_R[1] + m), _C2.z / (HEAD_R[2] + m));
+  if (e >= 1 || e < 1e-6) return false;
+  w.copy(H.head.localToWorld(_C2.multiplyScalar(1 / e).add(HEAD_C)));
+  return true;
+}
 // pose: { p:[x,y,z] hips world, yaw, pitch, roll, lean, gait, lh, rh, lf, rf (hip-relative targets) }
 const SOLE = 0.076;
 const BOOT_CORNERS = [[0, -0.074, -0.058], [0, -0.074, 0.178], [0.042, -0.074, 0.06], [-0.042, -0.074, 0.06], [0, 0.021, 0.178], [0, 0.021, -0.058]]
@@ -735,6 +745,34 @@ function orientFoot(l, qRoot, air = 0) {
   }
   l.an.updateMatrixWorld(true);
 }
+// Wrist: the fist used to keep whatever twist the IK's shortest-arc rotation left it, so jabs and crosses
+// landed palm-up and the guard's palms faced out. Now the fist lines up with the forearm (straight wrist) and
+// is turned like a real forearm turns it: palm toward the body's midline at rest and in the guard (thumb up /
+// toward the face), rolling palm-down as the arm extends forward into a straight punch, and angled back
+// toward the face as the forearm rises.
+const _hx = new THREE.Vector3(), _hy = new THREE.Vector3(), _hz = new THREE.Vector3(), _hf = new THREE.Vector3(),
+  _hm = new THREE.Matrix4(), _hq = new THREE.Quaternion(), _hr = new THREE.Quaternion();
+// Fist sample points in the hand frame ([x * side, y, z], before the 1.18 hand scale) with their clearance:
+// the middle of the fist, the thumb across its palm side, then the corners of the fist.
+const FIST_PTS = [[0, -0.055, 0.015, 0.05], [0.03, -0.07, 0.06, 0.012], [-0.008, -0.086, 0.068, 0.012]];
+for (const x of [-0.035, 0.035]) for (const y of [-0.015, -0.1]) for (const z of [-0.03, 0.04]) FIST_PTS.push([x, y, z, 0.012]);
+function orientHand(a, qRoot) {
+  a.el.getWorldPosition(_hy); a.hand.getWorldPosition(_hf); a.sh.getWorldPosition(_hx);
+  const ext = _hx.distanceTo(_hf) / 0.62;
+  _hy.sub(_hf).normalize(); // hand +y runs back up the forearm
+  _hr.copy(qRoot).invert();
+  _hf.copy(_hy).negate().applyQuaternion(_hr); // forearm direction in the body frame
+  const k = blend(0.8, 0.97, ext) * blend(0.2, 0.7, _hf.z) * (1 - blend(0.25, 0.6, _hf.y)); // uppercuts stay palm-in
+  _hz.set(-a.s * (1 - k), -k, -(0.25 + 0.6 * Math.max(0, _hf.y))).applyQuaternion(qRoot);
+  _hz.addScaledVector(_hy, -_hz.dot(_hy));
+  if (_hz.lengthSq() < 1e-6) { _hz.set(0, -1, 0).applyQuaternion(qRoot); _hz.addScaledVector(_hy, -_hz.dot(_hy)); } // forearm along the preferred palm line
+  _hz.normalize();
+  _hx.crossVectors(_hy, _hz);
+  _hq.setFromRotationMatrix(_hm.makeBasis(_hx, _hy, _hz));
+  a.el.getWorldQuaternion(_hr).invert();
+  a.hand.quaternion.copy(_hr).multiply(_hq);
+  a.hand.updateMatrixWorld(true);
+}
 function posePass(H, s, t, ground, raise) {
   H.root.position.set(s.p[0], s.p[1] + raise, s.p[2]);
   H.root.rotation.set(s.pitch, s.yaw, s.roll, 'YXZ');
@@ -760,6 +798,7 @@ function posePass(H, s, t, ground, raise) {
     ['L', s.lh, 0, 0, -sw * 0.22 * g],
     ['R', s.rh, 0, 0, sw * 0.22 * g],
   ];
+  H.root.getWorldQuaternion(_qb);
   for (const [side, tg, , , dz] of limbs) {
     const a = H.arms[side];
     _T.set(tg[0], tg[1], tg[2] + dz); H.root.localToWorld(_T);
@@ -790,8 +829,21 @@ function posePass(H, s, t, ground, raise) {
       solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A));
     }
     }
+    orientHand(a, _qb);
+    // The torso checks above only see the wrist; the fist reaches 14 cm past it, and with the palm turned in
+    // toward the body (guard, tucked jumps) its palm side and thumb sank up to 5 cm into the chest.
+    for (let it = 0; it < 3; it++) {
+      let moved = false;
+      for (const [x, y, z, r] of FIST_PTS) {
+        _C.set(a.s * x, y, z); a.hand.localToWorld(_C); _F.copy(_C);
+        if (pushOutOfTorso(H, _C, r) || pushOutOfHead(H, _C, r)) { _T.add(_C.sub(_F)); moved = true; break; }
+      }
+      if (!moved) break;
+      a.el.getWorldPosition(_C); a.sh.getWorldPosition(_A);
+      solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A));
+      orientHand(a, _qb);
+    }
   }
-  H.root.getWorldQuaternion(_qb);
   for (const [side, tg, lift, dz, p] of [['L', s.lf, Math.max(0, cw), sw, 0], ['R', s.rf, Math.max(0, -cw), -sw, 0.5]]) {
     const l = H.legs[side];
     if (s.gph != null) {
