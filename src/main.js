@@ -8,6 +8,7 @@ import { buildWorld, groundAt } from './world.js';
 import { BAT, SUP, HEAT, SLOWMO, KEY, sampleTrack, sampleCam, face } from './timeline.js';
 import { mulberry32 } from './rng.js';
 import { loadFanModel } from './modelrig.js';
+import { Game } from './game.js';
 
 const qs = new URLSearchParams(location.search);
 const SEED = +(qs.get('seed') || 1337);
@@ -130,7 +131,7 @@ for (const k of (qs.get('off') || '').split(',')) { // debug: ?off=rain,spot,fog
 const bat = makeHero('batman'), sup = makeHero('superman');
 scene.add(bat.root, sup.root);
 // Clean procedural heroes by default; imported models remain available through explicit URLs.
-document.getElementById('hud').textContent = 'Procedural Batman & Superman · P pixel-art / comic · - + pixel size · C free camera · SPACE pause · R restart';
+document.getElementById('hud').textContent = 'Procedural Batman & Superman · B / S play as Batman / Superman · P pixel-art / comic · - + pixel size · C free camera · SPACE pause · R restart';
 window.__fan = {};
 const DEFAULT_CAPE = { bat: 'Cube_2', sup: null }; // Batman's cape shares a shell with the cowl, so name it
 const DEFAULT_YAW = { bat: 0, sup: -Math.PI / 2 }; // verified facing for the bundled models (auto-detect is fooled by capes)
@@ -325,24 +326,35 @@ function reset() {
   batCape.reset(); supCape.reset();
 }
 
+// Playable mode (B / S on the title loop): the game drives the heroes; fx, capes and world keep running here.
+const game = new Game({
+  bat, sup, batCape, supCape, rng: () => rng(), restart: (c) => startGame(c),
+  fx: { sparkBurst, dustBurst, rubble, impact, waves, decals, flash: (v) => (postFlash = Math.max(postFlash, v)) },
+});
+
 let stepCount = 0;
 function step() {
-  const scale = simT < SLOWMO - 0.3 ? 1 : simT < SLOWMO ? 1 - 0.88 * (simT - (SLOWMO - 0.3)) / 0.3 : 0.12;
-  const sdt = DT * scale;
-  simT += sdt; realT += DT; stepCount++;
-  poseHeroes(simT);
-  EVENTS.forEach((ev, i) => { if (!fired.has(i) && simT >= ev.t) { fired.add(i); ev.fn(); } });
-  for (const em of EMITTERS) if (simT >= em.t0 && simT < em.t1) em.fn(stepCount);
+  let sdt, t;
+  if (game.active) {
+    sdt = game.step(DT); t = game.t; realT += DT; stepCount++;
+  } else {
+    const scale = simT < SLOWMO - 0.3 ? 1 : simT < SLOWMO ? 1 - 0.88 * (simT - (SLOWMO - 0.3)) / 0.3 : 0.12;
+    sdt = DT * scale;
+    simT += sdt; realT += DT; stepCount++; t = simT;
+    poseHeroes(simT);
+    EVENTS.forEach((ev, i) => { if (!fired.has(i) && simT >= ev.t) { fired.add(i); ev.fn(); } });
+    for (const em of EMITTERS) if (simT >= em.t0 && simT < em.t1) em.fn(stepCount);
+  }
   debris.step(sdt, groundAt); water.step(sdt, groundAt); sparks.step(sdt, groundAt); dust.step(sdt, groundAt); waves.step(sdt);
-  const wind = [1.6 + Math.sin(simT * 0.9) * 1.2, 0.3, 1.2 + Math.cos(simT * 0.6)];
-  for (let s = 0; s < 2; s++) { batCape.step(sdt / 2, simT, wind, groundAt); supCape.step(sdt / 2, simT, wind, groundAt); }
-  shake *= Math.exp(-DT * 6); postFlash *= Math.exp(-DT * (simT > SLOWMO ? 1.2 : 7)); flashI *= Math.exp(-DT * 6); lightning *= Math.exp(-DT * 5);
+  const wind = [1.6 + Math.sin(t * 0.9) * 1.2, 0.3, 1.2 + Math.cos(t * 0.6)];
+  for (let s = 0; s < 2; s++) { batCape.step(sdt / 2, t, wind, groundAt); supCape.step(sdt / 2, t, wind, groundAt); }
+  shake *= Math.exp(-DT * 6); postFlash *= Math.exp(-DT * (!game.active && simT > SLOWMO ? 1.2 : 7)); flashI *= Math.exp(-DT * 6); lightning *= Math.exp(-DT * 5);
   blasts.forEach((b) => { if (!b.visible) return; const u = (b.userData.age += sdt) / BLAST_LIFE;
     if (u >= 1) { b.visible = false; return; }
     b.scale.setScalar(0.25 + 1.6 * Math.sqrt(u)); b.material.opacity = 1 - u * u; b.material.rotation = u * 0.8; });
   chestPos(bat, _v); chestPos(sup, _w);
-  world.update(simT, sdt, _v.lerp(_w, 0.5).setY(0.5));
-  if (realT >= LOOP_END) reset();
+  world.update(t, sdt, _v.lerp(_w, 0.5).setY(0.5));
+  if (!game.active && realT >= LOOP_END) reset();
 }
 
 // ---------- camera ----------
@@ -356,7 +368,8 @@ function updateCamera() {
   if (freeCam) { controls.update(); return; }
   if (qs.get('cam')) { const c = qs.get('cam').split(',').map(Number); camera.position.set(c[0], c[1], c[2]); camera.lookAt(c[3], c[4], c[5]); return; }
   let pos, look;
-  if (simT < SLOWMO) ({ pos, look } = sampleCam(simT, resolveLook));
+  if (game.active) { pos = game.camPos.toArray(); look = game.camLook.toArray(); }
+  else if (simT < SLOWMO) ({ pos, look } = sampleCam(simT, resolveLook));
   else {
     const a = (realT - SLOWMO) * 0.32;
     pos = [Math.sin(a) * 3.2, 1.3 + a * 0.35, Math.cos(a) * 3.2 + a * 0.4];
@@ -378,13 +391,13 @@ function updateVisuals() {
   world.sky.material.uniforms.flash.value = lightning;
   post.uniforms.flash.value = Math.min(1, postFlash * 0.8 + lightning * 0.15);
 
-  const heat = inHeat(simT);
+  const heat = game.active ? !!game.heat : inHeat(simT), ht = game.active ? game.t : simT;
   for (const e of sup.eyes) { e.material.emissive.setHex(heat ? 0xff2000 : 0); e.material.emissiveIntensity = heat ? 6 : 0; }
-  heatLight.intensity = heat ? 14 + Math.sin(simT * 60) * 4 : 0;
+  heatLight.intensity = heat ? 14 + Math.sin(ht * 60) * 4 : 0;
   if (heat) {
-    const tg = heatTarget(simT);
+    const tg = game.active ? game.heat : heatTarget(simT);
     const target = new THREE.Vector3(tg[0], tg[1], tg[2]);
-    heatLight.position.set(tg[0], 0.3, tg[2]);
+    heatLight.position.set(tg[0], game.active ? tg[1] : 0.3, tg[2]);
     sup.eyes.forEach((e, i) => {
       e.getWorldPosition(_v);
       const d = _w.subVectors(target, _v);
@@ -395,8 +408,8 @@ function updateVisuals() {
     });
   } else beams.forEach((b) => (b.visible = false));
 
-  title.style.opacity = Math.min(1, Math.max(0, (realT - 19.0) / 0.8)) * Math.min(1, Math.max(0, (LOOP_END - realT) / 0.4));
-  const subText = realT < 3 ? 'GOTHAM · 2:14 AM' : '';
+  title.style.opacity = game.active ? 0 : Math.min(1, Math.max(0, (realT - 19.0) / 0.8)) * Math.min(1, Math.max(0, (LOOP_END - realT) / 0.4));
+  const subText = !game.active && realT < 3 ? 'GOTHAM · 2:14 AM' : '';
   sub.textContent = subText;
   sub.style.opacity = subText ? Math.min(1, realT / 0.6, (3 - realT) / 0.5) : 0;
 }
@@ -411,8 +424,23 @@ function render() {
 }
 
 // ---------- input ----------
+const playUI = document.getElementById('play');
+if (qs.has('freeze') || qs.has('t') || qs.has('cam')) playUI.style.display = 'none'; // clean frames for stills
+function startGame(choice) { reset(); game.start(choice); playUI.style.display = 'none'; paused = false; }
+function quitGame() { game.stop(); reset(); playUI.style.display = 'flex'; }
+playUI.addEventListener('click', (e) => { const h = e.target.dataset && e.target.dataset.hero; if (h) { e.target.blur(); startGame(h); } });
+addEventListener('keyup', (e) => game.keyup(e));
 addEventListener('keydown', (e) => {
-  if (e.code === 'Space') paused = !paused;
+  if (game.active) {
+    if (e.key === 'Escape') { quitGame(); return; }
+    if (e.code === 'Space' || e.key.startsWith('Arrow')) e.preventDefault();
+    game.keydown(e);
+    if (e.key === 'p' || e.key === 'P') { if (pixelMode) { pixelMode = false; comicMode = true; } else if (comicMode) comicMode = false; else pixelMode = true; resize(); }
+    return;
+  }
+  if (e.key === 'b' || e.key === 'B' || e.key === '1') startGame('bat');
+  else if (e.key === 's' || e.key === 'S' || e.key === '2') startGame('sup');
+  else if (e.code === 'Space') paused = !paused;
   else if (e.key === 'p' || e.key === 'P') { if (pixelMode) { pixelMode = false; comicMode = true; } else if (comicMode) comicMode = false; else pixelMode = true; resize(); }
   else if (e.key === '-' || e.key === '_') { if (comicMode) CPIX = Math.max(1, CPIX - 1); else PIX = Math.max(1, PIX - 1); resize(); }
   else if (e.key === '=' || e.key === '+') { if (comicMode) CPIX = Math.min(8, CPIX + 1); else PIX = Math.min(8, PIX + 1); resize(); }
@@ -425,6 +453,8 @@ reset();
 const seekT = +(qs.get('t') || 0);
 while (simT < seekT) step();
 if (qs.get('freeze')) paused = true;
+if (qs.get('play') === 'bat' || qs.get('play') === 'sup') startGame(qs.get('play')); // ?play=bat|sup skips the title loop
+window.__game = game;
 let last = performance.now();
 function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;

@@ -36,6 +36,19 @@
          letter-spacing: .35em; opacity: 0; pointer-events: none; text-shadow: 0 0 6px #000; }
   #hud { position: fixed; left: 10px; bottom: 8px; color: #8890a0; font: 11px monospace; pointer-events: none; }
   #err { position: fixed; top: 0; left: 0; color: #f55; font: 12px monospace; white-space: pre; }
+  #play { position: fixed; top: 4vh; left: 0; right: 0; display: flex; justify-content: center; gap: 2vw; }
+  #play button { font: bold 1.3vw monospace; letter-spacing: .25em; padding: .8em 1.4em; color: #f4f1ea; background: rgba(10,12,18,.72);
+                 border: 2px solid #f4f1ea; cursor: pointer; text-shadow: 0 0 6px #000; animation: pulse 1.6s ease-in-out infinite; }
+  #play button:hover { background: #c21a1a; }
+  @keyframes pulse { 50% { border-color: #c21a1a; } }
+  #game { position: fixed; inset: 0; pointer-events: none; display: none; color: #f4f1ea; font: bold 1.1vw monospace; letter-spacing: .2em; text-shadow: 0 0 6px #000; }
+  .hp { position: absolute; top: 3vh; width: 38vw; }
+  .hp b { display: block; height: 1.6vh; margin-top: .5vh; border: 2px solid #f4f1ea; background: rgba(0,0,0,.5); }
+  .hp i { display: block; height: 100%; width: 100%; transition: width .15s; }
+  #hpBatWrap { left: 4vw; } #hpBat i { background: linear-gradient(#ffd23a, #d79a10); }
+  #hpSupWrap { right: 4vw; text-align: right; } #hpSup i { background: linear-gradient(#3a7bff, #c21a1a); margin-left: auto; }
+  #banner { position: fixed; left: 0; right: 0; top: 34vh; text-align: center; font-size: 6vw; font-weight: 900; letter-spacing: .12em; opacity: 0; transition: opacity .25s; }
+  #banner small { display: block; font: 1.2vw monospace; letter-spacing: .25em; margin-top: 1em; color: #ccd; }
 </style>
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
@@ -45,6 +58,12 @@
 <div id="title"><h1>BATMAN<span>v</span>SUPERMAN</h1><p>EVERY PIXEL FROM CODE · THREE.JS</p></div>
 <div id="sub"></div>
 <div id="hud">Models: "Batman" by Salstar123, "Superman" by shreyhaldkar0 (Sketchfab, CC-BY-4.0) · P pixel-art · [ ] pixel size · C free camera · SPACE pause · R restart</div>
+<div id="play"><button data-hero="bat">B · PLAY AS BATMAN</button><button data-hero="sup">S · PLAY AS SUPERMAN</button></div>
+<div id="game">
+  <div class="hp" id="hpBatWrap"><span id="tagBat">BATMAN</span><b id="hpBat"><i></i></b></div>
+  <div class="hp" id="hpSupWrap"><span id="tagSup">SUPERMAN</span><b id="hpSup"><i></i></b></div>
+  <div id="banner"></div>
+</div>
 <div id="err"></div>
 <script>window.addEventListener('error', e => { document.getElementById('err').textContent += e.message + '\n'; });</script>
 <script type="module" src="./src/main.js"></script>
