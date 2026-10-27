@@ -2,7 +2,7 @@
 // No sample files. Effects are fed by the fx calls (impact, sparks, blast, shockwave, rubble, dust,
 // flash) — collected per sim step and voiced once, so a hit that spawns sparks + blast + ring is one
 // layered sound, not five. The score is a step sequencer in D minor (drone, low string ostinato,
-// taiko, braams, heartbeat, high tremolo cluster, risers) whose layers fade in with `intensity`.
+// taiko, braams, heartbeat, risers) whose layers fade in with `intensity`.
 //
 // Browsers only start audio after a gesture: start() runs on the first key / click. M mutes.
 
@@ -79,20 +79,21 @@ export class Sound {
   punch(p, t = this.ctx.currentTime) {
     const o = this.out(this.sfx, 0.15 + p * 0.3), v = Math.min(1, 0.35 + p * 1.6);
     this.osc('sine', this.rnd(150, 190), 42, t, 0.14 + p * 0.35, v, o);
-    this.osc('triangle', this.rnd(300, 380), 90, t, 0.06, v * 0.4, o);
+    this.hiss(t, 0.05, v * 0.5, o, 'lowpass', 900, 200, 0.7);
     this.hiss(t, 0.03, v * 0.7, o, 'highpass', 2500);
     this.hiss(t, 0.08 + p * 0.25, v * 0.6, o, 'bandpass', this.rnd(700, 1100), 250, 1.2);
   }
-  // Batman's gauntlets / armour on steel: inharmonic partials ringing out.
+  // Batman's gauntlets / armour on steel: a dull, heavy metal knock — no ringing tone.
   clang(amt, t = this.ctx.currentTime) {
-    const o = this.out(this.sfx, 0.45), v = Math.min(0.35, 0.08 + amt * 0.3), base = this.rnd(520, 760);
-    for (const r of [1, 2.76, 5.4, 8.93]) this.osc('sine', base * r, base * r * 0.995, t, 0.25 + 0.4 / r, v / Math.sqrt(r), o);
-    this.hiss(t, 0.05, v, o, 'highpass', 5000);
+    const o = this.out(this.sfx, 0.25), v = Math.min(0.5, 0.15 + amt * 0.35);
+    this.hiss(t, 0.06, v, o, 'bandpass', this.rnd(1200, 1800), 500, 0.8);
+    this.hiss(t, 0.12, v * 0.8, o, 'lowpass', 700, 150, 0.7);
+    this.osc('sine', 120, 50, t, 0.15, v * 0.7, o);
   }
-  // Spark crackle: short bright grains.
+  // Spark crackle: dry broadband snaps (no resonant pitch).
   crackle(amt, t = this.ctx.currentTime) {
-    const o = this.out(this.sfx, 0.2), n = Math.min(10, 2 + Math.floor(amt * 8));
-    for (let i = 0; i < n; i++) this.hiss(t + Math.random() * 0.25, 0.015, this.rnd(0.05, 0.15), o, 'bandpass', this.rnd(3000, 7000), undefined, 4);
+    const o = this.out(this.sfx, 0.1), n = Math.min(10, 2 + Math.floor(amt * 8));
+    for (let i = 0; i < n; i++) this.hiss(t + Math.random() * 0.25, 0.008, this.rnd(0.04, 0.1), o, 'highpass', this.rnd(1500, 3000), undefined, 0.5);
   }
   // Explosion / energy blast: noise falling through a lowpass plus a sub drop.
   boom(size, t = this.ctx.currentTime) {
@@ -146,11 +147,11 @@ export class Sound {
     }
     this.taiko(1, t, this.out(this.sfx, 0.6));
   }
-  // Gong for a new round.
+  // New round: a deep drum hit and rolling rumble (no ringing metal).
   gong(t = this.ctx.currentTime) {
-    const o = this.out(this.sfx, 0.7);
-    for (const [r, v] of [[1, 0.3], [1.48, 0.18], [2.03, 0.15], [2.74, 0.1], [3.9, 0.06]]) this.osc('sine', 110 * r, 108 * r, t, 3.5 / Math.sqrt(r), v, o, 0.01);
-    this.hiss(t, 0.4, 0.15, o, 'bandpass', 900, 400, 0.8);
+    const o = this.out(this.sfx, 0.5);
+    this.taiko(1, t, o);
+    this.hiss(t, 1.6, 0.35, o, 'lowpass', 400, 60, 0.6, 0.02);
   }
   // Victory: a rising D major brass chord.
   fanfare(t = this.ctx.currentTime) {
@@ -168,26 +169,41 @@ export class Sound {
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + dur); g.gain.linearRampToValueAtTime(0, t + dur + 0.03);
     s.connect(f).connect(g).connect(o); s.start(t); s.stop(t + dur + 0.1);
   }
-  // Superman's heat vision: a sustained searing hum with a sizzle on top.
+  // Superman's heat vision: an energy beam. Ignition = a bright zap (falling chirp + crack + sub thump);
+  // sustain = a steady electric buzz (saw stack through a fixed lowpass, a thin high whine) over a blowtorch
+  // burn and dry sizzle; release = the buzz powers down in pitch as it fades. No LFO, no filter sweeps: no "wah".
   heat(on) {
     if (!this.ctx || on === this.heatOn) return;
     this.heatOn = on;
-    const t = this.ctx.currentTime;
+    const { ctx } = this, t = ctx.currentTime;
     if (on) {
-      const o = this.out(this.sfx, 0.3), g = this.ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.32, t + 0.12); g.connect(o);
-      const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 1.4; f.connect(g);
-      const trem = this.ctx.createGain(); trem.gain.value = 0.7; trem.connect(f);
-      const lfo = this.ctx.createOscillator(), lg = this.ctx.createGain(); lfo.frequency.value = 31; lg.gain.value = 0.3; lfo.connect(lg).connect(trem.gain);
-      const src = [lfo];
-      for (const [hz, type] of [[110, 'sawtooth'], [113.5, 'sawtooth'], [220.7, 'square']]) { const x = this.ctx.createOscillator(); x.type = type; x.frequency.value = hz; x.connect(trem); src.push(x); }
-      const n = this.ctx.createBufferSource(), hp = this.ctx.createBiquadFilter(), ng = this.ctx.createGain();
-      n.buffer = this.noise; n.loop = true; hp.type = 'highpass'; hp.frequency.value = 4000; ng.gain.value = 0.5; n.connect(hp).connect(ng).connect(g); src.push(n);
-      src.forEach((s) => s.start(t));
-      this.heatNodes = { g, src };
+      const o = this.out(this.sfx, 0.25), g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.4, t + 0.05); g.connect(o);
+      // ignition zap
+      this.osc('square', 2600, 260, t, 0.14, 0.18, o, 0.002);
+      this.osc('sine', 1800, 120, t, 0.2, 0.25, o, 0.002);
+      this.hiss(t, 0.06, 0.4, o, 'highpass', 2500, 2500, 0.6);
+      this.osc('sine', 110, 40, t, 0.25, 0.5, o, 0.003);
+      const src = [], hum = [];
+      // electric buzz: octave-stacked saws, tiny detune, fixed tone
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400; lp.Q.value = 0.7;
+      const bg = ctx.createGain(); bg.gain.value = 0.09; lp.connect(bg).connect(g);
+      for (const [hz, det, type] of [[82, -3, 'sawtooth'], [82, 3, 'sawtooth'], [164, 0, 'sawtooth'], [41, 0, 'square']]) {
+        const x = ctx.createOscillator(); x.type = type; x.frequency.value = hz; x.detune.value = det; x.connect(lp); x.start(t); src.push(x); hum.push(x);
+      }
+      // thin high whine
+      const w = ctx.createOscillator(), wg = ctx.createGain(); w.type = 'sine'; w.frequency.value = 3300; wg.gain.value = 0.015; w.connect(wg).connect(g); w.start(t); src.push(w); hum.push(w);
+      // burn + sizzle
+      for (const [type, hz, q, v, rate] of [['lowpass', 220, 0.5, 0.6, 0.7], ['bandpass', 900, 0.7, 0.3, 1], ['highpass', 4500, 0.5, 0.1, 1.3]]) {
+        const n = ctx.createBufferSource(), f = ctx.createBiquadFilter(), ng = ctx.createGain();
+        n.buffer = this.noise; n.loop = true; n.playbackRate.value = rate; f.type = type; f.frequency.value = hz; f.Q.value = q; ng.gain.value = v;
+        n.connect(f).connect(ng).connect(g); n.start(t, Math.random() * 1.5); src.push(n);
+      }
+      this.heatNodes = { g, src, hum };
     } else if (this.heatNodes) {
-      const { g, src } = this.heatNodes; this.heatNodes = null;
-      g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
-      src.forEach((s) => s.stop(t + 0.3));
+      const { g, src, hum } = this.heatNodes; this.heatNodes = null;
+      g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      hum.forEach((x) => { x.frequency.setValueAtTime(x.frequency.value, t); x.frequency.exponentialRampToValueAtTime(x.frequency.value * 0.35, t + 0.35); });
+      src.forEach((s) => s.stop(t + 0.4));
     }
   }
 
@@ -217,11 +233,6 @@ export class Sound {
     this.drone = [[26, -7], [26, 7], [33, 0], [14, 0]].map(([m, det]) => {
       const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = mtof(m); o.detune.value = det; o.connect(f); o.start(); return o;
     });
-    // high tremolo cluster (D6 / Eb6 / A5): the suspense shimmer, strongest when things are quiet
-    this.shimG = ctx.createGain(); this.shimG.gain.value = 0.0001; this.shimG.connect(this.out(this.music, 0.8));
-    const trem = ctx.createGain(); trem.connect(this.shimG);
-    const tl = ctx.createOscillator(), tg = ctx.createGain(); tl.frequency.value = 7; tg.gain.value = 0.5; tl.connect(tg).connect(trem.gain); tl.start();
-    for (const m of [81, 86, 87]) { const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = mtof(m); o.detune.value = this.rnd(-8, 8); o.connect(trem); o.start(); }
   }
   setIntensity(x) { this.target = Math.max(0, Math.min(1, x)); }
   setSlow(s) {
@@ -238,7 +249,6 @@ export class Sound {
     const I = this.intensity, now = ctx.currentTime;
     this.droneG.gain.setTargetAtTime(0.06 + I * 0.1, now, 0.5);
     this.droneF.frequency.setTargetAtTime(140 + I * 500, now, 0.5);
-    this.shimG.gain.setTargetAtTime(0.012 * (1 - I * 0.6), now, 0.8);
     while (this.next < now + LOOK) { this.tick(this.step16, this.next, I); this.step16++; this.next += STEP; }
   }
   tick(n, t, I) {

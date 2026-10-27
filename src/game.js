@@ -11,6 +11,7 @@ const ARR = ['lh', 'rh', 'lf', 'rf'];
 const ARENA = { x0: -6.5, x1: 6.5, z0: -2.2, z1: 3.0 };
 const BLOCK = { lean: 0.3, lh: [0.1, 0.66, 0.28], rh: [-0.1, 0.64, 0.26] };
 const ENTER_END = 3.4, GRAV = 14;
+const STICK_CROUCH = 0.6; // left stick pulled down past this = crouch (instead of walking toward the camera)
 const P = POSES, G = POSES.guard;
 // Strike poses (hip-relative like POSES; tw = body twist about the vertical axis).
 const MP = {
@@ -99,6 +100,8 @@ const MP = {
 };
 
 const REACT = { head: MP.hitHead, body: MP.hitBody, low: MP.hitLow };
+// Difficulty: damage x for clean hits the CPU lands on you / you land on the CPU; `think` = CPU decision interval [min, +rand] s.
+const EASY = { cpuDmg: 0.8, meDmg: 1.1, think: [0.28, 0.35] };
 // keys: [time, pose]; hit: active frame; cancel: earliest chain into `next` (J punch / K kick); reach: horizontal range;
 // kb: knockback m/s; up: launch m/s (<0 spikes airborne targets down); at: striking limb; blast: hit-explosion size.
 // Height (SF/MK mix-ups): hi = whiffs over a crouching foe; low = must be blocked crouching; air/over = overhead,
@@ -309,7 +312,7 @@ export class Game {
     this.camPos = new THREE.Vector3(0, 3, 11); this.camLook = new THREE.Vector3(0, 2, 0); this.camN = new THREE.Vector2(0, 1);
     this.camOff = new THREE.Vector3(); this.camRoll = 0; // transient hit punch-in / dutch tilt on top of camPos
     this.ui = {
-      hud: document.getElementById('game'), banner: document.getElementById('banner'), combo: document.getElementById('combo'),
+      hud: document.getElementById('game'), help: document.getElementById('help'), banner: document.getElementById('banner'), combo: document.getElementById('combo'),
       bars: { bat: document.querySelector('#hpBat i'), sup: document.querySelector('#hpSup i') },
       tags: { bat: document.getElementById('tagBat'), sup: document.getElementById('tagSup') },
       meters: { bat: document.getElementById('mtBat'), sup: document.getElementById('mtSup') }, timer: document.getElementById('timer'),
@@ -339,7 +342,7 @@ export class Game {
     this.updateBars();
   }
 
-  stop() { this.active = false; if (this.F) for (const f of Object.values(this.F)) setFace(f.H, { eye: 1, ang: 0, pain: 0, mouth: 0 }); this.heat = null; this.shots = []; this.grap = null; this.orb = null; this.ui.hud.style.display = 'none'; this.say(''); }
+  stop() { this.active = false; if (this.F) for (const f of Object.values(this.F)) setFace(f.H, { eye: 1, ang: 0, pain: 0, mouth: 0 }); this.heat = null; this.shots = []; this.grap = null; this.orb = null; this.ui.hud.style.display = 'none'; this.help(false); this.say(''); }
 
   say(text, sub = '') { this.ui.banner.innerHTML = text ? `${text}${sub ? `<small>${sub}</small>` : ''}` : ''; this.ui.banner.style.opacity = text ? 1 : 0; }
 
@@ -385,12 +388,13 @@ export class Game {
     if (this.padHit(1) || this.padHit(15)) return 'sup';
     return null;
   }
-  // In game (standard mapping): X punch, Y kick, B special, A jump, LB/RB/LT/RT block, Start rematch, Back menu.
+  // In game (standard mapping): X punch, Y kick, B special, A jump, LB/RB/LT/RT block, Start pause, Back menu.
   gamePad() {
     this.readPad();
     if (!this.pad) return true;
     if (this.padHit(8)) { this.ctx.quit(); return false; }
     if (this.matchOver && this.overT > 1.5 && (this.padHit(9) || this.padHit(0))) { this.ctx.restart(this.choice); return true; }
+    if (this.padHit(9) && !this.matchOver) { this.ctx.pause(); return false; }
     if (this.padHit(2)) this.press(this.me, 'J', this.blockHeld());
     if (this.padHit(3)) this.press(this.me, 'K', this.blockHeld());
     if (this.padHit(1)) this.press(this.me, 'S', this.blockHeld());
@@ -401,9 +405,17 @@ export class Game {
     if (this.padNow[4] && this.padNow[5] && (this.padHit(4) || this.padHit(5))) this.impact(this.me); // both bumpers = drive impact
     return true;
   }
+  // While paused (no steps run): Start resumes, Back quits. Returns true when Start was pressed.
+  pausePad() {
+    this.readPad();
+    if (this.padHit(8)) { this.ctx.quit(); return false; }
+    return this.padHit(9);
+  }
+  // Controls panel: shown during the entrance and whenever the game is paused.
+  help(show, paused = false) { this.ui.help.style.display = show ? 'grid' : 'none'; this.ui.help.classList.toggle('paused', paused); }
   blockHeld() { return this.keys.has('shift') || [4, 5, 6, 7].some((i) => this.padNow[i]); }
-  // Crouch: C, or right stick down / L3 (left stick + d-pad already walk in depth).
-  crouchHeld() { return this.keys.has('c') || !!this.padNow[10] || !!(this.pad && this.pad.rs > 0.5); }
+  // Crouch: C, left stick pulled down, right stick down or L3 (d-pad up / down still walks in depth).
+  crouchHeld() { return this.keys.has('c') || !!this.padNow[10] || !!(this.pad && (this.pad.rs > 0.5 || this.pad.axes[1] > STICK_CROUCH)); }
   canCrouch(f) {
     const M = f.act && MOVES[f.act.type];
     return !f.ko && f.y <= 0.001 && f.stun <= 0 && f.down <= 0 && !f.launched && !f.heldBy && (!f.act || !!(M && M.crouch));
@@ -1141,7 +1153,7 @@ export class Game {
     const juggle = def.stun > 0 || def.launched || def.y > 0.05;
     att.hits = juggle ? att.hits + 1 : 1;
     const KB = trade ? null : this.krushOf(def, att, M0, CK);
-    const dmg = M.dmg * rage * Math.max(0.45, 1 - 0.1 * (att.hits - 1)) * (KB ? KRUSH.dmg : 1);
+    const dmg = M.dmg * rage * Math.max(0.45, 1 - 0.1 * (att.hits - 1)) * (KB ? KRUSH.dmg : 1) * (att === this.cpu ? EASY.cpuDmg : EASY.meDmg);
     def.act = null; def.buf = null; def.frz = 0; def.stun = def.stunMax = M.stun; def.heavy = !!M.heavy;
     def.zone = M.low ? 'low' : M.hi || M.air || M.over || (M.up || 0) > 5 ? 'head' : 'body'; def.hitSide = M.at === 'lh' ? -1 : 1;
     def.kx = def.kx * 0.3 + nx * M.kb; def.kz = def.kz * 0.3 + nz * M.kb;
@@ -1376,8 +1388,8 @@ export class Game {
       fx.rubble(sup.x, 0, sup.z, 60, 6, 0.06, 0.26, 5); fx.dustBurst(sup.x, 0, sup.z, 110, 3.5); fx.sparkBurst(sup.x, 0.1, sup.z, 40, 5);
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
-    if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN',
-      'MOVE WASD / STICK · J / X PUNCH ×4 CHAIN · K / Y KICK · SHIFT / LB BLOCK · C / R-STICK DOWN CROUCH<br>CROUCH DUCKS HIGH PUNCHES · LOWS NEED A CROUCH BLOCK, JUMP-INS A STANDING BLOCK<br>BLOCK+PUNCH UPPERCUT · BLOCK+KICK SWEEP · SPACE / A JUMP (+PUNCH/KICK IN AIR) · L / B SPECIAL<br>PUNCH+KICK (OR U) CLOSE = THROW (SAME TO TECH) · DOUBLE-TAP TOWARD / AWAY = DASH / BACKDASH<br>DOUBLE-TAP UP / DOWN = SIDESTEP · STRAIGHT HITS + PROJECTILES MISS, HOOKS / ROUNDHOUSE / SWEEP TRACK IT<br>CROUCH, THEN TOWARD + PUNCH = PROJECTILE (BATARANG: DUCK IT · SONIC CLAP: JUMP IT)<br>TOWARD, THEN CROUCH+TOWARD + PUNCH (OR O) = INVINCIBLE RISING UPPERCUT · BEATS JUMP-INS, PUNISHABLE IF IT MISSES<br>TAP TOWARD JUST AS A HIT LANDS = PARRY (TAP CROUCH FOR LOWS) · NO DAMAGE, FREE PUNISH<br>HIT HIM WHILE HE WINDS UP = COUNTER · WHILE HE RECOVERS FROM A MISS = PUNISH COUNTER (MORE DAMAGE + STUN)<br>KRUSHING BLOWS (×1.5, X-RAY, ONCE EACH A MATCH): COUNTER UPPERCUT OR SWEEP · PUNISH ROUNDHOUSE · RISING UPPERCUT ON A JUMPER<br>H / LB+RB = DRIVE IMPACT (QUARTER METER): ARMOURED, ABSORBS 2 HITS · COUNTER = CRUMPLE · NEAR A WALL = WALL SPLAT (EVEN BLOCKED)<br>CAUGHT IN A COMBO: BLOCK + TOWARD (HALF A METER) = BREAKER · KNOCKED DOWN: HOLD AWAY = TECH ROLL, JUMP = QUICK RISE<br>GRAB GLOWING ORBS: RED RAGE ×1.5 DAMAGE · GOLD +50 METER · GREEN +15 HEALTH · E / R3 BY A STEEL DRUM = HURL IT (BLOCK / SIDESTEP / JUMP IT)<br>BATMAN G / R3 = GRAPNEL GUN: KRYPTONITE HOOK BURNS + REELS HIM IN · + DIRECTION = ZIP AWAY · BLOCK+G = SWING OVER HIM<br>TAP BLOCK JUST AFTER A PROJECTILE / RISING UPPERCUT / FLYING KICK = AMPLIFY (QUARTER METER): TRIPLE BATARANG · SONIC BOOM · 2-HIT INVINCIBLE UPPERCUT<br>A PUNCH / KICK THAT LANDS (HIT OR BLOCK) CANCELS STRAIGHT INTO A PROJECTILE, RISING UPPERCUT, SPECIAL OR SUPER<br>FULL METER: BLOCK+SPECIAL (OR I) = SUPER · UNDER 30% HEALTH: F / LT+RT = FATAL BLOW (ONCE A MATCH)<br>BEST OF 3 ROUNDS · FINISH HIM: CLOSE + SPECIAL = FATALITY');
+    this.help(t > 0.4 && t < ENTER_END); // controls panel (START / ENTER pauses on it)
+    if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }
   }
@@ -1387,7 +1399,8 @@ export class Game {
     if (f.dazed || f.dizzy > 0) { f.block = f.crouch = false; f.moving = 0; return; }
     let ix = (K.has('d') || K.has('arrowright') || b[15] ? 1 : 0) - (K.has('a') || K.has('arrowleft') || b[14] ? 1 : 0);
     let iy = (K.has('w') || K.has('arrowup') || b[12] ? 1 : 0) - (K.has('s') || K.has('arrowdown') || b[13] ? 1 : 0);
-    if (p && p.axes.length >= 2 && Math.hypot(p.axes[0], p.axes[1]) > 0.25) { ix += p.axes[0]; iy -= p.axes[1]; }
+    // left stick pulled down = crouch (crouchHeld), so it only steers left / right then (toward / away still reads for specials)
+    if (p && p.axes.length >= 2 && Math.hypot(p.axes[0], p.axes[1]) > 0.25) { ix += p.axes[0]; if (p.axes[1] <= STICK_CROUCH) iy -= p.axes[1]; }
     f.block = this.blockHeld() && this.free(f);
     f.crouch = this.crouchHeld() && this.canCrouch(f);
     const ch = this.crouchHeld();
@@ -1486,7 +1499,7 @@ export class Game {
       if (d < THROW.reach && r < 0.35) this.throwStart(f); else if (r < 0.6) this.dash(f, -1);
     }
     if (A.t <= 0) {
-      A.t = 0.2 + rng() * 0.3; A.mx = A.mz = 0;
+      A.t = EASY.think[0] + rng() * EASY.think[1]; A.mx = A.mz = 0;
       const threat = o.act && d < 2, pr = this.props.find((p) => p.st === 'rest' && Math.hypot(p.x - f.x, p.z - f.z) < 3);
       if (this.canBlow(f) && d < 2.2 && !o.launched && o.down <= 0 && rng() < 0.3) this.blow(f);
       else if (f.meter >= 100 && d < 3.2 && this.free(f) && !o.launched && rng() < 0.35) this.superMove(f);

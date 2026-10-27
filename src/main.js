@@ -12,14 +12,20 @@ import { Game } from './game.js';
 import { Sound } from './audio.js';
 
 const sound = new Sound();
-for (const ev of ['keydown', 'pointerdown']) addEventListener(ev, () => sound.start());
-// Browsers keep audio locked until a click / key (a gamepad press doesn't count), so say so on screen.
+for (const ev of ['keydown', 'pointerdown']) addEventListener(ev, () => sound.on && sound.start());
+// HUD speaker button (bottom right): always on screen, click it or press M to mute / unmute.
+// Browsers keep audio locked until a click / key, so while locked it reads SOUND OFF and the first click turns it on.
 const sndUI = document.getElementById('snd');
-sndUI.addEventListener('pointerdown', () => { if (!sound.on) sound.toggle(); });
+sndUI.addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+  if (sound.on && !(sound.ctx && sound.ctx.state === 'running') && !paused) sound.start(); // still locked: unlock
+  else { sound.toggle(); if (sound.on) { sound.start(); if (paused) sound.pause(true); } }
+});
+let sndShown = '';
 function soundPrompt() {
-  const live = sound.ctx && sound.ctx.state === 'running';
-  sndUI.style.display = live || (sound.ctx && sound.on && paused) ? 'none' : '';
-  if (!live) sndUI.textContent = sound.on ? '\u{1F507} CLICK / PRESS ANY KEY FOR SOUND' : '\u{1F507} MUTED \u00B7 M / CLICK FOR SOUND';
+  const live = sound.on && !!sound.ctx && (paused || sound.ctx.state === 'running');
+  const txt = live ? '\u{1F50A} SOUND ON' : '\u{1F507} SOUND OFF';
+  if (txt !== sndShown) { sndShown = txt; sndUI.textContent = txt; sndUI.classList.toggle('off', !live); }
 }
 
 const qs = new URLSearchParams(location.search);
@@ -424,7 +430,7 @@ function reset() {
 
 // Playable mode (B / S on the title loop): the game drives the heroes; fx, capes and world keep running here.
 const game = new Game({
-  bat, sup, batCape, supCape, rng: () => rng(), restart: (c) => startGame(c), quit: () => quitGame(),
+  bat, sup, batCape, supCape, rng: () => rng(), restart: (c) => startGame(c), quit: () => quitGame(), pause: () => togglePause(),
   fx: { sparkBurst, dustBurst, rubble, impact, waves, decals, blast, flash: (v) => { sound.note('flash', v); postFlash = Math.max(postFlash, v); } },
 });
 
@@ -469,7 +475,7 @@ function step() {
     sdt = game.step(DT); t = game.t; realT += DT; stepCount++;
   } else {
     const pick = playUI.style.display !== 'none' && game.menuPad(); // gamepad on the title loop: X Batman, B Superman
-    if (pick) { sound.start(); startGame(pick); return; }
+    if (pick) { if (sound.on) sound.start(); startGame(pick); return; }
     const scale = simT < SLOWMO - 0.3 ? 1 : simT < SLOWMO ? 1 - 0.88 * (simT - (SLOWMO - 0.3)) / 0.3 : 0.12;
     sdt = DT * scale;
     simT += sdt; realT += DT; stepCount++; t = simT;
@@ -618,13 +624,17 @@ function render() {
 const playUI = document.getElementById('play');
 if (qs.has('freeze') || qs.has('t') || qs.has('cam')) playUI.style.display = 'none'; // clean frames for stills
 function startGame(choice) { reset(); game.start(choice); playUI.style.display = 'none'; paused = false; }
-function quitGame() { game.stop(); reset(); playUI.style.display = 'flex'; }
+function quitGame() { game.stop(); reset(); playUI.style.display = 'flex'; if (paused) { paused = false; sound.pause(false); } }
+// In a match: ENTER / Start pauses (and resumes); the controls panel stays up while paused.
+function togglePause() { paused = !paused; sound.pause(paused); game.help(paused || game.state === 'enter', paused); }
 playUI.addEventListener('click', (e) => { const h = e.target.dataset && e.target.dataset.hero; if (h) { e.target.blur(); startGame(h); } });
 addEventListener('keyup', (e) => game.keyup(e));
 addEventListener('keydown', (e) => {
-  if (e.key === 'm' || e.key === 'M') { sound.toggle(); return; }
+  if (e.key === 'm' || e.key === 'M') { if (sound.toggle()) { sound.start(); if (paused) sound.pause(true); } return; }
   if (game.active) {
     if (e.key === 'Escape') { quitGame(); return; }
+    if (e.key === 'Enter' && !game.matchOver) { togglePause(); return; }
+    if (paused) return;
     if (e.code === 'Space' || e.key.startsWith('Arrow')) e.preventDefault();
     game.keydown(e);
     if (e.key === 'p' || e.key === 'P') { if (pixelMode) { pixelMode = false; comicMode = true; } else if (comicMode) comicMode = false; else pixelMode = true; resize(); }
@@ -652,6 +662,7 @@ window.__game = game; window.__sound = sound;
 let last = performance.now();
 function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (paused && game.active && game.pausePad()) togglePause(); // Start resumes a paused match
   if (!paused) { acc += dt; while (acc >= DT) { step(); acc -= DT; } }
   render();
   requestAnimationFrame(loop);

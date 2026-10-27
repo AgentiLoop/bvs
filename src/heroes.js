@@ -684,6 +684,26 @@ export function applyPose(H, s, t, ground = 0) {
   }
   if (deficit > 0.002) posePass(H, s, t, ground, deficit);
 }
+// Knee pole into _P (world), from the root-local hip->foot direction in the sagittal plane: (vy, vz) -> (vz, -vy)
+// maps straight down to straight forward, a horizontal forward leg to straight up, a high kick to up-and-back.
+function kneePole(H, l, tg) {
+  l.th.getWorldPosition(_P); H.root.worldToLocal(_P);
+  let vy = tg[1] - _P.y, vz = tg[2] - _P.z;
+  const n = Math.hypot(vy, vz) || 1; vy /= n; vz /= n;
+  _P.set(l.s * Math.max(0.15, Math.abs(tg[0]) * 1.5), _P.y + vz, _P.z - vy); H.root.localToWorld(_P);
+}
+// Foot keeps the body's orientation (flat on the roof when planted), but never bends past the ankle's
+// plantarflex limit relative to the shin: with the leg kicked up, the root-aligned foot folded back
+// against the calf and the boot looked upside down. Now the sole turns toward the target instead.
+const MAX_PF = 0.9, _toe = new THREE.Vector3(), _qf = new THREE.Quaternion(), _XA = new THREE.Vector3(1, 0, 0);
+function orientFoot(l, qRoot) {
+  l.kn.getWorldQuaternion(_qa).invert();
+  l.an.quaternion.copy(_qa).multiply(qRoot);
+  _toe.set(0, 0, 1).applyQuaternion(l.an.quaternion); // toes in the shin's frame
+  const pf = Math.atan2(-_toe.y, _toe.z);
+  if (pf > MAX_PF) l.an.quaternion.premultiply(_qf.setFromAxisAngle(_XA, MAX_PF - pf));
+  l.an.updateMatrixWorld(true);
+}
 function posePass(H, s, t, ground, raise) {
   H.root.position.set(s.p[0], s.p[1] + raise, s.p[2]);
   H.root.rotation.set(s.pitch, s.yaw, s.roll, 'YXZ');
@@ -753,11 +773,11 @@ function posePass(H, s, t, ground, raise) {
     // targets far below (falling off the roof) are left alone.
     if (_T.y < ground + SOLE && _T.y > ground - 0.6) _T.y = ground + SOLE;
     // Knee pole tracks the foot's spread so knees track over the toes and never knock together.
-    _P.set(l.s * Math.max(0.15, Math.abs(tg[0]) * 1.5), -0.45, 1.0); H.root.localToWorld(_P);
+    // It also rotates with the hip->foot direction (forward when the foot hangs below the hip, up and back
+    // when it is kicked up past hip height): a fixed low-forward pole bent high kicks backwards at the knee.
+    kneePole(H, l, tg);
     solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
-    l.kn.getWorldQuaternion(_qa).invert();
-    l.an.quaternion.copy(_qa).multiply(_qb);
-    l.an.updateMatrixWorld(true);
+    orientFoot(l, _qb);
     // When the body is pitched (rolls, tumbles) the boot's toe/heel can still dip through the roof even
     // with the ankle above it: lift the ankle by the deficit of the lowest boot corner and re-solve.
     if (_T.y > ground - 0.6) {
@@ -765,11 +785,9 @@ function posePass(H, s, t, ground, raise) {
       for (const c of BOOT_CORNERS) { _P.copy(c); l.an.localToWorld(_P); low = Math.min(low, _P.y); }
       if (low < ground) {
         _T.y += ground - low;
-        _P.set(l.s * Math.max(0.15, Math.abs(tg[0]) * 1.5), -0.45, 1.0); H.root.localToWorld(_P);
+        kneePole(H, l, tg);
         solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
-        l.kn.getWorldQuaternion(_qa).invert();
-        l.an.quaternion.copy(_qa).multiply(_qb);
-        l.an.updateMatrixWorld(true);
+        orientFoot(l, _qb);
       }
     }
   }

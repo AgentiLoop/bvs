@@ -32,11 +32,17 @@
   #title h1 { margin: 0; font-size: 7vw; font-weight: 900; }
   #title h1 span { color: #c21a1a; font-size: .6em; vertical-align: middle; padding: 0 .3em; }
   #title p { margin: .6em 0 0; font: 1.4vw/1.2 monospace; letter-spacing: .3em; color: #aab; }
+  #title .credit { margin: .9em 0 0; padding: .55em 1.6em .5em; font: 1.15vw/1.4 Georgia, serif; letter-spacing: .22em; color: #e8e4da;
+                   border-top: 1px solid rgba(194,26,26,.85); border-bottom: 1px solid rgba(194,26,26,.85); text-transform: uppercase; }
+  #title .credit b { font-weight: 700; color: #fff; }
+  #title .legal { margin: .7em 0 0; font: .8vw/1.3 monospace; letter-spacing: .18em; color: #8890a0; }
   #sub { position: fixed; left: 0; right: 0; bottom: 9vh; text-align: center; color: #dde; font: 1.6vw monospace;
          letter-spacing: .35em; opacity: 0; pointer-events: none; text-shadow: 0 0 6px #000; }
   #hud { position: fixed; left: 10px; bottom: 8px; color: #8890a0; font: 11px monospace; pointer-events: none; }
-  #snd { position: fixed; right: 12px; bottom: 8px; color: #f4f1ea; font: bold 12px monospace; letter-spacing: .15em; padding: .5em .8em;
-         background: rgba(194,26,26,.8); border: 1px solid #f4f1ea; cursor: pointer; animation: pulse 1.6s ease-in-out infinite; }
+  #snd { position: fixed; right: 12px; bottom: 8px; color: #f4f1ea; font: bold 12px monospace; letter-spacing: .1em; padding: .35em .6em;
+         background: rgba(10,12,18,.72); border: 1px solid #8890a0; cursor: pointer; user-select: none; z-index: 5; }
+  #snd:hover { border-color: #f4f1ea; }
+  #snd.off { background: rgba(194,26,26,.8); border-color: #f4f1ea; }
   #err { position: fixed; top: 0; left: 0; color: #f55; font: 12px monospace; white-space: pre; }
   #play { position: fixed; top: 4vh; left: 0; right: 0; display: flex; justify-content: center; gap: 2vw; }
   #play button { font: bold 1.3vw monospace; letter-spacing: .25em; padding: .8em 1.4em; color: #f4f1ea; background: rgba(10,12,18,.72);
@@ -58,13 +64,25 @@
   #banner { position: fixed; left: 0; right: 0; top: 34vh; text-align: center; font-size: 6vw; font-weight: 900; letter-spacing: .12em; opacity: 0; transition: opacity .25s; }
   #combo { position: absolute; left: 4vw; right: 4vw; top: 12vh; font-size: 2.6vw; font-weight: 900; letter-spacing: .12em; opacity: 0; transition: opacity .3s; }
   #banner small { display: block; font: 1.2vw monospace; letter-spacing: .25em; margin-top: 1em; color: #ccd; }
+  #help { position: fixed; left: 3vw; right: 3vw; bottom: 3vh; display: none; grid-template-columns: repeat(4, 1fr); gap: .6vw 1.6vw;
+          padding: 1vw 1.4vw; background: rgba(6,8,14,.82); border: 1px solid rgba(244,241,234,.35); border-top: 3px solid #c21a1a;
+          color: #dde; font: .82vw/1.35 monospace; letter-spacing: .06em; pointer-events: none; text-shadow: 0 0 4px #000; }
+  #help.paused { top: 14vh; bottom: auto; }
+  #help header { grid-column: 1 / -1; display: flex; justify-content: space-between; font-weight: bold; letter-spacing: .25em; color: #f4f1ea; }
+  #help header .ps { display: none; color: #f6c400; } #help.paused header .ps { display: inline; } #help.paused header .go { display: none; }
+  #help h3 { margin: 0 0 .35em; font-size: 1.05em; letter-spacing: .25em; color: #c21a1a; border-bottom: 1px solid rgba(194,26,26,.6); }
+  #help p { margin: .18em 0; display: flex; justify-content: space-between; gap: 1em; }
+  #help p b { color: #f6c400; font-weight: bold; white-space: nowrap; text-align: right; }
 </style>
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
 </script>
 </head>
 <body>
-<div id="title"><h1>BATMAN<span>v</span>SUPERMAN</h1><p>EVERY PIXEL FROM CODE · THREE.JS</p></div>
+<div id="title"><h1>BATMAN<span>v</span>SUPERMAN</h1>
+  <div class="credit">A game by <b>Todd Bruss</b> &nbsp;·&nbsp; &copy; 2026 <b>AgentiLoop.ai</b></div>
+  <div class="legal">All original assets · Not affiliated with DC Comics or Warner Bros.</div>
+  <p>EVERY PIXEL FROM CODE · THREE.JS</p></div>
 <div id="sub"></div>
 <div id="hud">Models: "Batman" by Salstar123, "Superman" by shreyhaldkar0 (Sketchfab, CC-BY-4.0) · P pixel-art · [ ] pixel size · C free camera · SPACE pause · R restart</div>
 <div id="play"><button data-hero="bat">B · PLAY AS BATMAN</button><button data-hero="sup">S · PLAY AS SUPERMAN</button><small>GAMEPAD: X BATMAN · B SUPERMAN</small></div>
@@ -75,7 +93,47 @@
   <div id="combo"></div>
   <div id="banner"></div>
 </div>
-<div id="snd">&#128263; CLICK / PRESS ANY KEY FOR SOUND</div>
+<div id="help">
+  <header><span>CONTROLS · KEYBOARD / GAMEPAD</span><span class="go">ENTER / START = PAUSE HERE</span><span class="ps">PAUSED · ENTER / START RESUME · ESC / BACK QUIT</span></header>
+  <section><h3>BASICS</h3>
+    <p>Move<b>WASD / L-STICK</b></p>
+    <p>Punch (×4 chain)<b>J / X</b></p>
+    <p>Kick<b>K / Y</b></p>
+    <p>Block<b>SHIFT / LB RB LT RT</b></p>
+    <p>Crouch<b>C / L-STICK DOWN</b></p>
+    <p>Jump (+ punch / kick in air)<b>SPACE / A</b></p>
+    <p>Special<b>L / B</b></p>
+    <p>Pause · Quit<b>ENTER / START · ESC / BACK</b></p>
+  </section>
+  <section><h3>ATTACKS</h3>
+    <p>Low jab · Low kick<b>CROUCH + PUNCH / KICK</b></p>
+    <p>Uppercut · Sweep<b>BLOCK + PUNCH / KICK</b></p>
+    <p>Throw (same to tech)<b>PUNCH + KICK CLOSE · U</b></p>
+    <p>Projectile<b>CROUCH, TOWARD + PUNCH</b></p>
+    <p>Rising uppercut<b>TOWARD, CROUCH+TOWARD + PUNCH · O</b></p>
+    <p>Super (full meter)<b>BLOCK + SPECIAL · I</b></p>
+    <p>Drive impact (¼ meter)<b>H / LB + RB</b></p>
+    <p>Fatal blow (&lt;30% HP, once)<b>F / LT + RT</b></p>
+  </section>
+  <section><h3>DEFENSE · MOVEMENT</h3>
+    <p>Highs: duck · Lows: crouch-block<b>JUMP-INS: STAND-BLOCK</b></p>
+    <p>Parry (crouch for lows)<b>TAP TOWARD AS IT HITS</b></p>
+    <p>Dash · Backdash<b>DOUBLE-TAP TOWARD / AWAY</b></p>
+    <p>Sidestep (dodges straight hits)<b>DOUBLE-TAP UP / DOWN</b></p>
+    <p>Breaker (½ meter, in a combo)<b>BLOCK + TOWARD</b></p>
+    <p>Knocked down: roll · quick rise<b>HOLD AWAY · JUMP</b></p>
+  </section>
+  <section><h3>ADVANCED</h3>
+    <p>Amplify a special (¼ meter)<b>TAP BLOCK RIGHT AFTER</b></p>
+    <p>Cancel a landed hit<b>INTO ANY SPECIAL</b></p>
+    <p>Counter · Punish counter<b>HIT WIND-UP · HIT A MISS</b></p>
+    <p>Orbs<b>RED RAGE · GOLD METER · GREEN HP</b></p>
+    <p>Hurl a steel drum<b>E / R3 NEXT TO IT</b></p>
+    <p>Batman grapnel (+dir zip)<b>G / R3 · BLOCK+G SWING</b></p>
+    <p>Best of 3 · Finish him<b>CLOSE + SPECIAL</b></p>
+  </section>
+</div>
+<div id="snd" title="Mute / unmute (M)">&#128263; SOUND OFF</div>
 <div id="err"></div>
 <script>window.addEventListener('error', e => { document.getElementById('err').textContent += e.message + '\n'; });</script>
 <script type="module" src="./src/main.js"></script>
