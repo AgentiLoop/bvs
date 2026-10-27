@@ -254,7 +254,7 @@ export function makeHero(kind) {
     faceGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     part(head, faceGeo, mat(0xffffff, 0.75, 0, { vertexColors: true }));
     line(head, [[-0.027, 0.21, 0.06], [0.003, 0.2, 0.077], [0.017, 0.184, 0.078], [0.008, 0.169, 0.079], [-0.002, 0.174, 0.079]], 0.004, hair);
-    for (const s of [-1, 1]) oval(head, skin, [s * 0.085, 0.126, -0.004], [0.012, 0.026, 0.017]);
+    for (const s of [-1, 1]) oval(head, skin, [s * 0.079, 0.126, -0.006], [0.008, 0.024, 0.015]); // ears tucked to the skull
   }
   const eyes = [];
   const brow = B ? dark : mat(0x241c1a, 0.9);
@@ -267,7 +267,9 @@ export function makeHero(kind) {
     }
     line(head, [[s * 0.014, 0.156, 0.076], [s * 0.032, 0.16, 0.076], [s * 0.053, 0.157, 0.067]], B ? 0.006 : 0.005, brow);
   }
-  line(head, [[-0.018, 0.06, B ? 0.077 : 0.079], [0, 0.061, B ? 0.08 : 0.083], [0.018, 0.06, B ? 0.077 : 0.079]], 0.0016, mat(0x754b43, 0.9));
+  // Closed, firm mouth: a thin line close to the lip colour so it reads as set lips, not an open shout.
+  line(head, [[-0.016, 0.0605, B ? 0.077 : 0.08], [0, 0.0615, B ? 0.08 : 0.0835], [0.016, 0.0605, B ? 0.077 : 0.08]],
+    B ? 0.0016 : 0.0011, mat(B ? 0x754b43 : 0x9a5f52, 0.9));
 
   const arms = {}, legs = {};
   for (const [side, s] of [['L', 1], ['R', -1]]) {
