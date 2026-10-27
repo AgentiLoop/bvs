@@ -280,8 +280,10 @@ export function makeHero(kind) {
     const colors = [], pos = faceGeo.attributes.position;
     const cowlColor = dark.color, skinColor = skin.color;
     for (let i = 0; i < pos.count; i++) {
-      const jaw = pos.getY(i) < 0.082 && pos.getZ(i) > 0.045 && Math.abs(pos.getX(i)) < 0.062;
-      const c = jaw ? skinColor : cowlColor; colors.push(c.r, c.g, c.b);
+      // Soft-edged jaw opening (smooth 0..1 mask) so the cowl edge is a clean line, not stair-stepped facets.
+      const x = Math.abs(pos.getX(i)), y = pos.getY(i), z = pos.getZ(i);
+      const jaw = (1 - blend(0.077, 0.087, y)) * blend(0.04, 0.05, z) * (1 - blend(0.056, 0.068, x));
+      const c = cowlColor.clone().lerp(skinColor, jaw); colors.push(c.r, c.g, c.b);
     }
     faceGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     part(head, faceGeo, mat(0xffffff, 0.7, 0, { vertexColors: true }));
