@@ -378,20 +378,31 @@ export function makeHero(kind) {
     line(head, [[-0.027, 0.21], [0.003, 0.2], [0.017, 0.184], [0.008, 0.169], [-0.002, 0.174]].map(onFace(0.0025)), 0.004, hair);
     for (const s of [-1, 1]) oval(head, skin, [s * 0.079, 0.126, -0.006], [0.008, 0.024, 0.015]); // ears tucked to the skull
   }
-  const eyes = [];
+  // Expressive face rig (driven by setFace): each eye (white + iris + pupil) sits in a lid group that
+  // squeezes shut vertically, each brow pivots about its middle (inner end down = scowl, up = pain), and
+  // the mouth is a dark cavity + upper teeth behind the lip line that the jaw drops open.
+  const eyes = [], lids = [], brows = [];
   const brow = B ? dark : mat(0x241c1a, 0.9);
   for (const s of [-1, 1]) {
-    eyes.push(oval(head, new THREE.MeshStandardMaterial({ color: B ? 0xe4ecf2 : 0xe1ddd4, roughness: 0.6, emissive: 0 }),
-      [s * 0.034, 0.143, faceZ(s * 0.034, 0.143) - 0.002], [0.018, 0.006, 0.006])); // seated in the socket
+    const lid = new THREE.Group(); lid.position.set(s * 0.034, 0.143, faceZ(s * 0.034, 0.143) - 0.002); head.add(lid); lids.push(lid);
+    eyes.push(oval(lid, new THREE.MeshStandardMaterial({ color: B ? 0xe4ecf2 : 0xe1ddd4, roughness: 0.6, emissive: 0 }),
+      [0, 0, 0], [0.018, 0.006, 0.006])); // seated in the socket
     if (!B) {
-      oval(head, mat(0x416b88), [s * 0.034, 0.143, faceZ(s * 0.034, 0.143) + 0.0025], [0.0045, 0.005, 0.002]);
-      oval(head, dark, [s * 0.034, 0.143, faceZ(s * 0.034, 0.143) + 0.0042], [0.002, 0.003, 0.001]);
+      oval(lid, mat(0x416b88), [0, 0, 0.0045], [0.0045, 0.005, 0.002]);
+      oval(lid, dark, [0, 0, 0.0062], [0.002, 0.003, 0.001]);
     }
-    line(head, [[s * 0.014, 0.156], [s * 0.032, 0.16], [s * 0.053, 0.157]].map(onFace(B ? 0.002 : 0.0015)), B ? 0.006 : 0.005, brow);
+    const bp = [s * 0.033, 0.159, faceZ(s * 0.033, 0.159)];
+    const bg = new THREE.Group(); bg.position.set(...bp); head.add(bg); brows.push({ g: bg, s, y: bp[1] });
+    line(bg, [[s * 0.014, 0.156], [s * 0.032, 0.16], [s * 0.053, 0.157]].map(onFace(B ? 0.002 : 0.0015)).map(p => [p[0] - bp[0], p[1] - bp[1], p[2] - bp[2]]), B ? 0.006 : 0.005, brow);
   }
+  const mz = faceZ(0, 0.056);
+  const cavity = oval(head, mat(0x1a0807, 0.95), [0, 0.06, mz - 0.0012], [0.012, 0.0004, 0.0024]);
+  const teeth = oval(head, mat(0xe6e0d2, 0.5), [0, 0.0598, mz - 0.0006], [0.0095, 0.0004, 0.0022]);
+  cavity.visible = teeth.visible = false;
   // Closed, firm mouth: a thin line close to the lip colour so it reads as set lips, not an open shout.
   line(head, [[-0.016, 0.0605], [0, 0.0615], [0.016, 0.0605]].map(onFace(0.0004)),
     B ? 0.0016 : 0.0011, mat(B ? 0x754b43 : 0x9a5f52, 0.9));
+  const faceRig = { lids, brows, cavity, teeth, blinks: !B };
 
   for (const [side, s] of [['L', 1], ['R', -1]]) {
     const sh = joint(chest, [s * 0.262, 0.232, 0]);
@@ -578,7 +589,7 @@ export function makeHero(kind) {
   const dmg = { dmgP: { value: Array.from({ length: DMG_N }, () => new THREE.Vector3(0, -99, 0)) }, dmgS: { value: new Float32Array(DMG_N) }, dmgWear: { value: 0 } };
   const patched = new Set();
   root.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) if (m.isMeshStandardMaterial && !patched.has(m)) { patched.add(m); battleDamage(m, dmg); } });
-  return { kind, root, hips, spine, chest, head, arms, legs, eyes, torsoSection, chestDepth, dmg };
+  return { kind, root, hips, spine, chest, head, arms, legs, eyes, face: faceRig, torsoSection, chestDepth, dmg };
 }
 
 // ---------- IK ----------
@@ -635,6 +646,23 @@ const BOOT_CORNERS = [[0, -0.074, -0.058], [0, -0.074, 0.178], [0.042, -0.074, 0
   .map(p => new THREE.Vector3(...p));
 // Contact radii of the joints that touch the roof in kneels, landings and lying poses.
 const CONTACT = [['legs', 'kn', 0.062], ['arms', 'el', 0.055], ['arms', 'hand', 0.07]];
+// Facial expression: e.eye = lid openness (1 open .. 0 shut; Batman's white lenses only narrow to a slit),
+// e.ang = scowl (brows drop and knit), e.pain = pain / effort brows (inner ends lift), e.mouth = jaw drop 0..1.
+export function setFace(H, e) {
+  const F = H.face; if (!F) return;
+  const eye = Math.max(F.blinks ? 0.06 : 0.3, Math.min(1, e.eye));
+  for (const l of F.lids) l.scale.set(1, eye, 1);
+  for (const b of F.brows) {
+    b.g.rotation.z = b.s * (0.22 * e.ang - 0.3 * e.pain);
+    b.g.position.y = b.y - 0.004 * e.ang + 0.0025 * e.pain;
+  }
+  const m = Math.max(0, Math.min(1, e.mouth)), open = m > 0.03;
+  F.cavity.visible = F.teeth.visible = open;
+  if (open) {
+    F.cavity.scale.y = 0.0015 + m * 0.0075; F.cavity.position.y = 0.0605 - m * 0.0068;
+    F.teeth.scale.y = 0.0012 + Math.min(m, 0.4) * 0.004; F.teeth.position.y = 0.0596 - Math.min(m, 0.4) * 0.002;
+  }
+}
 // Distance-driven gait: stride half-amplitude (m), swing lift (m), sideways strides shortened so the feet never cross.
 export const GAIT_A = 0.3, GAIT_LIFT = 0.15, GAIT_SIDE = 0.55;
 // One foot's cycle (p in cycles): first half planted, sliding back under the hips at constant speed (no skating

@@ -2,7 +2,7 @@
 // Poses are the same hip-relative IK poses as the film (POSES), blended toward a target every step.
 // Combat: chained punches/kicks, launchers, sweeps, air attacks, juggles, bounces, hitstop, trades; keyboard + gamepad.
 import * as THREE from 'three';
-import { applyPose, GAIT_A, GAIT_SIDE, DMG_N } from './heroes.js';
+import { applyPose, setFace, GAIT_A, GAIT_SIDE, DMG_N } from './heroes.js';
 import { POSES, face } from './timeline.js';
 import { groundAt } from './world.js';
 
@@ -259,6 +259,8 @@ const PROP = { reach: 1.4, lift: 0.16, rel: 0.44, dur: 0.72, speed: 12, r: 0.6, 
   keys: [[0, 'pickUp'], [0.16, 'lift'], [0.34, 'heaveUp'], [0.44, 'heave'], [0.62, 'guard']] };
 // what a parry can deflect: normal strikes, the rising uppercut, projectiles and the flying kick (not throws, supers, fatalities)
 const PARRYABLE = new Set([...Object.values(MOVES), ...Object.values(RISE), ...Object.values(SHOT), FLYKICK]);
+// Facial expression (expr): blink length (s), easing rate, effort (scowl / shout) per special act type; strikes use heavy.
+const EXPR = { blink: 0.15, k: 22, effort: { super: 1, blow: 1, fatal: 0.9, impact: 1, rise: 0.9, flykick: 0.8, throw: 0.7, prop: 0.9, shoot: 0.4, heat: 0.3 } };
 // MK11 battle damage: each clean hit leaves a bruise / scuff where it landed on the body (placed on the struck bone's
 // surface facing the attacker and anchored to that bone so it moves with him; hits within `merge` m deepen the same mark, cuts open once it is
 // deep), and the suit gathers grime with total damage taken (wear). Lasts the whole match: reset in start() only.
@@ -299,7 +301,7 @@ export class Game {
     const mk = (H, key, x, yaw) => ({ H, key, x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, yaw, hp: 100, act: null, stun: 0, heavy: false, block: false,
       ko: false, cd: 0, down: 0, meter: 0, launched: false, buf: null, bufT: 0, bufMod: false, hits: 0, inX: 0, inZ: 0,
       heldBy: null, lastBtn: null, lastBtnT: -1, lastTap: 0, lastTapT: -1, tapS: 0, lastLat: 0, lastLatT: -1, latS: 0, crouch: false, dazed: false, downT: -9, tow: 0, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, parLow: false, frz: 0, brk: 0, rollA: null, blowUsed: false, blowSaid: false, krush: {}, scars: [], wear: 0, gcd: 0,
-      ai: { t: 0, mx: 0, mz: 0, block: 0, crouch: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0, hx: 0, hy: 0, squash: 0, gph: 0, gdx: 0, gdz: 1, gpx: null, gpz: null });
+      ai: { t: 0, mx: 0, mz: 0, block: 0, crouch: 0, chain: 0, air: false }, cur: T(POSES.guard), moving: 0, hx: 0, hy: 0, wince: 0, blinkT: 2, fx: { eye: 1, ang: 0.3, pain: 0, mouth: 0 }, squash: 0, gph: 0, gdx: 0, gdz: 1, gpx: null, gpz: null });
     this.F = { bat: mk(bat, 'bat', -7.4, Math.PI / 2), sup: mk(sup, 'sup', 2.2, -Math.PI / 2) };
     this.F.sup.y = 26; this.F.sup.cur = T(POSES.fly, { pitch: 0.35 });
     this.me = this.F[choice]; this.cpu = this.F[choice === 'bat' ? 'sup' : 'bat'];
@@ -314,7 +316,7 @@ export class Game {
     this.updateBars();
   }
 
-  stop() { this.active = false; this.heat = null; this.shots = []; this.grap = null; this.orb = null; this.ui.hud.style.display = 'none'; this.say(''); }
+  stop() { this.active = false; if (this.F) for (const f of Object.values(this.F)) setFace(f.H, { eye: 1, ang: 0, pain: 0, mouth: 0 }); this.heat = null; this.shots = []; this.grap = null; this.orb = null; this.ui.hud.style.display = 'none'; this.say(''); }
 
   say(text, sub = '') { this.ui.banner.innerHTML = text ? `${text}${sub ? `<small>${sub}</small>` : ''}` : ''; this.ui.banner.style.opacity = text ? 1 : 0; }
 
@@ -1069,6 +1071,8 @@ export class Game {
     // the blow snaps the body back / twists it; the pose spring brings it round again
     def.cur.lean -= M.heavy ? 0.6 : 0.3; def.cur.tw += (M.at === 'lh' ? -0.3 : 0.3);
     def.hy += (M.at === 'lh' ? -0.5 : 0.5); def.hx -= M.heavy ? 0.55 : 0.3; // head snaps with the blow
+    def.wince = Math.max(def.wince, M.heavy ? 1 : 0.7); // the face screws up in pain, instantly (no easing in)
+    Object.assign(def.fx, { eye: Math.min(def.fx.eye, 1 - 0.8 * def.wince), pain: Math.max(def.fx.pain, def.wince), mouth: Math.max(def.fx.mouth, 0.75 * def.wince), ang: 0 });
     const col = att.key === 'bat' ? 0xfff0c0 : 0xbfd8ff, size = (M.blast || 0.6) * (trade ? 1.35 : 1);
     fx.sparkBurst(at.x, at.y, at.z, M.heavy ? 50 : 22, M.heavy ? 5 : 3.5, col);
     fx.blast(at.x, at.y, at.z, size, 0.3 + size * 0.25);
@@ -1200,7 +1204,7 @@ export class Game {
   nextRound() {
     this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.xray = null; this.winner = null; this.koCam = null; this.kick = null; this.finish = null; this.shots = []; this.grap = null; this.orb = null; this.orbT = ORB.first; this.resetProps();
     for (const [f, x] of [[this.F.bat, -2.2], [this.F.sup, 2.2]]) {
-      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, dazed: false, downT: -9, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, frz: 0, brk: 0, rollA: null, gcd: 0, cur: T(POSES.guard) });
+      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, dazed: false, downT: -9, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, frz: 0, brk: 0, rollA: null, gcd: 0, wince: 0, cur: T(POSES.guard) });
       f.yaw = x < 0 ? Math.PI / 2 : -Math.PI / 2;
     }
     this.ctx.batCape.reset(); this.ctx.supCape.reset();
@@ -1727,6 +1731,25 @@ export class Game {
     return this.idle(f);
   }
 
+  // Facial expression: a light scowl at rest that knits harder (teeth bared, kiai shout on heavies and specials)
+  // while attacking and in rage; clean hits screw the eyes shut with a pained open mouth (f.wince, decays over
+  // ~1 s); dazed = half-lidded; K.O. = eyes shut, jaw slack; panting mouth once hurt; Superman blinks every 2-5 s.
+  expr(f, dt) {
+    const a = f.act, x = f.fx, tired = clamp((60 - f.hp) / 60, 0, 1);
+    f.wince *= dt ? Math.exp(-dt * 1.6) : 1;
+    f.blinkT -= dt || 0;
+    if (f.blinkT < -EXPR.blink) f.blinkT = 1.8 + 3.2 * ((Math.sin(this.t * 91.7 + (f.key === 'bat' ? 1 : 7)) * 43758.5) % 1 + 1) % 1;
+    const blink = f.blinkT < 0 && f.H.face?.blinks && a?.type !== 'heat' ? Math.sin(-f.blinkT / EXPR.blink * Math.PI) : 0;
+    const eff = !a ? 0 : EXPR.effort[a.type] ?? (MOVES[a.type] ? (MOVES[a.type].heavy ? 0.8 : 0.35) : 0);
+    const pain = Math.max(f.wince, f.dazed ? 0.6 : 0, f.down > 0 ? 0.45 : 0);
+    const pant = tired * 0.45 * Math.max(0, this.breath(f)) / (1 + tired * 1.5);
+    const tg = f.ko ? { eye: 0, ang: 0, pain: 0.2, mouth: 0.35 }
+      : { eye: 1 - 0.8 * pain - 0.25 * eff - (f.dazed ? 0.35 : 0), ang: clamp(0.3 + 0.6 * eff + (f.rage > 0 ? 0.5 : 0) - 0.9 * pain, 0, 1),
+        pain, mouth: Math.max(eff >= 0.5 ? eff * 0.8 : eff * 0.4, pain * 0.75, pant) };
+    const k = dt ? 1 - Math.exp(-dt * EXPR.k) : 1;
+    for (const n in tg) x[n] += (tg[n] - x[n]) * k;
+    return { eye: x.eye * (1 - blink), ang: x.ang, pain: x.pain, mouth: x.mouth };
+  }
   // Breathing: faster and deeper as health drops.
   breath(f) { const tired = 1 - f.hp / 100; return Math.sin(this.t * (1.7 + tired * 2.6) + STYLE[f.key].off) * (1 + tired * 1.5); }
   // Living fight stance: rhythmic bounce with the feet planted (hips dip, knees flex), breathing in the chest and
@@ -1779,6 +1802,7 @@ export class Game {
       if (sq > 0.002) { s.h -= sq; s.lf = [c.lf[0], c.lf[1] + sq, c.lf[2]]; s.rf = [c.rf[0], c.rf[1] + sq, c.rf[2]]; s.lean += sq; }
       const base = tg.base ?? f.y;
       applyPose(f.H, { ...s, p: [f.x, base + s.h, f.z], yaw: f.yaw + c.tw }, this.t, groundAt(f.x, f.z));
+      if (this.active) setFace(f.H, this.expr(f, dt));
     }
   }
 
