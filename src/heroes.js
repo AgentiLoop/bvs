@@ -299,7 +299,18 @@ export function makeHero(kind) {
     for (const h of hairMask) { hc.copy(skin.color).lerp(hair.color, h); colors.push(hc.r, hc.g, hc.b); }
     faceGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     part(head, faceGeo, mat(0xffffff, 0.75, 0, { vertexColors: true }));
-    line(head, [[-0.027, 0.21, 0.06], [0.003, 0.2, 0.077], [0.017, 0.184, 0.078], [0.008, 0.169, 0.079], [-0.002, 0.174, 0.079]], 0.004, hair);
+    // Spit curl: each control point is dropped onto the sculpted forehead/pompadour surface (it used to
+    // float ~1 cm in front of the head after the hair gained volume).
+    const fp = faceGeo.attributes.position;
+    const onSurface = ([x, y]) => {
+      let z = -1, r = 0.004;
+      while (z < 0 && r < 0.02) {
+        for (let i = 0; i < fp.count; i++) if (Math.hypot(fp.getX(i) - x, fp.getY(i) - y) < r) z = Math.max(z, fp.getZ(i));
+        r *= 1.6;
+      }
+      return [x, y, z + 0.0025];
+    };
+    line(head, [[-0.027, 0.21], [0.003, 0.2], [0.017, 0.184], [0.008, 0.169], [-0.002, 0.174]].map(onSurface), 0.004, hair);
     for (const s of [-1, 1]) oval(head, skin, [s * 0.079, 0.126, -0.006], [0.008, 0.024, 0.015]); // ears tucked to the skull
   }
   const eyes = [];
