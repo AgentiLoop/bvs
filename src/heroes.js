@@ -813,6 +813,7 @@ function gaitStep(p) {
 export function applyPose(H, s, t, ground = 0) {
   // last frame's grip curls (relaxFingers eases from them once the grip lets go)
   for (const side of ['L', 'R']) { const g = H.arms[side].grip; if (g) { g.pk = g.wk ? g.wk.slice() : null; g.ph = g.hw; g.hw = 0; } }
+  _limp = Math.max(0, Math.min(1, s.limp || 0)); _floor = ground;
   posePass(H, s, t, ground, 0);
   // Knees, elbows and fists used to go up to 5 cm through the roof (Superman's landing kneel, Batman lying
   // down). Lift the body by the deepest contact deficit and re-solve with the feet held where they were.
@@ -875,6 +876,20 @@ for (const x of [-0.035, 0.035]) for (const y of [-0.015, -0.1]) for (const z of
 // w = wrist extension 0..1 (palm strikes): the hand bends back up to 66 deg so the heel of the palm leads
 // and the fingers point up (a palm-down extended arm turns into a palm-forward strike).
 const WRIST_EXT = 1.15, GRIP_WRIST = [0.9, 1.1], _XH = new THREE.Vector3(1, 0, 0);
+// s.limp 0..1 (knocked out / knocked down): the wrist goes slack and the hand hangs toward the floor, up to
+// LIMP_WRIST flexion / extension (an unconscious hand used to stay rigid along the forearm, fingers pointing up
+// off the floor). The droop stops before a fingertip or the thumb tip (or the fist's end) reaches the floor.
+const LIMP_WRIST = [1.2, 0.9], _hY = new THREE.Vector3(), _hZ = new THREE.Vector3(), _hT = new THREE.Vector3(), _hb = new THREE.Quaternion();
+let _limp = 0, _floor = 0;
+function lowestTip(a) {
+  const g = a.grip;
+  a.hand.updateMatrix(); a.hand.matrixWorld.multiplyMatrices(a.el.matrixWorld, a.hand.matrix);
+  if (!g || !g.openG.visible) return _hT.set(0, -0.12, 0).applyMatrix4(a.hand.matrixWorld).y;
+  g.openG.updateMatrix(); g.openG.matrixWorld.multiplyMatrices(a.hand.matrixWorld, g.openG.matrix);
+  let y = _hT.copy(g.thumbTip.position).applyMatrix4(g.openG.matrixWorld).y;
+  for (const f of g.fingers) y = Math.min(y, fingerPoint(g, f, 3, _hT).y);
+  return y;
+}
 function orientHand(a, qRoot, w = 0, palm = null, pw = 0) {
   a.el.getWorldPosition(_hy); a.hand.getWorldPosition(_hf); a.sh.getWorldPosition(_hx);
   const ext = _hx.distanceTo(_hf) / 0.62;
@@ -898,6 +913,19 @@ function orientHand(a, qRoot, w = 0, palm = null, pw = 0) {
   if (palm) a.hand.quaternion.multiply(_hq.setFromAxisAngle(_XH, pw * Math.max(-GRIP_WRIST[0], Math.min(GRIP_WRIST[1],
     Math.atan2(-palm.dot(_hy), palm.dot(_hz))))));
   if (w > 0) a.hand.quaternion.multiply(_hq.setFromAxisAngle(_XH, Math.min(1, w) * WRIST_EXT));
+  const lk = _limp * (1 - pw);
+  if (lk > 0.01) {
+    a.el.getWorldQuaternion(_hq).multiply(a.hand.quaternion);
+    _hY.set(0, 1, 0).applyQuaternion(_hq); _hZ.set(0, 0, 1).applyQuaternion(_hq);
+    // fingers (hand -y) bent by b about hand x point along -(Y cos b + Z sin b): lowest at b = atan2(Z.y, Y.y)
+    const b0 = lk * Math.max(-LIMP_WRIST[0], Math.min(LIMP_WRIST[1], Math.atan2(_hZ.y, _hY.y)));
+    const floor = Math.min(_floor + 0.012, lowestTip(a)); // (never below where the straight hand already reaches)
+    _hb.copy(a.hand.quaternion);
+    for (let i = 0; i <= 8; i++) {
+      a.hand.quaternion.copy(_hb).multiply(_hq.setFromAxisAngle(_XH, b0 * (1 - i / 8)));
+      if (i === 8 || lowestTip(a) >= floor) break;
+    }
+  }
   a.hand.updateMatrix(); a.hand.matrixWorld.multiplyMatrices(a.el.matrixWorld, a.hand.matrix); // the fingers update with the next full pass
 }
 // Hand shape: o = 0 is the sculpted fist; above OPEN_MIN the articulated hand replaces it, its fingers curling

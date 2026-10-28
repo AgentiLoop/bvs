@@ -6,7 +6,7 @@ import { applyPose, setFace, GAIT_A, GAIT_SIDE, DMG_N } from './heroes.js';
 import { POSES, face } from './timeline.js';
 import { groundAt } from './world.js';
 
-const NUM = ['h', 'lean', 'roll', 'pitch', 'gait', 'tw', 'lo', 'ro', 'lw', 'rw']; // lo/ro hand open 0 fist..1 flat, lw/rw wrist (heroes.js)
+const NUM = ['h', 'lean', 'roll', 'pitch', 'gait', 'tw', 'lo', 'ro', 'lw', 'rw', 'limp']; // lo/ro hand open 0 fist..1 flat, lw/rw wrist, limp slack wrists (heroes.js)
 const ARR = ['lh', 'rh', 'lf', 'rf'];
 // Hand open / close speed cap (per s): the pose spring's first frame moved openness by up to 0.35, so a hand
 // snapped from flat to a hooked grip in one frame (fingertips 9 cm); now flat -> fist takes ~0.08 s.
@@ -309,7 +309,10 @@ const _rv = new THREE.Vector3(), _rd = new THREE.Vector3();
 const LIMB = { lh: (H) => H.arms.L.hand, rh: (H) => H.arms.R.hand, lf: (H) => H.legs.L.an, rf: (H) => H.legs.R.an };
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-const T = (p, x) => ({ tw: 0, pitch: 0, gait: 0, lo: 0, ro: 0, lw: 0, rw: 0, ...p, ...x });
+const T = (p, x) => ({ tw: 0, pitch: 0, gait: 0, lo: 0, ro: 0, lw: 0, rw: 0, limp: 0, ...p, ...x });
+// Lying knocked down / out: arms resting on the roof beside the body (they used to hover at hip height, the
+// wrists 23-27 cm up) with slack wrists, so the half-curled hands droop onto the floor (heroes.js s.limp).
+const SPRAWL = { pitch: -1.5, lo: 0.55, ro: 0.55, limp: 1, lh: [0.6, 0.3, -0.11], rh: [-0.58, 0.25, -0.11] };
 const mixPose = (a, b, k) => {
   const o = { ...b };
   for (const n of NUM) o[n] = a[n] + (b[n] - a[n]) * k;
@@ -1789,14 +1792,14 @@ export class Game {
       if (this.t < 2.7) return T(POSES.land);
       return T(POSES.heroic);
     }
-    if (f.ko) return T(POSES.down, { pitch: -1.5, lo: 0.55, ro: 0.55 }); // limp, half-curled hands
+    if (f.ko) return T(POSES.down, SPRAWL); // limp, half-curled hands
     if (this.state === 'over' && f === this.winner && this.overT > 1.4) return T(POSES.heroic);
     if (this.state === 'ready') return this.idle(f);
     if (f.rollA) { // back roll: balled up, chin tucked, hips carried up over the head so it clears the floor
       const u = clamp(f.rollA.t / WAKE.roll, 0, 1);
       return T(POSES.tuck, { h: 0.55 + 0.32 * Math.sin(Math.PI * u) ** 2, lean: 0.85, pitch: -1.5 - u * (Math.PI * 2 - 1.5) });
     }
-    if (f.down > 0) return f.down > 0.3 ? T(POSES.down, { pitch: -1.5, lo: 0.55, ro: 0.55 }) : T(POSES.kneel);
+    if (f.down > 0) return f.down > 0.3 ? T(POSES.down, SPRAWL) : T(POSES.kneel);
     if (f.launched && f.y > 0.05) return T(MP.air, { pitch: -0.5 });
     const a = f.act;
     // dazed at 0 HP: guard dropped, swaying on loose knees
