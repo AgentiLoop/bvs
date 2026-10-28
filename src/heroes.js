@@ -1170,7 +1170,7 @@ export function applyPose(H, s, t, ground = 0) {
 // maps straight down to straight forward, a horizontal forward leg to straight up, a high kick to up-and-back.
 // The sideways pull (knees over spread feet) fades as the foot rises toward hip height (KNEE_LAT: share of the
 // hip->foot line pointing down): a foot kicked out wide rolled the knee 55 deg out (front kick, sweep, knee lift).
-const KNEE_LAT = [0.3, 0.7], TW_PLANT = [-0.8, 0.45], TW_SPINE = 0.7, LEAN_PELVIS = 0.54, HIP_RHYTHM = [1.6, 0.5], HIP_EXT = 0.8, SPINE_EXT = 0.5;
+const KNEE_LAT = [0.3, 0.7], TW_PLANT = [-0.8, 0.45], TW_SPINE = 0.7, LEAN_PELVIS = 0.54, HIP_RHYTHM = [1.6, 0.5], HIP_EXT = 0.8, SPINE_EXT = 0.5, NECK_EXT = [0.8, 0.94];
 const _qs1 = new THREE.Quaternion(), _qs2 = new THREE.Quaternion(), _qs3 = new THREE.Quaternion();
 // (tg and the pole are in the pelvis' frame: the root turned back by a, the twist the waist takes; posePass)
 const yawXZ = (v, a) => { const c = Math.cos(a), s = Math.sin(a), x = v.x; v.x = x * c + v.z * s; v.z = v.z * c - x * s; return v; };
@@ -1637,7 +1637,12 @@ function posePass(H, s, t, ground, raise) {
   }
   // Chin tucked slightly in fighting stances (a glare from under the brow, not a raised chin).
   // hx / hy: optional extra head pitch / yaw (game mode: eyes track the opponent, snap back on hits).
-  H.head.rotation.set(-lb * 0.95 - tilt + Math.min(0.5, Math.max(0, s.lean)) * 0.25 + (s.hx || 0), s.hy || 0, 0);
+  // Countering a deep lean while also looking up at the foe (getting up, crouched walks, throws) tipped the head
+  // 56-65 deg back on the neck (a real neck extends ~50-60, the chin juts at the end of it): past NECK_EXT[0] the
+  // extension eases into NECK_EXT[1], so the eyes look up from under the brow instead.
+  let hx = -lb * 0.95 - tilt + Math.min(0.5, Math.max(0, s.lean)) * 0.25 + (s.hx || 0);
+  if (hx < -NECK_EXT[0]) { const r = NECK_EXT[1] - NECK_EXT[0]; hx = -NECK_EXT[0] - r * Math.tanh((-hx - NECK_EXT[0]) / r); }
+  H.head.rotation.set(hx, s.hy || 0, 0);
   H.root.updateMatrixWorld(true);
 
   // Game mode passes gph (gait phase driven by distance travelled) and gdx/gdz (hip-local travel direction):
