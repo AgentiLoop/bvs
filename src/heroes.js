@@ -1470,7 +1470,7 @@ const _hx = new THREE.Vector3(), _hy = new THREE.Vector3(), _hz = new THREE.Vect
 const FIST_PTS = [[0, -0.055, 0.015, 0.05], [0.03, -0.07, 0.06, 0.012], [-0.008, -0.086, 0.068, 0.012]];
 for (const x of [-0.035, 0.035]) for (const y of [-0.015, -0.1]) for (const z of [-0.03, 0.04]) FIST_PTS.push([x, y, z, 0.012]);
 // against the opponent (s.foe) the knuckle face counts too: it's what lands on him
-const FOE_NEAR = [0.4, 0.5], FOE_STICK = 0.15, _fp = new THREE.Vector3(), _fp2 = new THREE.Vector3();
+const FOE_NEAR = [0.4, 0.5], FOE_STICK = 0.15, ARM_SWING_FOE = [0.5, 0.8], _fp = new THREE.Vector3(), _fp2 = new THREE.Vector3();
 const FOE_PTS = [...FIST_PTS, [0.028, -0.1, 0.015, 0.028], [-0.028, -0.1, 0.015, 0.028]];
 // w = wrist extension 0..1 (palm strikes): the hand bends back up to 66 deg so the heel of the palm leads
 // and the fingers point up (a palm-down extended arm turns into a palm-forward strike).
@@ -1792,9 +1792,13 @@ function posePass(H, s, t, ground, raise) {
   // nothing and grows again the other way, so the feet come in under the hips and out the other side over the turn.
   // Renormalised, it flipped in one frame and threw every foot's target 2 x its stride offset: up to 23 cm a frame.)
   const gn = Math.max(1, Math.hypot(s.gdx || 0, s.gdz ?? 1)), gx = (s.gdx || 0) / gn * GAIT_SIDE, gz = (s.gdz ?? 1) / gn;
+  // Arm swing (dz: fist forward and, swung back, down) fades out chest to chest with the foe (ARM_SWING_FOE, chest
+  // distance): walking into him at 0.55 m the swing carried the guard fist in and out of his torso every step, and the
+  // push-out threw it between the chin and the belly, 45-48 cm in one 30 fps frame.
+  const sk = s.foe && !s.hold ? blend(ARM_SWING_FOE[0], ARM_SWING_FOE[1], H.chest.getWorldPosition(_C4).distanceTo(s.foe.chest.getWorldPosition(_C5))) : 1;
   const limbs = [
-    ['L', s.lh, 0, 0, -sw * 0.22 * g],
-    ['R', s.rh, 0, 0, sw * 0.22 * g],
+    ['L', s.lh, 0, 0, -sw * 0.22 * g * sk],
+    ['R', s.rh, 0, 0, sw * 0.22 * g * sk],
   ];
   H.root.getWorldQuaternion(_qb);
   for (const [side, tg, , , dz] of limbs) {

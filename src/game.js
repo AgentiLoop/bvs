@@ -344,6 +344,23 @@ const mixPose = (a, b, k) => {
   for (const n of ARR) o[n] = a[n].map((v, j) => v + (b[n][j] - v) * k);
   return o;
 };
+// Strike key poses (MOVES / SMOVES keys, t in s): each key after the first is eased in (smoothstep) over a window centred
+// on its time, half-width <= KEY_EASE and <= half the gap to its neighbours (the 2nd key: the whole gap to the 1st), so
+// windows never overlap. Switched in one frame, the pose spring took ~58% of the gap in the first 30 fps frame: the
+// roundhouse's rear fist jumped 40 cm, the jab (key at 0.03 s) 53 cm.
+const KEY_EASE = 0.05;
+const keyPose = (keys, t) => {
+  let i = -1;
+  for (let j = 0; j < keys.length; j++) if (t >= keys[j][0]) i = j;
+  const P = (j) => T(MP[keys[j][1]] || POSES[keys[j][1]]), h = (j) => j < 1 ? 0 : Math.min(KEY_EASE,
+    j === 1 ? keys[1][0] - keys[0][0] : (keys[j][0] - keys[j - 1][0]) / 2, j + 1 < keys.length ? (keys[j + 1][0] - keys[j][0]) / 2 : 1);
+  for (const j of [i, i + 1]) { // inside key j's window: easing from key j-1
+    if (j < 1 || j >= keys.length) continue;
+    const w = h(j), u = w > 0 ? clamp((t - keys[j][0] + w) / (2 * w), 0, 1) : 1;
+    if (u > 0 && u < 1) return mixPose(P(j - 1), P(j), u * u * (3 - 2 * u));
+  }
+  return i < 0 ? T(POSES.guard) : P(i);
+};
 
 export class Game {
   constructor(ctx) {
@@ -1842,22 +1859,14 @@ export class Game {
     }
     if (a && a.type === 'fatal') {
       if (a.pose) return T(MP[a.pose] || POSES[a.pose]);
-      let n = null;
-      for (const [t, p] of MOVES[a.name].keys) if (a.kt * (a.name === 'round' ? 1 : 1.5) >= t) n = p;
-      return T(MP[n] || POSES[n]);
+      return keyPose(MOVES[a.name].keys, a.kt * (a.name === 'round' ? 1 : 1.5));
     }
-    if (a && MOVES[a.type]) {
-      let n = null;
-      for (const [t, p] of MOVES[a.type].keys) if (a.t >= t) n = p;
-      return T(MP[n] || POSES[n]);
-    }
+    if (a && MOVES[a.type]) return keyPose(MOVES[a.type].keys, a.t);
     if (a && a.type === 'super') {
       if (a.phase === 'rush') return T(MP.rush);
       const S = SUPERS[f.key], name = a.phase === 'seq' ? S.seq[a.k] : S.fin;
-      let n = null;
       const SM = SMOVES[name], sc = SM || a.phase !== 'seq' ? 1 : 0.8;
-      for (const [t, p] of (SM || MOVES[name]).keys) if (a.kt >= t * sc) n = p;
-      return T(MP[n] || POSES[n]);
+      return keyPose((SM || MOVES[name]).keys, a.kt / sc);
     }
     if (a && a.type === 'blow') return T(a.phase === 'lunge' ? MP.rush : a.phase === 'rec' ? MP.whiff : MP[a.pose] || MP.grab);
     if (a && a.type === 'shoot') {
