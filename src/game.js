@@ -11,6 +11,9 @@ const ARR = ['lh', 'rh', 'lf', 'rf'];
 // Hand open / close speed cap (per s): the pose spring's first frame moved openness by up to 0.35, so a hand
 // snapped from flat to a hooked grip in one frame (fingertips 9 cm); now flat -> fist takes ~0.08 s.
 const HAND_RATE = 12;
+// A clean hit's snap back of the trunk (lean / twist, game.js hurt) eases in at this rate (1/s, real time): applied in
+// one frame, the 0.6 rad heavy-hit jolt threw the arms 40-53 cm in that frame.
+const JOLT = 25;
 const ARENA = { x0: -6.5, x1: 6.5, z0: -2.2, z1: 3.0 };
 const BLOCK = { lean: 0.3, lh: [0.1, 0.66, 0.28], rh: [-0.1, 0.64, 0.26] };
 const ENTER_END = 3.4, GRAV = 14;
@@ -553,7 +556,7 @@ export class Game {
     f.hits = 0;
     const lean = o.cur.lean;
     this.hurt(o, f, S, this.contact(f, o, S));
-    if (S.lift) o.cur.lean = lean; // slammed straight down: no snap back out of the lifter's hands (legs into his chest)
+    if (S.lift) { o.cur.lean = lean; o.jl = 0; } // slammed straight down: no snap back out of the lifter's hands (legs into his chest)
     if (S.back) { o.kx = -Math.sin(f.yaw) * S.kb; o.kz = -Math.cos(f.yaw) * S.kb; }
     else { fx.waves.spawn(o.x, 0.05, o.z, 3, 0xfff2d0, 0.7); fx.dustBurst(o.x, 0, o.z, 60, 3); fx.decals.add(o.x, o.z, 0.7); }
     this.showCombo(f.key === 'bat' ? 'HIP TOSS' : 'POWER SLAM', f.key);
@@ -1202,7 +1205,7 @@ export class Game {
     if (up > 0 || (air && up === 0)) { def.vy = Math.max(def.vy, air ? 2.8 + up * 0.45 : up); def.y = Math.max(def.y, 0.001); def.launched = true; }
     else if (up < 0 && air) { def.vy = up * 1.5; def.launched = true; }
     // the blow snaps the body back / twists it; the pose spring brings it round again
-    def.cur.lean -= M.heavy ? 0.6 : 0.3; def.cur.tw += (M.at === 'lh' ? -0.3 : 0.3);
+    def.jl = (def.jl || 0) - (M.heavy ? 0.6 : 0.3); def.jt = (def.jt || 0) + (M.at === 'lh' ? -0.3 : 0.3); // eased in by pose() (JOLT)
     def.hy += (M.at === 'lh' ? -0.5 : 0.5); def.hx -= M.heavy ? 0.55 : 0.3; // head snaps with the blow
     def.wince = Math.max(def.wince, M.heavy ? 1 : 0.7); // the face screws up in pain, instantly (no easing in)
     Object.assign(def.fx, { eye: Math.min(def.fx.eye, 1 - 0.8 * def.wince), pain: Math.max(def.fx.pain, def.wince), mouth: Math.max(def.fx.mouth, 0.75 * def.wince), ang: 0 });
@@ -1338,7 +1341,7 @@ export class Game {
   nextRound() {
     this.round++; this.state = 'ready'; this.readyT = 0; this.clock = ROUND_TIME; this.heat = null; this.cine = null; this.xray = null; this.winner = null; this.koCam = null; this.kick = null; this.finish = null; this.shots = []; this.grap = null; this.orb = null; this.orbT = ORB.first; this.resetProps();
     for (const [f, x] of [[this.F.bat, -2.2], [this.F.sup, 2.2]]) {
-      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, dazed: false, downT: -9, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, frz: 0, brk: 0, rollA: null, gcd: 0, wince: 0, stunG: 0, dizzy: 0, dizzyP: false, hitT: -9, cur: T(POSES.guard) });
+      Object.assign(f, { x, z: 0, y: 0, vy: 0, kx: 0, kz: 0, hp: 100, act: null, stun: 0, block: false, ko: false, cd: 0, down: 0, launched: false, buf: null, hits: 0, heldBy: null, crouch: false, dazed: false, downT: -9, rage: 0, fwdT: -9, cT0: -9, cNow: false, parT: -9, parL: -9, parTap: -9, parryT: 0, frz: 0, brk: 0, rollA: null, gcd: 0, wince: 0, stunG: 0, dizzy: 0, dizzyP: false, hitT: -9, jl: 0, jt: 0, cur: T(POSES.guard) });
       f.yaw = x < 0 ? Math.PI / 2 : -Math.PI / 2;
     }
     this.ctx.batCape.reset(); this.ctx.supCape.reset();
@@ -1397,7 +1400,7 @@ export class Game {
       }
     }
     this.ui.timer.textContent = Math.ceil(this.clock);
-    this.pose(sdt);
+    this.pose(sdt, dt);
     this.camera(dt);
     return sdt;
   }
@@ -1951,14 +1954,15 @@ export class Game {
     return GRIP[n] || null;
   }
 
-  pose(dt) {
-    const hk = dt ? 1 - Math.exp(-dt * 9) : 1;
+  pose(dt, rdt = dt) {
+    const hk = dt ? 1 - Math.exp(-dt * 9) : 1, jk = rdt ? 1 - Math.exp(-rdt * JOLT) : 1;
     // a held fighter is posed first, so the thrower's hands grip where his body is this frame
     let first = null;
     for (const f of this.gripOf(this.F.bat, this.F.sup) ? [this.F.sup, this.F.bat] : [this.F.bat, this.F.sup]) {
       const o = f === this.F.bat ? this.F.sup : this.F.bat;
       const k = dt ? 1 - Math.exp(-dt * (f.act || f.stun > 0 ? 26 : 16)) : 1;
       const tg = this.target(f), c = f.cur, gr = this.gripOf(f, o);
+      if (f.jl || f.jt) { const l = (f.jl || 0) * jk, t = (f.jt || 0) * jk; c.lean += l; c.tw += t; f.jl -= l; f.jt -= t; } // a hit's snap back reaches the body over a few frames (in real time, so it plays through hitstop), not in one
       for (const n of NUM) {
         const d = (tg[n] - c[n]) * k;
         c[n] += dt && !gr && (n === 'lo' || n === 'ro') ? clamp(d, -HAND_RATE * dt, HAND_RATE * dt) : d; // (a gripping hand's fingers follow the body: heroes.js wrapFingers)
