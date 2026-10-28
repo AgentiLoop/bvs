@@ -364,7 +364,7 @@ export class Game {
   keydown(e) {
     const k = e.key.toLowerCase();
     this.keys.add(k);
-    if (this.matchOver && this.overT > 1.5 && (k === 'enter' || k === 'r')) { this.ctx.restart(this.choice); return; }
+    if (this.matchOver && this.overT > 1.5 && (k === ' ' || k === 'enter' || k === 'r')) { this.ctx.restart(this.choice); return; }
     if (e.repeat) return;
     if (k === 'j') this.press(this.me, 'J', this.blockHeld());
     else if (k === 'k') this.press(this.me, 'K', this.blockHeld());
@@ -376,7 +376,7 @@ export class Game {
     else if (k === 'h') this.impact(this.me);
     else if (k === 'e') this.interact(this.me);
     else if (k === 'g') this.grapnelIn(this.me);
-    else if (k === ' ') this.press(this.me, 'A');
+    else if (k === 'y') this.press(this.me, 'A');
     else if (k === 'shift') this.amplify(this.me);
   }
   keyup(e) { this.keys.delete(e.key.toLowerCase()); }
@@ -402,7 +402,7 @@ export class Game {
     if (this.padHit(1) || this.padHit(15)) return 'sup';
     return null;
   }
-  // In game (standard mapping): X punch, Y kick, B special, A jump, LB/RB/LT/RT block, Start pause, Back menu.
+  // In game (standard mapping): X punch, Y kick, B special, A jump, LB/RB/LT/RT block, L3 crouch, R3 prop / grapnel, Start pause, Back menu.
   gamePad() {
     this.readPad();
     if (!this.pad) return true;
@@ -1412,7 +1412,7 @@ export class Game {
       fx.rubble(sup.x, 0, sup.z, 60, 6, 0.06, 0.26, 5); fx.dustBurst(sup.x, 0, sup.z, 110, 3.5); fx.sparkBurst(sup.x, 0.1, sup.z, 40, 5);
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
-    this.help(t > 0.4 && t < ENTER_END); // controls panel (START / ENTER pauses on it)
+    this.help(t > 0.4 && t < ENTER_END); // controls panel (SPACE / ENTER / START pauses on it)
     if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }

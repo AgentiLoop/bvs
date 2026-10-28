@@ -625,7 +625,7 @@ const playUI = document.getElementById('play');
 if (qs.has('freeze') || qs.has('t') || qs.has('cam')) playUI.style.display = 'none'; // clean frames for stills
 function startGame(choice) { reset(); game.start(choice); playUI.style.display = 'none'; paused = false; }
 function quitGame() { game.stop(); reset(); playUI.style.display = 'flex'; if (paused) { paused = false; sound.pause(false); } }
-// In a match: ENTER / Start pauses (and resumes); the controls panel stays up while paused.
+// In a match: SPACE / ENTER / Start (Menu) pauses (and resumes); the controls panel stays up while paused.
 function togglePause() { paused = !paused; sound.pause(paused); game.help(paused || game.state === 'enter', paused); }
 playUI.addEventListener('click', (e) => { const h = e.target.dataset && e.target.dataset.hero; if (h) { e.target.blur(); startGame(h); } });
 addEventListener('keyup', (e) => game.keyup(e));
@@ -633,7 +633,7 @@ addEventListener('keydown', (e) => {
   if (e.key === 'm' || e.key === 'M') { if (sound.toggle()) { sound.start(); if (paused) sound.pause(true); } return; }
   if (game.active) {
     if (e.key === 'Escape') { quitGame(); return; }
-    if (e.key === 'Enter' && !game.matchOver) { togglePause(); return; }
+    if ((e.key === 'Enter' || e.code === 'Space') && !game.matchOver) { e.preventDefault(); if (!e.repeat) togglePause(); return; }
     if (paused) return;
     if (e.code === 'Space' || e.key.startsWith('Arrow')) e.preventDefault();
     game.keydown(e);

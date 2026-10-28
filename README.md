@@ -28,17 +28,21 @@ from `icon/bvs.svg`.
 
 | | Keyboard | Gamepad |
 |---|---|---|
-| Move | WASD | Left stick |
+| Move | WASD or arrows | Left stick or d-pad |
 | Punch (×4 chain) · Kick | J · K | X · Y |
 | Block | Shift | LB / RB / LT / RT |
-| Crouch | C | Left stick down |
-| Jump | Space | A |
+| Crouch | C | Left stick down or L3 |
+| Jump | Y | A |
 | Special | L | B |
 | Super (full meter) | Block + Special · I | Block + B |
 | Drive impact · Fatal blow | H · F | LB + RB · LT + RT |
-| Pause (shows every move) · Quit | Enter · Esc | Start · Back |
+| Throw | J + K close · U | X + Y close |
+| Grapnel (Batman) · Stage prop | G · E | R3 |
+| Pause (shows every move) · Quit | Space (or Enter) · Esc | Menu (Start) · View (Back) |
+| Rematch (match over) | Space · Enter · R | Menu · A |
+| Pick a hero (title) | B · S | X · B (or d-pad left / right) |
 
-Press Pause during a fight to see the full move list: throws, projectiles, the rising uppercut, parries, dashes,
+In a match `P` cycles the comic / pixel-art look and `M` toggles sound. Press Pause during a fight to see the full move list: throws, projectiles, the rising uppercut, parries, dashes,
 sidesteps, breakers, amplified specials, cancels, power-up orbs, stage props, Batman's grapnel and the finisher.
 
 ## How it's made
