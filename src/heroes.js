@@ -237,9 +237,25 @@ export function makeHero(kind) {
   // back reads as two erector spinae columns either side of a sunken spine groove, rising out of the belt and
   // fading up between the shoulder blades; the lats thicken the back's outer corners from the armpit down and
   // in toward the lumbar; the mid / lower trapezius is a low diamond over the upper spine.
+  // Shoulder blades: the scapula was one soft round bump that faded into the lats, so the upper back read as a
+  // smooth shell. Each blade is now a flat-topped plate with a firm edge (tilted: the inferior angle points down and
+  // in toward the spine), carrying the infraspinatus dome in its fossa and the teres major knot at its lower outer
+  // corner where it runs up into the armpit, with the scapular spine as a ridge across its top and a rhomboid channel
+  // along its inner border, so the blades stand off the back and the lats sweep out from under them.
+  const SC = { x: 0.122, y: 0.548, t: 0.33, hw: 0.052, hh: 0.085, p: 5 };
+  const blade = (ax, y) => {
+    const dx = ax - SC.x, dy = y - SC.y, c = Math.cos(SC.t), s = Math.sin(SC.t);
+    const u = (dx * c - dy * s) / SC.hw, v = (dx * s + dy * c) / SC.hh, r = Math.hypot(u, v);
+    const plate = 0.010 * Math.exp(-(r ** SC.p));
+    const infra = 0.007 * Math.exp(-(Math.hypot((ax - 0.118) / 0.038, (y - 0.548) / 0.045) ** 3));
+    const teres = 0.010 * Math.exp(-(Math.hypot((ax - 0.162) / 0.026, (y - 0.488 - 0.6 * (ax - 0.162)) / 0.024) ** 2.5));
+    const spineRidge = 0.0035 * bump(y, 0.618 + 0.12 * (ax - 0.07), 0.009) * bump(ax, 0.12, 0.05);
+    const rhomboid = -0.005 * bump(ax, 0.06, 0.011) * bump(y, 0.54, 0.055);
+    return plate + infra + teres + spineRidge + rhomboid;
+  };
   const backDepth = (x, y, a) => {
     const ax = Math.abs(x), c = -Math.cos(a);
-    const scap = 0.017 * bump(ax, 0.11, 0.06) * bump(y, 0.56, 0.12) * c;
+    const scap = blade(ax, y) * blend(0.3, 0.7, c);
     const erector = 0.012 * bump(ax, 0.034 + 0.03 * blend(0.2, 0.5, y), 0.021) * blend(0.08, 0.18, y) * (1 - blend(0.28, 0.52, y));
     // lumbar curve: the small of the back sinks in above the belt, so the columns stand in a hollow and the glutes
     // still swell out below it in profile (the columns alone filled the curve in by 1 cm)
@@ -250,11 +266,12 @@ export function makeHero(kind) {
     const lat = 0.012 * bump(ax, xl - 0.035, 0.045) * bump(y, 0.38, 0.13) * blend(0.2, 0.6, c);
     return scap + lumbar + (erector + groove + trap) * blend(0.6, 0.9, c) + lat;
   };
+  // 96 sides (was 48, ~3.7 cm apart across the upper back) so the blades, spine groove and columns resolve.
   const torsoGeo = surface(torsoRows, (p, a) => {
     if (Math.cos(a) > 0) p.z = chestDepth(p.x, p.y);
     else p.z -= backDepth(p.x, p.y, a);
     return p;
-  }, 96);
+  }, 96, 96);
   const torsoWeights = (p) => {
     const upper = blend(0.30, 0.49, p.y), lower = blend(0.06, 0.22, p.y);
     return [[hips, (1 - lower) * (1 - upper)], [spine, lower * (1 - upper)], [chest, upper]];
@@ -262,8 +279,8 @@ export function makeHero(kind) {
   // The neck shares topology with the torso, with a separate costume/skin material band.
   torsoGeo.clearGroups();
   const neckRing = Math.ceil((0.738 - 0.035) / 0.8 * 96);
-  torsoGeo.addGroup(0, neckRing * 48 * 6, 0);
-  torsoGeo.addGroup(neckRing * 48 * 6, (96 - neckRing) * 48 * 6, 1);
+  torsoGeo.addGroup(0, neckRing * 96 * 6, 0);
+  torsoGeo.addGroup(neckRing * 96 * 6, (96 - neckRing) * 96 * 6, 1);
   skinSurface(hips, torsoGeo, [suit, B ? dark : skin], torsoWeights);
   const emblemGeo = new THREE.PlaneGeometry(B ? 0.29 : 0.4, B ? 0.145 : 0.3, 32, 24); // Superman: big chest-spanning shield
   const ep = emblemGeo.attributes.position;
