@@ -14,6 +14,8 @@ const HAND_RATE = 12;
 // A clean hit's snap back of the trunk (lean / twist, game.js hurt) eases in at this rate (1/s, real time): applied in
 // one frame, the 0.6 rad heavy-hit jolt threw the arms 40-53 cm in that frame.
 const JOLT = 25;
+// A clean hit's reaction pose (target(), stun) eases in from the pose he was hit in over this long (s, game time).
+const REACT_IN = 0.08, RISE_IN = 0.1;
 // Fight camera: swung round the pair more than this (rad) to see past a roof prop (world.js OCCLUDERS), it stays on that side.
 const CAM_FLIP = Math.PI / 2;
 // swing angles tried, nearest first: up to 1 rad either way (further and the fighters line up, one hiding the other),
@@ -1226,6 +1228,7 @@ export class Game {
     const KB = trade ? null : this.krushOf(def, att, M0, CK);
     const dmg = M.dmg * rage * Math.max(0.45, 1 - 0.1 * (att.hits - 1)) * (KB ? KRUSH.dmg : 1) * (att === this.cpu ? EASY.cpuDmg : EASY.meDmg);
     def.act = null; def.buf = null; def.frz = 0; def.stun = def.stunMax = M.stun; def.heavy = !!M.heavy;
+    const c0 = def.cur; def.p0 = { ...c0, lh: [...c0.lh], rh: [...c0.rh], lf: [...c0.lf], rf: [...c0.rf] }; def.hitA = this.t; // (target(): the reaction eases in from here)
     def.zone = M.low ? 'low' : M.hi || M.air || M.over || (M.up || 0) > 5 ? 'head' : 'body'; def.hitSide = M.at === 'lh' ? -1 : 1;
     def.kx = def.kx * 0.3 + nx * M.kb; def.kz = def.kz * 0.3 + nz * M.kb;
     att.kx -= nx * 0.5; att.kz -= nz * 0.5;
@@ -1897,7 +1900,8 @@ export class Game {
       const ss = ([t0, t1]) => { const u = clamp((a.t - t0) / (t1 - t0), 0, 1); return u * u * (3 - 2 * u); };
       return a.t < DI_BLEND.out[0] ? mixPose(T(MP.diUp), T(MP.di), ss(DI_BLEND.strike)) : mixPose(T(MP.di), T(MP.whiff), ss(DI_BLEND.out));
     }
-    if (a && a.type === 'rise') return a.landT != null ? T(MP.crouch) : a.t < 0.05 ? T(MP.dip) : f.vy > -1.5 ? T(MP.riseUp) : T(POSES.tuck);
+    // (the fist drives up out of the dip over RISE_IN s: switched at 0.05 s it jumped 44-63 cm in one 30 fps frame)
+    if (a && a.type === 'rise') { const u = clamp(a.t / RISE_IN, 0, 1); return a.landT != null ? T(MP.crouch) : f.vy > -1.5 || a.t < RISE_IN ? mixPose(T(MP.dip), T(MP.riseUp), u * u * (3 - 2 * u)) : T(POSES.tuck); }
     if (f.brk > BREAK.inv - BREAK.pose && !a) return T(MP.burst);
     if (f.parryT > 0 && !a && f.stun <= 0) return T(f.parLow ? MP.parryLow : MP.parry);
     if (f.stun > 0) {
@@ -1911,15 +1915,18 @@ export class Game {
       const gb = this.gripOf(g, f);
       if (gb && gb.at !== 'head' && (f.y > 0.2 || g.act?.type === 'fatal')) return T(MP.held); // (also carried up in Superman's fatality)
       if (gb && gb.at === 'head') return T(MP.hitBody, { lean: 0.5 }); // bent at the waist, head held at the knee's height
-      if (f.heldBy || !f.zone) return T(POSES[f.heavy ? 'hit' : 'flinch']);
+      // (eased in from the pose he was hit in, f.p0 at f.hitA, over REACT_IN s: switched in one frame, the pose spring
+      // threw the guard fists 35-44 cm in the hit's first 30 fps frame)
+      const ein = (p) => { const k = f.p0 ? clamp((this.t - f.hitA) / REACT_IN, 0, 1) : 1; return k < 1 ? mixPose(f.p0, p, k * k * (3 - 2 * k)) : p; };
+      if (f.heldBy || !f.zone) return ein(T(POSES[f.heavy ? 'hit' : 'flinch']));
       const u = 1 - f.stun / (f.stunMax || 1);
       // crumple: doubled over clutching the gut, then the knees give and he sinks onto them; back to the guard at the end
-      if (f.zone === 'crumple') return u < 0.3 ? T(MP.hitBody) : u < 0.85 ? mixPose(T(MP.hitBody), T(POSES.kneel, { lean: 0.7 }), clamp((u - 0.3) / 0.25, 0, 1)) : mixPose(T(POSES.kneel, { lean: 0.7 }), T(G), (u - 0.85) / 0.15);
+      if (f.zone === 'crumple') return ein(u < 0.3 ? T(MP.hitBody) : u < 0.85 ? mixPose(T(MP.hitBody), T(POSES.kneel, { lean: 0.7 }), clamp((u - 0.3) / 0.25, 0, 1)) : mixPose(T(POSES.kneel, { lean: 0.7 }), T(G), (u - 0.85) / 0.15));
       // wall splat: flat against the wall, then sliding down it with the arms dropping
-      if (f.zone === 'splat') { const s = clamp((u - 0.35) / 0.5, 0, 1); return mixPose(T(MP.splat), T(POSES.kneel, { lean: -0.2 }), s * 0.8); }
+      if (f.zone === 'splat') { const s = clamp((u - 0.35) / 0.5, 0, 1); return ein(mixPose(T(MP.splat), T(POSES.kneel, { lean: -0.2 }), s * 0.8)); }
       const R = f.zone === 'head' && f.heavy ? POSES.hit : REACT[f.zone], s = f.hitSide || 1;
       const r = T(R, { tw: (R.tw || 0) * s, roll: (R.roll || 0) * s, h: R.h - (f.heavy && f.zone !== 'head' ? 0.06 : 0) });
-      return mixPose(T(G), r, clamp(f.stun / (0.4 * (f.stunMax || 0.3)), 0, 1));
+      return ein(mixPose(T(G), r, clamp(f.stun / (0.4 * (f.stunMax || 0.3)), 0, 1)));
     }
     if (f.y > 0.05) return T(POSES.tuck);
     if (f.crouch) { const b = this.breath(f); return T(f.block ? MP.cblock : MP.crouch, { lean: (f.block ? MP.cblock : MP.crouch).lean + b * 0.015 }); }
