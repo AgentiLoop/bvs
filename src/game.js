@@ -70,7 +70,7 @@ const MP = {
   knee:    { ...G, h: 0.9, lean: 0.5, lh: [0.14, 0.42, 0.55], rh: [-0.14, 0.42, 0.55], rf: [-0.12, -0.3, 0.48], lo: 0.45, ro: 0.45 },
   elbowUp: { ...G, h: 0.92, lean: -0.1, tw: 0.45, lh: [0.25, 0.55, 0.45], rh: [-0.22, 1.18, 0.12] },
   elbow:   { ...G, h: 0.76, lean: 0.7, tw: -0.3, lh: [0.24, 0.36, 0.2], rh: [0.02, 0.6, 0.46] },
-  choke:   { ...G, h: 0.98, lean: -0.15, tw: 0.3, lh: [0.04, 1.02, 0.66], rh: [-0.3, 0.42, 0.02], lf: [0.2, -0.86, 0.3], rf: [-0.2, -0.86, -0.3], lo: 0.5 },
+  choke:   { ...G, h: 0.98, lean: 0, tw: 0.3, lh: [0.04, 1.02, 0.56], rh: [-0.3, 0.42, 0.02], lf: [0.2, -0.86, 0.2], rf: [-0.2, -0.86, -0.3], lo: 0.5 },
   // hit reactions by where the blow lands: head whips back with the rear foot stepping out to catch the weight,
   // a body blow doubles him over clutching the gut, a low kick yanks the front leg out with the arms thrown wide
   hitHead: { h: 0.84, lean: -0.45, roll: 0.12, tw: 0.25, lh: [0.32, 0.68, 0.02], rh: [-0.34, 0.6, 0.08], lf: [0.18, -0.76, 0.32], rf: [-0.2, -0.76, -0.5], lo: 0.5, ro: 0.5 },
@@ -206,11 +206,14 @@ const BLOW = { hp: 30, lunge: 8, reach: 1.15, win: 0.5, rec: 0.9, pause: 0.16, c
     [0, 'kneeHold', null, 0], [0.18, 'knee', { dmg: 8, kb: 0.2, stun: 0.6, at: 'rf', blast: 0.8, heavy: true }, 0],
     [0.5, 'elbowUp', null, 0], [0.62, 'elbow', { dmg: 9, kb: 0.2, stun: 0.6, hi: true, at: 'rh', blast: 0.9, heavy: true }, 0],
     [0.92, 'roundUp', null, 0], [1.04, 'round', { dmg: 18, kb: 9, up: 5, stun: 1, hi: true, heavy: true, at: 'rf', blast: 2.2, last: true }, 0]] },
-  sup: { name: 'FATAL BLOW · KRYPTONIAN JUDGEMENT', end: 1.7, col: 0x6fa8ff, steps: [
-    [0, 'choke', null, 0.5], [0.25, 'choke', { dmg: 5, kb: 0, stun: 0.5, at: 'lh', blast: 0.5, beam: true }, 0.55],
-    [0.42, 'choke', { dmg: 5, kb: 0, stun: 0.5, at: 'lh', blast: 0.6, beam: true }, 0.6], [0.59, 'choke', { dmg: 5, kb: 0, stun: 0.5, at: 'lh', blast: 0.8, beam: true }, 0.65],
+  sup: { name: 'FATAL BLOW · KRYPTONIAN JUDGEMENT', end: 1.7, col: 0x6fa8ff, pin: 0.5, steps: [
+    [0, 'choke', null, 0.25], [0.25, 'choke', { dmg: 5, kb: 0, stun: 0.5, at: 'lh', blast: 0.5, beam: true }, 0.28],
+    [0.42, 'choke', { dmg: 5, kb: 0, stun: 0.5, at: 'lh', blast: 0.6, beam: true }, 0.31], [0.59, 'choke', { dmg: 5, kb: 0, stun: 0.5, at: 'lh', blast: 0.8, beam: true }, 0.34],
     [0.8, 'dip', null, 0], [0.95, 'upper', { dmg: 24, kb: 2, up: 11, stun: 1, heavy: true, at: 'rh', blast: 2.4, last: true }, 0]] },
 };
+// Hand contact (heroes.js s.holdAt / s.holdSide): throws grip the torso with both hands; in the fatal blows Batman
+// clasps the back of the head while he drags it down into the knee, Superman holds the throat in his left hand.
+const GRIP = { throw: { at: null, side: null }, kneeHold: { at: 'head', side: null }, knee: { at: 'head', side: null }, choke: { at: 'neck', side: 'L' } };
 // MK Breaker: caught in a combo (`hits`+ hits) with `cost` meter, hold block + toward = burst out of it: the attacker is
 // blown back `kb` and stunned `stun` s, the breaker is invulnerable for `inv` s and drops to his feet. Not during supers,
 // Fatal Blows or fatalities. cpu: chance per combo hit that the CPU breaks.
@@ -920,7 +923,8 @@ export class Game {
     for (let i = 0; i < B.steps.length; i++) if (u >= B.steps[i][0]) k = i;
     const [, pose, hit, lift] = B.steps[k];
     a.pose = pose; a.beam = !!(hit && hit.beam);
-    const pin = () => { o.x = f.x + sx * 0.9; o.z = f.z + sz * 0.9; o.y = lift; o.vy = 0; o.kx = o.kz = 0; o.act = null; o.launched = false; o.block = false; o.stun = Math.max(o.stun, 0.5); };
+    const pd = lift > 0 && B.pin || 0.9; // a victim held up by the throat hangs within reach of the hand
+    const pin = () => { o.x = f.x + sx * pd; o.z = f.z + sz * pd; o.y = lift; o.vy = 0; o.kx = o.kz = 0; o.act = null; o.launched = false; o.block = false; o.stun = Math.max(o.stun, 0.5); };
     const fin = hit && hit.last;
     if (!(fin && k === a.k)) pin();
     if (a.beam) {
@@ -1754,7 +1758,7 @@ export class Game {
 
   separate() {
     const a = this.me, b = this.cpu, dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
-    if (a.y > 0.5 || b.y > 0.5 || a.launched || b.launched || a.heldBy || b.heldBy || a.ko || b.ko || a.down > 0 || b.down > 0 || d >= 0.75 || d === 0) return;
+    if (a.y > 0.5 || b.y > 0.5 || a.launched || b.launched || a.heldBy || b.heldBy || a.ko || b.ko || a.down > 0 || b.down > 0 || d >= 0.75 || d === 0 || this.gripOf(a, b) || this.gripOf(b, a)) return; // (a throat hold keeps him closer)
     const p = (0.75 - d) / 2;
     a.x -= dx / d * p; a.z -= dz / d * p; b.x += dx / d * p; b.z += dz / d * p;
   }
@@ -1833,6 +1837,10 @@ export class Game {
       // reaction by where the blow landed, mirrored to the side it came from; heavy head shots whip all the way back.
       // Full strength while stunned, easing back into the guard over the last 40% of the stun.
       if (f.heldBy && f.y > 0.2) return T(MP.held);
+      // in a fatal-blow hold: hanging by the throat from Superman's hand / doubled over, head dragged down to Batman's knee
+      const gb = this.gripOf(f === this.F.bat ? this.F.sup : this.F.bat, f);
+      if (gb && gb.at === 'neck' && f.y > 0.2) return T(MP.held);
+      if (gb && gb.at === 'head') return T(MP.hitBody, { lean: 0.5 }); // bent at the waist, head held at the knee's height
       if (f.heldBy || !f.zone) return T(POSES[f.heavy ? 'hit' : 'flinch']);
       const u = 1 - f.stun / (f.stunMax || 1);
       // crumple: doubled over clutching the gut, then the knees give and he sinks onto them; back to the guard at the end
@@ -1884,10 +1892,17 @@ export class Game {
       lh: fist(g.lh, 0), rh: fist(g.rh, 1.9), lf: foot(g.lf, 1), rf: foot(g.rf, -1), gait: f.moving });
   }
 
+  // what f's hands are gripping on o this frame (heroes.js s.holdAt / s.holdSide), or null
+  gripOf(f, o) {
+    if (o.heldBy === f) return GRIP.throw;
+    const a = f.act;
+    return a && a.type === 'blow' && a.phase === 'seq' && GRIP[a.pose] || null;
+  }
+
   pose(dt) {
     const hk = dt ? 1 - Math.exp(-dt * 9) : 1;
     // a held fighter is posed first, so the thrower's hands grip where his body is this frame
-    for (const f of this.F.sup.heldBy ? [this.F.sup, this.F.bat] : [this.F.bat, this.F.sup]) {
+    for (const f of this.gripOf(this.F.bat, this.F.sup) ? [this.F.sup, this.F.bat] : [this.F.bat, this.F.sup]) {
       const o = f === this.F.bat ? this.F.sup : this.F.bat;
       const k = dt ? 1 - Math.exp(-dt * (f.act || f.stun > 0 ? 26 : 16)) : 1;
       const tg = this.target(f), c = f.cur;
@@ -1920,9 +1935,12 @@ export class Game {
       s.h -= 0.014 * c.gait * Math.cos(2 * f.gph); // hips rise as a foot passes under them, dip in double support
       if (sq > 0.002) { s.h -= sq; s.lf = [c.lf[0], c.lf[1] + sq, c.lf[2]]; s.rf = [c.rf[0], c.rf[1] + sq, c.rf[2]]; s.lean += sq; }
       const base = tg.base ?? f.y;
-      // throw grip: the hands close on the held opponent's body (heroes.js s.hold), easing in and out
-      f.holdW = (f.holdW || 0) + ((o.heldBy === f ? 1 : 0) - (f.holdW || 0)) * (dt ? 1 - Math.exp(-dt * 30) : 1);
-      if (f.holdW > 0.01) { s.hold = o.H; s.holdW = f.holdW; }
+      // grip: the hands close on the held opponent (heroes.js s.hold), easing in and out: his torso in throws,
+      // the back of his head in Batman's fatal-blow clinch, his throat (left hand) in Superman's
+      const gr = this.gripOf(f, o);
+      if (gr) f.holdAt = gr;
+      f.holdW = (f.holdW || 0) + ((gr ? 1 : 0) - (f.holdW || 0)) * (dt ? 1 - Math.exp(-dt * 30) : 1);
+      if (f.holdW > 0.01) { s.hold = o.H; s.holdW = f.holdW; s.holdAt = f.holdAt.at; s.holdSide = f.holdAt.side; }
       applyPose(f.H, { ...s, p: [f.x, base + s.h, f.z], yaw: f.yaw + c.tw }, this.t, groundAt(f.x, f.z));
       if (this.active) setFace(f.H, this.expr(f, dt));
     }

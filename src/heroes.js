@@ -858,10 +858,23 @@ function bendThumb(a, c) {
 // round the flank or over the shoulder.
 const GRIP_Y = [0.28, 0.66], PALM_C = new THREE.Vector3(0, -0.05, 0.018), PALM_GAP = 0.01, FINGER_GAP = 0.016, THUMB_GAP = 0.018, HYPER = -0.2, GRIP_REACH = [0.68, 0.85], GRIP_EASE = 0.35,
   PALM_PTS = [[0.04, -0.082, 0.018], [-0.04, -0.075, 0.018], [0, -0.085, 0.02], [0.03, -0.01, 0.014], [-0.03, -0.01, 0.014]].map(p => new THREE.Vector3(...p));
+// s.holdAt picks the grip surface: torso (throws), 'neck' (Superman's throat hold: the throat band under the jaw) or
+// 'head' (Batman's clinch: both palms clasp the back of the skull behind the ears, the fingers wrapping it).
+// Neck and head grips test fingers against the neck section above the torso, not the shoulders extended upward.
+const NECK_Y = [0.745, 0.8], NECK_TOP = 0.835, HEAD_GRIP = new THREE.Vector3(0.8, 0.15, -0.55).normalize();
+let _gBand = GRIP_Y, _gTop = GRIP_Y[1], _gHead = false;
 const _gS = new THREE.Vector3(), _gN = new THREE.Vector3(), _gL = new THREE.Vector3(), _gW = new THREE.Vector3(), _gP = new THREE.Vector3(), _gT = new THREE.Vector3(), _gm = new THREE.Matrix4();
-function torsoSurface(O, w, S, N) {
+function torsoSurface(O, w, S, N, sh) {
+  if (_gHead) { // back of the head, on the side of the holder's shoulder (so the hand never flips across)
+    _gL.copy(sh); O.head.worldToLocal(_gL);
+    const u = HEAD_GRIP, x = _gL.x < 0 ? -u.x : u.x;
+    S.set(x * HEAD_R[0], u.y * HEAD_R[1], u.z * HEAD_R[2]).add(HEAD_C);
+    N.set(x / HEAD_R[0], u.y / HEAD_R[1], u.z / HEAD_R[2]);
+    O.head.localToWorld(S); N.transformDirection(O.head.matrixWorld);
+    return;
+  }
   _gL.copy(w); O.chest.worldToLocal(_gL);
-  const oy = O.spine.position.y + O.chest.position.y, y = Math.min(GRIP_Y[1], Math.max(GRIP_Y[0], _gL.y + oy));
+  const oy = O.spine.position.y + O.chest.position.y, y = Math.min(_gBand[1], Math.max(_gBand[0], _gL.y + oy));
   const [rx, rz] = O.torsoSection(y), ang = Math.atan2(_gL.x / rx, _gL.z / rz);
   S.set(rx * Math.sin(ang), y - oy, rz * Math.cos(ang));
   if (S.z > 0 && Math.abs(S.x) < rx) S.z = Math.max(S.z, O.chestDepth(S.x, y));
@@ -874,7 +887,7 @@ function torsoSurface(O, w, S, N) {
 function touches(O, p, m) { // -> how deep (m) the point is inside, 0 = clear
   _gW.copy(p); O.chest.worldToLocal(_gW);
   // (the shoulders taper into the neck above GRIP_Y[1]; the held body's deltoids and traps fill that out)
-  const y = Math.min(GRIP_Y[1], Math.max(0.1, _gW.y + O.spine.position.y + O.chest.position.y)), [rx, rz] = O.torsoSection(y);
+  const y = Math.min(_gTop, Math.max(0.1, _gW.y + O.spine.position.y + O.chest.position.y)), [rx, rz] = O.torsoSection(y);
   let d = 0;
   const e = Math.hypot(_gW.x / (rx + m), _gW.z / (rz + m));
   if (e < 1) d = (1 - e) * Math.min(rx, rz) + m * (1 - e);
@@ -945,7 +958,7 @@ function wrapFingers(a, O, o, hw) {
   g.wk[4] = tc;
   bendThumb(a, tc);
   g.o = -1; // shapeHand must re-apply its own curl next frame
-  if (hw < 0.5) return 0;
+  if (hw < 0.1) return 0;
   // Still in the body however the fingers bend (a torso widening toward the chest sinks the knuckles of a
   // palm laid on the waist): report the deepest finger, thumb or palm point so the hand can back off.
   let d = 0;
@@ -995,10 +1008,11 @@ function posePass(H, s, t, ground, raise) {
     // palm centre onto the nearest surface point, palm turned onto it.
     // A body out of reach (Superman's overhead lift, the slam) is let go rather than stretched for.
     const O = s.hold, open = side === 'L' ? s.lo : s.ro;
-    let hw = O ? Math.min(1, s.holdW ?? 1) : 0;
+    let hw = O && (!s.holdSide || s.holdSide === side) ? Math.min(1, s.holdW ?? 1) : 0;
+    _gHead = s.holdAt === 'head'; _gBand = s.holdAt === 'neck' ? NECK_Y : GRIP_Y; _gTop = s.holdAt ? NECK_TOP : GRIP_Y[1];
     // (eased per hand: the nearest surface point jumps about as both bodies move, and the hand flicked on and off)
     if (hw > 0.01 && a.grip) {
-      torsoSurface(O, _T, _gS, _gN); a.sh.getWorldPosition(_A);
+      a.sh.getWorldPosition(_A); torsoSurface(O, _T, _gS, _gN, _A);
       const r = 1 - blend(GRIP_REACH[0], GRIP_REACH[1], _A.distanceTo(_gS));
       a.grip.rw = a.grip.rw == null ? r : a.grip.rw + (r - a.grip.rw) * GRIP_EASE;
       hw *= a.grip.rw;
