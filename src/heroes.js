@@ -1095,11 +1095,15 @@ function bendPole(a, out) {
   return out.addScaledVector(_bpE.addScaledVector(_bpW, -_bpE.dot(_bpW)), 4);
 }
 
-const _C = new THREE.Vector3();
+const _C = new THREE.Vector3(), _C4 = new THREE.Vector3(), _C5 = new THREE.Vector3();
 // Push a world point radially out of the torso's elliptical cross-section (plus margin), measured in the
 // chest's frame so it follows the lean. Returns true if it moved.
 const UPPER_R = 0.06; // clearance for the upper-arm midpoint against the torso
-function pushOutOfTorso(H, w, margin) {
+// m (the foe's torso, game: world point between the pushed arm's shoulder and its chest): walking chest to chest
+// (~0.55 m, both leaning in) a guard fist sat deep in the foe, and the radial way out flipped between his two sides
+// (and his back) from one frame to the next: the fist jumped 40-58 cm a frame (144 fps). A deep point now leaves
+// straight toward m (across his section); only within FOE_OUT of his surface does it turn to the radial way out.
+function pushOutOfTorso(H, w, margin, m) {
   _C2.copy(w); H.chest.worldToLocal(_C2);
   const y = _C2.y + H.spine.position.y + H.chest.position.y;
   if (y < 0.1 || y > 0.72) return false;
@@ -1110,12 +1114,22 @@ function pushOutOfTorso(H, w, margin) {
   const fw = Math.abs(_C2.x) < rx ? (e < 1 ? blend(-0.04, 0, _C2.z) : +(_C2.z > 0)) : 0;
   const front = fw > 0 ? H.chestDepth(_C2.x, y) + margin : 0;
   if (e >= 1 && !(front && _C2.z < front)) return false;
+  if (e < 1 && m) {
+    H.chest.worldToLocal(_C3.copy(m)); _C3.y = 0; if (_C3.lengthSq() < 1e-8) _C3.set(0, 0, 1); _C3.normalize();
+    const rw = blend(FOE_OUT[0], FOE_OUT[1], Math.sqrt(e)), rl = Math.hypot(_C2.x, _C2.z);
+    if (rw > 0 && rl > 1e-6) { _C3.multiplyScalar(1 - rw); _C3.x += rw * _C2.x / rl; _C3.z += rw * _C2.z / rl; if (_C3.lengthSq() < 1e-8) _C3.set(0, 0, 1); _C3.normalize(); }
+    const A = (rx + margin) ** -2, B = (rz + margin) ** -2, qa = _C3.x * _C3.x * A + _C3.z * _C3.z * B, qb = 2 * (_C2.x * _C3.x * A + _C2.z * _C3.z * B);
+    _C2.addScaledVector(_C3, (-qb + Math.sqrt(qb * qb - 4 * qa * (e - 1))) / (2 * qa));
+    if (_C2.z > 0 && Math.abs(_C2.x) < rx) _C2.z = Math.max(_C2.z, H.chestDepth(_C2.x, y) + margin);
+    w.copy(H.chest.localToWorld(_C2));
+    return true;
+  }
   if (e < 1) { if (e < 1e-6) _C2.z = rz + margin; else { const k = 1 / Math.sqrt(e); _C2.x *= k; _C2.z *= k; } }
   if (front) _C2.z += fw * Math.max(0, front - _C2.z);
   w.copy(H.chest.localToWorld(_C2));
   return true;
 }
-const _C2 = new THREE.Vector3(), _fs = new THREE.Vector3(), _fv = new THREE.Vector3(), _fq = new THREE.Quaternion(), FOLD_R = 0.24;
+const FOE_OUT = [0.75, 1], _C2 = new THREE.Vector3(), _C3 = new THREE.Vector3(), _fs = new THREE.Vector3(), _fv = new THREE.Vector3(), _fq = new THREE.Quaternion(), FOLD_R = 0.24;
 // Same for the head (an ellipsoid round the skull in the head's frame; the elbow strike folded the fist 3 cm into the face).
 const HEAD_C = new THREE.Vector3(0, 0.12, 0), HEAD_R = [0.085, 0.125, 0.08];
 function pushOutOfHead(H, w, margin) {
@@ -1763,7 +1777,7 @@ function posePass(H, s, t, ground, raise) {
     // s.foe = the opponent (game): standing close (0.75 m) the guard fists sank up to 18 cm into his chest and
     // punches went through him, so a hand that isn't gripping also stays out of his torso and head (the fist's
     // knuckle face too, FOE_PTS).
-    const X = !s.hold && s.foe, out = (p, r) => pushOutOfTorso(H, p, r) || pushOutOfHead(H, p, r) || !!X && (pushOutOfTorso(X, p, r) || pushOutOfHead(X, p, r));
+    const X = !s.hold && s.foe, out = (p, r) => pushOutOfTorso(H, p, r) || pushOutOfHead(H, p, r) || !!X && (pushOutOfTorso(X, p, r, a.sh.getWorldPosition(_C4).lerp(H.chest.getWorldPosition(_C5), 0.5)) || pushOutOfHead(X, p, r));
     for (let it = 0; it < 3; it++) {
       let moved = false;
       _gW.set(0, 0, 0);
