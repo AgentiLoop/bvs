@@ -250,8 +250,20 @@ export function makeHero(kind) {
   // Trunks are skinned: the leg openings follow the thighs (weights fade in below the belt), so a
   // lifted thigh carries the trunks with it instead of punching suit-coloured patches through them.
   const arms = {}, legs = {};
+  // Superman is drawn as a powerhouse (full weight), Batman as a leaner athlete (80%) — legs and hips.
+  const bulk = B ? 0.8 : 1;
+  // Neo-hero hips: legs this strong need the glutes that drive them. The trunks were a flat tube (glutes 1 cm
+  // behind the lower back), so the backside now carries two gluteus maximus cheeks (~4 cm proud, split by a
+  // shallow cleft) rising out of the lumbar hollow and tucking under at the gluteal fold, and the gluteus
+  // medius widens the hip so the outer thigh sweep grows out of the pelvis instead of out of a narrow brief.
+  // Hips-space height; the thigh mesh shares the shape below the trunks' hem.
+  const glute = y => bulk * 0.04 * bump(y, -0.045, 0.05), medius = y => bulk * 0.014 * bump(y, -0.03, 0.045);
   const trunkRows = [[-0.095, 0.05, 0.05], [-0.06, 0.175, 0.106], [0.015, 0.168, 0.114], [0.085, 0.15, 0.106]];
-  skinSurface(hips, surface(trunkRows, p => p, 32),
+  skinSurface(hips, surface(trunkRows, (p, a) => {
+    p.z -= glute(p.y) * Math.max(0, -Math.cos(a)) ** 1.2 * (1 - 0.55 * bump(p.x, 0, 0.018));
+    p.x += Math.sign(p.x) * medius(p.y) * Math.sin(a) ** 2;
+    return p;
+  }, 32),
     B ? dark : red, p => {
       const lower = (1 - blend(-0.075, 0.05, p.y)) * 1.0, l = blend(-0.06, 0.06, p.x);
       return [[hips, 1 - lower], [legs.L.th, lower * l], [legs.R.th, lower * (1 - l)]];
@@ -526,7 +538,6 @@ export function makeHero(kind) {
     // Hero legs: the mid-thigh and calf get extra mass on top of the athletic base. Superman is
     // drawn as a powerhouse (full weight), Batman as a leaner athlete (80%). The hip line (trunks)
     // and the knee / ankle stay as they were so the joints keep reading narrow.
-    const bulk = B ? 0.8 : 1;
     const legRows = [[-0.94, 0.033, 0.036, 0.004], [-0.87, 0.036, 0.04, 0.0], [-0.78, 0.05, 0.056, -0.01],
       [-0.68, 0.063, 0.068, -0.016], [-0.59, 0.06, 0.06, -0.01], [-0.5, 0.05, 0.05, 0.002],
       [-0.44, 0.054, 0.056, 0.006], [-0.34, 0.074, 0.078, 0.006], [-0.2, 0.092, 0.094, 0.002],
@@ -562,6 +573,8 @@ export function makeHero(kind) {
       p.x -= s * bulk * 0.018 * bump(p.y, -0.7, 0.06) * inn ** 1.5;     // inner calf head, lower and fuller
       p.z -= bulk * 0.018 * bump(p.y, -0.68, 0.06) * bk ** 1.5;         // calf peak
       p.z += bulk * 0.004 * bump(p.y, -0.68, 0.08) * fr ** 2;           // tibialis
+      p.z -= glute(p.y - 0.04) * bk ** 1.2;                             // gluteus maximus below the trunks' hem, up to the fold
+      p.x += s * medius(p.y - 0.04) * out ** 2;                         // gluteus medius / trochanter carries the hip line down
       // Boot cuff: a slight flared lip just below the boot top so the boot reads as a real boot, not paint.
       const cuff = 1 + 0.07 * bump(p.y, -0.612, 0.011);
       p.x *= cuff; p.z *= cuff;
@@ -648,7 +661,7 @@ export function makeHero(kind) {
       const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
       if (y < -0.2 || y > 0.8) continue;
       const [rx, rz] = y < 0.06 ? contour(trunkRows, y) : contour(torsoRows, y);
-      w[i] = blend(1.02, 1.22, Math.hypot(x / rx, z / rz));
+      w[i] = blend(1.02, 1.22, Math.hypot(x / rx, z / (y < 0.06 && z < 0 ? rz + glute(y) : rz))); // trunks include the glutes
     }
     og.setAttribute('inkW', new THREE.BufferAttribute(w, 1));
     const o = m.isSkinnedMesh ? new THREE.SkinnedMesh(og, ink) : new THREE.Mesh(og, ink);
