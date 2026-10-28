@@ -1380,7 +1380,9 @@ function orientHand(a, qRoot, w = 0, palm = null, pw = 0) {
   _hz.addScaledVector(_hy, -_hz.dot(_hy));
   if (_hz.lengthSq() < 1e-6) { _hz.set(0, -1, 0).applyQuaternion(qRoot); _hz.addScaledVector(_hy, -_hz.dot(_hy)); } // forearm along the preferred palm line
   _hz.normalize();
-  if (!palm) forearmTwist(a);
+  // (a gripping palm too: turned onto the held body it wrung the forearm 160-180 deg in the hip toss and supers;
+  // only the palm-placement passes (_gLoop) aim it freely, so the reach target doesn't jump)
+  if (!palm || !_gLoop) forearmTwist(a);
   _hx.crossVectors(_hy, _hz);
   _hq.setFromRotationMatrix(_hm.makeBasis(_hx, _hy, _hz));
   a.el.getWorldQuaternion(_hr).invert();
@@ -1458,7 +1460,8 @@ const GRIP_Y = [0.28, 0.6], GRIP_TOP = 0.66, PALM_C = new THREE.Vector3(0, -0.05
 // 'head' (Batman's clinch: both palms clasp the back of the skull behind the ears, the fingers wrapping it).
 // Neck and head grips test fingers against the neck section above the torso, not the shoulders extended upward.
 const NECK_Y = [0.745, 0.8], NECK_TOP = 0.835, HEAD_GRIP = new THREE.Vector3(0.8, 0.15, -0.55).normalize();
-let _gBand = GRIP_Y, _gTop = GRIP_TOP, _gHead = false;
+let _gBand = GRIP_Y, _gTop = GRIP_TOP, _gHead = false, _gLoop = false;
+const GRIP_ACROSS = [0.05, 0.15], GRIP_FRONT = [0.15, 0.28];
 const _gS = new THREE.Vector3(), _gN = new THREE.Vector3(), _gL = new THREE.Vector3(), _gW = new THREE.Vector3(), _gP = new THREE.Vector3(), _gT = new THREE.Vector3(), _gm = new THREE.Matrix4();
 function torsoSurface(O, w, S, N, sh) {
   if (_gHead) { // back of the head, on the side of the holder's shoulder (so the hand never flips across)
@@ -1663,7 +1666,9 @@ function posePass(H, s, t, ground, raise) {
     // (eased per hand: the nearest surface point jumps about as both bodies move, and the hand flicked on and off)
     if (hw > 0.01 && a.grip) {
       a.sh.getWorldPosition(_A); torsoSurface(O, _T, _gS, _gN, _A);
-      const r = 1 - blend(GRIP_REACH[0], GRIP_REACH[1], _A.distanceTo(_gS));
+      // (a spot across the midline and not out in front of the chest is reached only through the own torso)
+      _gL.copy(_gS); H.chest.worldToLocal(_gL);
+      const r = (1 - blend(GRIP_REACH[0], GRIP_REACH[1], _A.distanceTo(_gS))) * (1 - blend(GRIP_ACROSS[0], GRIP_ACROSS[1], -_gL.x * a.s) * (1 - blend(GRIP_FRONT[0], GRIP_FRONT[1], _gL.z)));
       a.grip.rw = a.grip.rw == null ? r : a.grip.rw + (r - a.grip.rw) * GRIP_EASE;
       hw *= a.grip.rw;
     } else if (a.grip) a.grip.rw = null;
@@ -1671,11 +1676,13 @@ function posePass(H, s, t, ground, raise) {
       _gP.copy(_gN).negate(); _gT.copy(_T);
       _T.copy(_gS).addScaledVector(_gN, 0.04);
       shapeHand(a, open);
+      _gLoop = true;
       for (let it = 0; it < 3; it++) {
         solveIK(a.sh, a.el, 0.32, 0.30, _T, _P, true); orientHand(a, _qb, 0, _gP, 1);
         _C.copy(PALM_C); a.hand.localToWorld(_C);
         _T.add(_F.copy(_gS).addScaledVector(_gN, PALM_GAP).sub(_C));
       }
+      _gLoop = false;
       _T.lerp(_gT, 1 - hw);
     }
     solveIK(a.sh, a.el, 0.32, 0.30, _T, _P, true);
