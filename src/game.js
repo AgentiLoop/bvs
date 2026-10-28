@@ -87,12 +87,15 @@ const MP = {
   hitHead: { h: 0.84, lean: -0.45, roll: 0.12, tw: 0.25, lh: [0.32, 0.68, 0.02], rh: [-0.34, 0.6, 0.08], lf: [0.18, -0.76, 0.32], rf: [-0.2, -0.76, -0.5], lo: 0.5, ro: 0.5 },
   hitBody: { h: 0.68, lean: 0.9, roll: 0, tw: 0.1, lh: [0.1, 0.16, 0.3], rh: [-0.1, 0.12, 0.3], lf: [0.19, -0.62, 0.18], rf: [-0.2, -0.6, -0.42], lo: 0.25, ro: 0.25 },
   hitLow:  { h: 0.62, lean: 0.25, roll: 0.2, tw: -0.15, lh: [0.42, 0.42, 0.28], rh: [-0.42, 0.38, 0.2], lf: [0.2, -0.42, 0.1], rf: [-0.22, -0.55, -0.32], lo: 0.55, ro: 0.55 },
-  // super strings, per hero. Batman: gauntlet palm, spinning back elbow, clinch knee, backhand gauntlet-fin slash,
+  // super strings, per hero. Batman: gauntlet palm, horizontal elbow, clinch knee, backhand gauntlet-fin slash,
   // spinning cape heel kick. Superman: dipping liver shot, wide haymaker, thunderclap at the ears, double-axe-handle
   // smash, rising flying uppercut with the knee tucked.
+  // (The elbow was a back elbow with no spin: the body turned right and the elbow swept out to the right, away from
+  // the foe. Now it coils right off the palm strike, elbow raised out to the side, fist by the temple, and unwinds
+  // left: the elbow comes round at shoulder height onto the foe's jaw line, forearm level, fist inside the elbow.)
   bPalm:   { ...G, lean: 0.52, tw: -0.32, lh: [0.31, 0.5, 1.01], rh: [-0.12, 0.44, 0.28], lo: 1, lw: 1 },
-  bElbowUp:{ ...G, lean: 0.2, tw: 0.95, lh: [0.18, 0.5, 0.35], rh: [0.1, 0.6, 0.4] },
-  bElbow:  { ...G, lean: 0.38, tw: -0.85, roll: -0.08, lh: [0.18, 0.5, 0.38], rh: [0.12, 0.62, 0.55] },
+  bElbowUp:{ ...G, lean: 0.25, tw: -0.45, lh: [0.18, 0.5, 0.35], rh: [-0.3, 0.75, 0.5] },
+  bElbow:  { ...G, lean: 0.38, tw: 0.8, roll: -0.08, lh: [0.18, 0.5, 0.38], rh: [-0.3, 0.65, 0.4] },
   bSlashUp:{ ...G, lean: 0.25, tw: 0.65, rh: [0.1, 0.66, 0.38] },
   bSlash:  { ...G, lean: 0.5, tw: -0.75, roll: -0.1, lh: [0.18, 0.5, 0.38], rh: [-0.58, 0.36, 0.74] },
   bSpinUp: { ...G, h: 0.82, lean: 0.1, tw: -1.4, rf: [-0.25, -0.52, 0.0] },
