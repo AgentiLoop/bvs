@@ -1230,7 +1230,23 @@ function weightShift(H, s) {
   const e = s.dt ? 1 - Math.exp(-s.dt * WS.k) : 1;
   o.x += (tx - o.x) * e; o.z += (tz - o.z) * e;
 }
+// Standing feet reach the floor. Rising poses lifted the hips over guard-height feet (kneeHold / knee / elbowUp
+// h 0.88-0.92, lift, heaveUp, clapUp, parry, the stun 'hit' recoil: feet 0.7 under hips at 0.9), so a grounded
+// fighter (game, s.lock > 0) hung both boots 3-20 cm off the roof: Batman's clinch knee and hammer elbow, Superman's
+// prop lift and stunned recoil. The lower foot target now drops (along world up) to the floor, and the other one with it
+// while it is within STAND of that height: a raised knee or kick keeps its height.
+const STAND = [0.06, 0.2], _sdE = new THREE.Euler(), _sdQ = new THREE.Quaternion(), _sdV = new THREE.Vector3();
+function standFeet(s, ground) {
+  _sdQ.setFromEuler(_sdE.set(s.pitch || 0, 0, s.roll || 0, 'YXZ'));
+  const yl = _sdV.set(...s.lf).applyQuaternion(_sdQ).y, yr = _sdV.set(...s.rf).applyQuaternion(_sdQ).y, low = Math.min(yl, yr);
+  const d = s.p[1] + low - ground - SOLE;
+  if (!(d > 0.002)) return s;
+  _sdV.set(0, -d, 0).applyQuaternion(_sdQ.invert());
+  const mv = (f, y) => { const w = 1 - blend(STAND[0], STAND[1], y - low); return [f[0] + _sdV.x * w, f[1] + _sdV.y * w, f[2] + _sdV.z * w]; };
+  return { ...s, lf: mv(s.lf, yl), rf: mv(s.rf, yr) };
+}
 export function applyPose(H, s, t, ground = 0) {
+  if (s.lock > 0) s = standFeet(s, ground);
   // last frame's grip curls (relaxFingers eases from them once the grip lets go)
   // (s.again: the game re-poses a fighter in the same frame; keep this frame's starting curls)
   if (!s.again) for (const side of ['L', 'R']) { const g = H.arms[side].grip; if (g) { g.pk = g.wk ? g.wk.slice() : null; g.ph = g.hw; g.hw = 0; } }
