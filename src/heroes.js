@@ -837,7 +837,7 @@ function orientHand(a, qRoot, w = 0, palm = null, pw = 0) {
 // finger flexes at all three joints together (MCP 86, PIP 97, DIP 60 deg fully curled), the ring and pinky a
 // little more than the index in a half-closed hand (the natural cascade), and the thumb swings from beside
 // the index (open) to across the curled fingers (closed).
-const OPEN_MIN = 0.06, CURL = [1.5, 1.7, 1.05], CASCADE = [0, 0.15, 0.35, 0.6], _DNH = new THREE.Vector3(0, -1, 0);
+const OPEN_MIN = 0.06, MORPH_O = 0.35, FIST_FIT = [0.058, 0.177, 0.266, -0.002], CURL = [1.5, 1.7, 1.05], CASCADE = [0, 0.15, 0.35, 0.6], _DNH = new THREE.Vector3(0, -1, 0);
 const THUMB_OPEN = [[0.55, -0.8, 0.22], [0.35, -0.93, 0.08], [0.25, -0.97, 0]].map(v => new THREE.Vector3(...v).normalize());
 const THUMB_SHUT = [[0.35, -0.6, 0.45], [-0.3, -0.45, 0.72], [-0.95, -0.24, 0.18]].map(v => new THREE.Vector3(...v).normalize());
 const _tp = new THREE.Vector3(), _td = new THREE.Vector3();
@@ -852,6 +852,11 @@ function shapeHand(a, o) {
   g.o = o;
   g.fistG.visible = o < OPEN_MIN; g.openG.visible = !g.fistG.visible;
   if (!g.openG.visible) return;
+  // The sculpted fist is bigger than the curled articulated hand (punch face 1.8 cm, knuckle edge 2.2 cm, back
+  // 1.3 cm), so every fist <-> open swap shrank / grew the hand in one frame. Near closed the open hand is
+  // stretched to the fist's silhouette (fitted: max 1 cm off, mean 0.4) and relaxes to its own size by MORPH_O.
+  const m = 1 - blend(OPEN_MIN, MORPH_O, o);
+  g.openG.scale.set(1 + FIST_FIT[0] * m, 1 + FIST_FIT[1] * m, 1 + FIST_FIT[2] * m); g.openG.position.z = FIST_FIT[3] * m;
   const c = 1 - o;
   g.fingers.forEach((f, i) => bendFinger(f, Math.min(1, c + CASCADE[i] * c * (1 - c)), o));
   bendThumb(a, c);
