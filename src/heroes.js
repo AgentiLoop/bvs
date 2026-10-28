@@ -578,6 +578,7 @@ export function makeHero(kind) {
       const thigh = 0.012 * bump(y, -0.27, 0.1), calf = 0.008 * bump(y, -0.68, 0.06);
       return [y, rx + bulk * (thigh + calf), rz + bulk * (thigh + calf * 1.2), o - bulk * calf * 0.6];
     });
+    const adductor = (y, a) => bulk * 0.009 * bump(y, -0.19, 0.08) * bump(Math.atan2(Math.sin(a + s * 0.8), Math.cos(a + s * 0.8)), 0, 0.5) * Math.max(0, Math.cos(a));
     const legGeo = surface(legRows, (p, a) => {
       p.x += s * 0.008 * bump(p.y, -0.2, 0.15);
       // The outer upper thigh flared 5 cm wider than the hips (legs looked bolted on). Slim it so the
@@ -608,6 +609,9 @@ export function makeHero(kind) {
       p.z += bulk * 0.004 * bump(p.y, -0.68, 0.08) * fr ** 2;           // tibialis
       p.z -= glute(p.y - 0.04) * bk ** 1.2;                             // gluteus maximus below the trunks' hem, up to the fold
       p.x += s * medius(p.y - 0.04) * out ** 2;                         // gluteus medius / trochanter carries the hip line down
+      // Adductors: the inner thigh's mass sits front-inner, high, medial to the sartorius. Forward only, so the
+      // inner edge stays at the midline (thighs already meet there).
+      p.z += adductor(p.y, a);
       // Sartorius: the long strap from the front of the hip bone to the inside of the knee. Its edge is the
       // diagonal line that splits the quads from the inner thigh (the comic-book "teardrop" frame).
       const t = (-0.08 - p.y) / 0.36;
@@ -635,7 +639,7 @@ export function makeHero(kind) {
       const dF = new Float32Array(n * 3), dO = new Float32Array(n * 3), dI = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) {
         const a = U.getX(i) * Math.PI * 2, c = CREASE.d * bump(P0.getY(i), CREASE.y, CREASE.w);
-        dF[i * 3 + 2] = -c * Math.max(0, Math.cos(a)); // the whole front half folds (cos^2 left the front-inner / outer quadrants poking through in the roundhouse)
+        dF[i * 3 + 2] = -c * Math.max(0, Math.cos(a)) - adductor(P0.getY(i), a); // the whole front half folds (cos^2 left the front-inner / outer quadrants poking through in the roundhouse); the adductors flatten into the fold
         dO[i * 3] = -s * c * Math.max(0, s * Math.sin(a)) ** 2;
         dI[i * 3] = s * c * Math.max(0, -s * Math.sin(a)) ** 2;
       }
