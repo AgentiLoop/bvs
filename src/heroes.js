@@ -155,7 +155,7 @@ const blend = (a, b, x) => THREE.MathUtils.smoothstep(x, a, b);
 const CREASE = { d: 0.045, y: -0.17, w: 0.11, a0: 1.0, a1: 1.6, k: 1, ki: 1.6 };
 // Seat corrective: the trunks' backside rounds out to radius r (minus k * (|x| - 6 cm)^2 toward the hip's side)
 // from the hip joint line as the thigh lifts forward a0..a1 rad.
-const SEAT = { r: 0.13, k: 2, a0: 0.3, a1: 1.5 };
+const SEAT = { r: 0.13, k: 2, a0: 0.3, a1: 1.5, l0: 1.0 }; // l0: the thigh's seat fill fades in from l0 rad (later, so the guard keeps its shape)
 
 function surface(rows, sculpt = (p) => p, rings = 64, sides = 48) {
   const positions = [], uv = [], indices = [];
@@ -658,6 +658,21 @@ export function makeHero(kind) {
         dF[i * 3 + 2] -= tf * Math.cos(a); dO[i * 3] -= tf * Math.sin(a); dO[i * 3 + 2] -= tf * Math.cos(a);
         dI[i * 3] = s * c * Math.max(0, -s * Math.sin(a)) ** 2;
       }
+      // Seat: in a tuck / crouch the thigh's back-top (above the joint, hidden in the trunks while standing) swings
+      // down under the seat and left a 4 cm step below the pelvis-riding glute (radius from the hip joint 11.4 ->
+      // 7.3 cm). With the thigh lifted SEAT.a1 forward, its back-top rounds out to the seat's radius, so
+      // the glute runs on smoothly into the hamstrings (driven with the trunks' seat morph).
+      const dS = new Float32Array(n * 3), cs = Math.cos(SEAT.a1), sn = Math.sin(SEAT.a1);
+      for (let i = 0; i < n; i++) {
+        const x = P0.getX(i), y = P0.getY(i), z = P0.getZ(i);
+        if (z > 0 || y < -0.16) continue;
+        const Y = y * cs + z * sn, Z = -y * sn + z * cs, r = Math.hypot(Y, Z), ang = Math.atan2(-Y, -Z);
+        const w = blend(0.6, 0.95, ang) * (1 - blend(1.3, 1.85, ang)) * blend(-0.14, -0.06, y) * blend(0, 0.03, Math.abs(s * 0.1 + x));
+        const rt = SEAT.r - SEAT.k * Math.max(0, Math.abs(s * 0.1 + x) - 0.06) ** 2, dr = Math.max(0, rt - r) * w / (r || 1);
+        if (!dr) continue;
+        const dY = Y * dr, dZ = Z * dr;
+        dS[i * 3 + 1] = dY * cs - dZ * sn; dS[i * 3 + 2] = dY * sn + dZ * cs;
+      }
       const nrm = d => { // normal deltas so the compressed crease shades as a fold
         const g = legGeo.clone(), p = g.attributes.position.array;
         for (let k = 0; k < p.length; k++) p[k] += d[k];
@@ -665,8 +680,8 @@ export function makeHero(kind) {
         const N0 = legGeo.attributes.normal.array;
         return new THREE.Float32BufferAttribute(g.attributes.normal.array.map((x, k) => x - N0[k]), 3);
       };
-      legGeo.morphAttributes.position = [dF, dO, dI].map(d => new THREE.Float32BufferAttribute(d, 3));
-      legGeo.morphAttributes.normal = [dF, dO, dI].map(nrm);
+      legGeo.morphAttributes.position = [dF, dO, dI, dS].map(d => new THREE.Float32BufferAttribute(d, 3));
+      legGeo.morphAttributes.normal = [dF, dO, dI, dS].map(nrm);
       legGeo.morphTargetsRelative = true;
       legGeo.userData.leg = side;
     }
@@ -885,8 +900,8 @@ export function applyPose(H, s, t, ground = 0) {
     const ang = Math.acos(Math.max(-1, Math.min(1, -_A.y))), lift = blend(CREASE.a0, CREASE.a1, ang), r = Math.hypot(_A.x, _A.z) || 1;
     const deep = blend(CREASE.a1, 2.4, ang), f = lift * (1 + CREASE.k * deep) * Math.max(0, _A.z) / r, o = lift * Math.max(0, l.s * _A.x) / r;
     const inn = lift * Math.max(deep * CREASE.ki, Math.max(0, -l.s * _A.x) / r);
-    for (const m of l.crease) { const w = m.morphTargetInfluences; w[0] = f; w[1] = o; w[2] = inn; }
     const st = blend(SEAT.a0, SEAT.a1, ang) * Math.max(0, _A.z) / r; // seat: forward lift rounds the glute over the hip
+    for (const m of l.crease) { const w = m.morphTargetInfluences; w[0] = f; w[1] = o; w[2] = inn; w[3] = blend(SEAT.l0, SEAT.a1, ang) * Math.max(0, _A.z) / r; }
     for (const m of H.seat) m.morphTargetInfluences[side === 'L' ? 0 : 1] = st;
   }
 }
