@@ -1165,11 +1165,16 @@ export function applyPose(H, s, t, ground = 0) {
 }
 // Knee pole into _P (world), from the root-local hip->foot direction in the sagittal plane: (vy, vz) -> (vz, -vy)
 // maps straight down to straight forward, a horizontal forward leg to straight up, a high kick to up-and-back.
+// The sideways pull (knees over spread feet) fades as the foot rises toward hip height (KNEE_LAT: share of the
+// hip->foot line pointing down): a foot kicked out wide rolled the knee 55 deg out (front kick, sweep, knee lift).
+const KNEE_LAT = [0.3, 0.7];
 function kneePole(H, l, tg) {
   l.th.getWorldPosition(_P); H.root.worldToLocal(_P);
   let vy = tg[1] - _P.y, vz = tg[2] - _P.z;
+  const down = -vy / (Math.hypot(tg[0] - _P.x, vy, vz) || 1);
   const n = Math.hypot(vy, vz) || 1; vy /= n; vz /= n;
-  _P.set(l.s * Math.max(0.15, Math.abs(tg[0]) * 1.5), _P.y + vz, _P.z - vy); H.root.localToWorld(_P);
+  const lat = Math.max(0.15, Math.abs(tg[0]) * 1.5 * blend(KNEE_LAT[0], KNEE_LAT[1], down));
+  _P.set(l.s * lat, _P.y + vz, _P.z - vy); H.root.localToWorld(_P);
 }
 // Foot keeps the body's orientation (flat on the roof when planted), but never bends past the ankle's
 // plantarflex limit relative to the shin: with the leg kicked up, the root-aligned foot folded back
@@ -1181,7 +1186,8 @@ function kneePole(H, l, tg) {
 // square (crouch 87, landing kneel 82; a loaded ankle manages ~35-40). Past the cap the heel lifts and the
 // boot pivots onto its toes; posePass then raises the ankle until the toes rest on the roof.
 const MAX_PF = 0.9, MAX_DF = 0.65, AIR_PF = 0.8, _toe = new THREE.Vector3(), _qf = new THREE.Quaternion(), _XA = new THREE.Vector3(1, 0, 0),
-  _DN = new THREE.Vector3(0, -1, 0), _ax = new THREE.Vector3();
+  _DN = new THREE.Vector3(0, -1, 0), _ax = new THREE.Vector3(), _YA = new THREE.Vector3(0, 1, 0),
+  KNEE_TOE = 35 * Math.PI / 180, _kA = new THREE.Vector3(), _kB = new THREE.Vector3(), _kC = new THREE.Vector3();
 function orientFoot(l, qRoot, air = 0) {
   l.kn.getWorldQuaternion(_qa).invert();
   l.an.quaternion.copy(_qa).multiply(qRoot);
@@ -1198,6 +1204,18 @@ function orientFoot(l, qRoot, air = 0) {
       const cur = Math.asin(Math.max(-1, Math.min(1, -_toe.y)));
       l.an.quaternion.premultiply(_qf.setFromAxisAngle(_ax.normalize(), air * (AIR_PF - cur)));
     }
+  }
+  // Toes follow the knee: the root-aligned boot kept pointing at the opponent while the knee turned out (front kick
+  // knee 81 deg off the toes, sweep 63); a real shin can only twist the foot ~35 deg off the knee's line (tibial
+  // rotation). Measured about the shin in its own frame (local -y), once the knee is bent enough to point somewhere.
+  l.th.getWorldPosition(_kA); l.an.getWorldPosition(_kB); l.kn.getWorldPosition(_kC);
+  _kA.lerp(_kB, 0.5); _kC.sub(_kA).applyQuaternion(_qa); // knee forward, in the shin's frame
+  _toe.set(0, 0, 1).applyQuaternion(l.an.quaternion);
+  const kh = Math.hypot(_kC.x, _kC.z), th = Math.hypot(_toe.x, _toe.z), kw = blend(0.02, 0.06, kh) * blend(0.2, 0.5, th);
+  if (kw > 0) {
+    let dt = Math.atan2(_kC.x, _kC.z) - Math.atan2(_toe.x, _toe.z);
+    dt = Math.atan2(Math.sin(dt), Math.cos(dt));
+    if (Math.abs(dt) > KNEE_TOE) l.an.quaternion.premultiply(_qf.setFromAxisAngle(_YA, kw * (dt - Math.sign(dt) * KNEE_TOE)));
   }
   l.an.updateMatrixWorld(true);
 }
