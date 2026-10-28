@@ -1014,7 +1014,7 @@ function solveIK(upper, lower, L1, L2, target, pole, hinge) {
 // zone behind the shoulder (az: lateral 0, forward 90, across 180) and whose humerus rotation (forearm about the
 // upper arm, measured from the arm swung up from hanging with the forearm forward; + = external) is in range.
 // Poses that were already inside the limits keep their elbow exactly.
-const SWIVEL = { n: 36, az: [-55, 150], rot: [-80, 95], w: 12, rate: 0.25 }, _qs = new THREE.Quaternion(), _sw = new THREE.Quaternion(),
+const SWIVEL = { n: 36, az: [-55, 150], rot: [-80, 95], w: 12, rate: 0.25, esc: 1.5 }, _qs = new THREE.Quaternion(), _sw = new THREE.Quaternion(),
   _su = new THREE.Vector3(), _sf = new THREE.Vector3(), _sr = new THREE.Vector3(), _sx = new THREE.Vector3(), _sZ = new THREE.Vector3(0, 0, 1);
 function swivelPole(H, a, target, pole, L1, L2) {
   a.sh.getWorldPosition(_A);
@@ -1059,12 +1059,23 @@ function swivelPole(H, a, target, pole, L1, L2) {
     const x = _sx.dot(_B), y = _sx.dot(_G);
     if (x * x + y * y > 0.04) { best = Math.atan2(y, x); bc = cost(best); lo = best - SWIVEL.rate; hi = best + SWIVEL.rate; }
   }
-  if (bc === Infinity) for (let i = 0; i < SWIVEL.n; i++) {
+  let gb = 0, gc = Infinity;
+  for (let i = 0; i < SWIVEL.n; i++) {
     const th = (i < SWIVEL.n / 2 ? i : i - SWIVEL.n) * st0, c = cost(th);
-    if (c < bc) { bc = c; best = th; }
-  } else {
+    if (c < gc) { gc = c; gb = th; }
+  }
+  if (bc === Infinity) { bc = gc; best = gb; } else {
+    const b0 = best;
     const dir = cost(best - 0.01) < cost(best + 0.01) ? -1 : 1, st = Math.min(st0, SWIVEL.rate);
     for (let th = best + dir * st, c = cost(th); c < bc && th >= lo && th <= hi; th += dir * st, c = cost(th)) { bc = c; best = th; }
+    // Tracking only goes downhill, so a fist that jumps (the guard snapping back at a round reset, a shot's aim) could
+    // leave the elbow in a poor valley behind a penalty wall: Batman's guard held the elbow straight up over the
+    // shoulder, fist hanging under it, for seconds. Far worse than the best swivel, it now swings over at SWIVEL.rate.
+    if (a.swE || bc > gc + SWIVEL.esc) {
+      const dg = Math.atan2(Math.sin(gb - b0), Math.cos(gb - b0));
+      a.swE = Math.abs(dg) > SWIVEL.rate;
+      if (a.swE) { best = b0 + Math.sign(dg) * SWIVEL.rate; bc = cost(best); lo = hi = best; } else { best = b0 + dg; bc = cost(best); }
+    }
   }
   for (let st = st0 / 2; st > 0.004; st /= 2) for (const th of [best - st, best + st]) { // refine between the steps
     if (th < lo || th > hi) continue;
