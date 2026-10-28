@@ -1,6 +1,6 @@
 # Batman v Superman — every pixel from code
 
-![Superman wins](docs/screenshot.jpg)
+<img width="5128" height="2644" alt="image" src="https://github.com/user-attachments/assets/c78c775f-5e56-468e-a795-c1b6b33b6001" />
 
 A real-time three.js 3D fighting game, Batman against Superman, where **every pixel is drawn from code**. It has no
 model files, no image textures, no audio samples and no build step.
