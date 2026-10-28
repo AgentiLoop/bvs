@@ -335,7 +335,14 @@ export function makeHero(kind) {
   // glutes now stay on the pelvis, and per-side seat correctives (driven by forward thigh lift in applyPose)
   // hold the backside where it hangs (seatHold), minus the cheek's bulge (SEAT.k / d: trimmed flat over the seat).
   const seatBack = p => blend(0.1, 0.7, -p.z / Math.hypot(p.x, p.z)); // how much of the trunks rides the pelvis, not the thigh
-  const trunkLower = p => (1 - blend(-0.075, 0.05, p.y)) * (1 - seatBack(p));
+  // Thigh weight on the trunks. At the rear-outer side (the upper outer corner of the seat) it now fades out by the
+  // hip joint's height (-2 cm) instead of up under the belt (5 cm): above the joint a lifted / swung-out thigh rotates
+  // those vertices down and in, and a 50/50 hips/thigh blend there collapsed the trunks into folded, flipped
+  // triangles (a jagged scar at the top of the cheek on the kicking side). Front and inner thigh unchanged.
+  const trunkLower = p => {
+    const r = Math.hypot(p.x, p.z), sf = blend(0.5, 0.9, Math.abs(p.x) / r) * blend(-0.3, 0.3, -p.z / r);
+    return (1 - blend(-0.075 - 0.025 * sf, 0.05 - 0.07 * sf, p.y)) * (1 - seatBack(p));
+  };
   {
     const P0 = trunkGeo.attributes.position, n = P0.count, dL = new Float32Array(n * 3), dR = new Float32Array(n * 3), p = new THREE.Vector3();
     for (let i = 0; i < n; i++) {
