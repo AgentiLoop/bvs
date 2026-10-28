@@ -499,6 +499,11 @@ export function makeHero(kind) {
     const palmGeo = surface(palmRows, (p, a) => {
       const [rx, rz, off] = contour(palmRows, p.y), sq = (v) => Math.sign(v) * Math.abs(v) ** 0.6;
       p.x = rx * sq(Math.sin(a)); p.z = off + rz * sq(Math.cos(a));
+      // Wrist: the flat palm met the round forearm end (7.6 x 7.2 cm) at 4.4 cm deep, leaving the forearm's rim
+      // 1-1.6 cm proud of the open hand's front and back. The heel now rounds into the wrist (just over the rim,
+      // just inside the forearm above it; round, so wrist twist doesn't matter) and flattens into the palm below.
+      const wr = blend(-0.024, -0.009, p.y), wk = Math.min(1, rx / 0.033), wy = 0.08 * (p.y + 0.002);
+      p.x += wr * (wk * (0.0335 - wy) * Math.sin(a) - p.x); p.z += wr * (wk * (0.0315 - wy) * Math.cos(a) - p.z);
       p.y += 0.008 * blend(0.0, 0.04, -s * p.x) * blend(-0.05, -0.08, p.y);  // pinky side of the knuckle line sits higher
       // Knuckles: the four metacarpal heads stand out on the back of the hand just above each finger, along the
       // slanted knuckle line; the smooth back of the open hand read as a mitten.
@@ -519,6 +524,11 @@ export function makeHero(kind) {
       p.z += 0.0022 * pad * Math.max(0, Math.cos(a)) ** 2;
       return p;
     }, 64, 72);
+    // Near closed, shapeHand stretches the open hand to the fist's size (FIST_FIT); this morph target (driven
+    // with the stretch) undoes it at the wrist, so the heel stays the forearm's size instead of bulging out of it.
+    const wp = palmGeo.attributes.position, wd = new Float32Array(wp.count * 3);
+    for (let i = 0; i < wp.count * 3; i++) wd[i] = blend(-0.024, -0.009, wp.getY(Math.floor(i / 3))) * wp.array[i] * (1 / (1 + FIST_FIT[i % 3]) - 1);
+    palmGeo.morphAttributes.position = [new THREE.Float32BufferAttribute(wd, 3)]; palmGeo.morphTargetsRelative = true;
     part(openG, palmGeo, handMat);
     oval(openG, handMat, [s * 0.028, -0.03, 0.012], [0.017, 0.03, 0.014]); // thenar pad
     // Finger segments were plain capsules (sausages). Each phalanx now has a slimmer shaft, a knuckle on the back
@@ -696,6 +706,9 @@ export function makeHero(kind) {
   // Torso cross-section [halfWidth, halfDepth] at a hips-space height, for cloth collision.
   const torsoSection = (y) => contour(torsoRows, y);
   const dmg = { dmgP: { value: Array.from({ length: DMG_N }, () => new THREE.Vector3(0, -99, 0)) }, dmgS: { value: new Float32Array(DMG_N) }, dmgWear: { value: 0 } };
+  // The palm's wrist morph target gives its two meshes extra fields; giving every mesh the same fields keeps them
+  // one V8 object shape (two shapes made applyPose's scene-graph walks ~50% slower).
+  root.traverse(o => { if (o.isMesh && !o.morphTargetInfluences) { o.morphTargetInfluences = undefined; o.morphTargetDictionary = undefined; } });
   const patched = new Set();
   root.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) if (m.isMeshStandardMaterial && !patched.has(m)) { patched.add(m); battleDamage(m, dmg); } });
   return { kind, root, hips, spine, chest, head, arms, legs, eyes, face: faceRig, torsoSection, chestDepth, dmg };
@@ -907,6 +920,7 @@ function shapeHand(a, o) {
   // stretched to the fist's silhouette (fitted: max 1 cm off, mean 0.4) and relaxes to its own size by MORPH_O.
   const m = 1 - blend(OPEN_MIN, MORPH_O, o);
   g.openG.scale.set(1 + FIST_FIT[0] * m, 1 + FIST_FIT[1] * m, 1 + FIST_FIT[2] * m); g.openG.position.z = FIST_FIT[3] * m;
+  for (const c of g.openG.children) if (c.morphTargetInfluences) c.morphTargetInfluences[0] = m; // wrist keeps its size
   const c = 1 - o;
   g.fingers.forEach((f, i) => bendFinger(f, Math.min(1, c + CASCADE[i] * c * (1 - c)), o));
   bendThumb(a, c);
