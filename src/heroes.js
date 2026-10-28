@@ -620,6 +620,14 @@ export function makeHero(kind) {
         const g = bulk * 0.004 * Math.sin(Math.PI * t) ** 0.7 * bump(d, 0, 0.2);
         p.x -= g * Math.sin(a); p.z -= g * Math.cos(a);
       }
+      // Iliotibial band: the flat strip down the outside of the thigh, from the trochanter to just behind the
+      // outer knee, splits the vastus lateralis sweep from the hamstrings (frames the quads from the outside).
+      const ti = (-0.12 - p.y) / 0.34;
+      if (ti > 0 && ti < 1) {
+        const as = s * (1.7 + 0.25 * ti), d = Math.atan2(Math.sin(a - as), Math.cos(a - as));
+        const g = bulk * 0.0035 * Math.sin(Math.PI * ti) ** 0.7 * bump(d, 0, 0.2);
+        p.x -= g * Math.sin(a); p.z -= g * Math.cos(a);
+      }
       // Boot cuff: a slight flared lip just below the boot top so the boot reads as a real boot, not paint.
       const cuff = 1 + 0.07 * bump(p.y, -0.612, 0.011);
       p.x *= cuff; p.z *= cuff;
