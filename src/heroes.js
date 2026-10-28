@@ -513,6 +513,10 @@ export function makeHero(kind) {
       p.x += s * 0.003 * fdi; p.z -= 0.0008 * fdi;                          // first dorsal interosseous (thumb web)
       p.z += 0.004 * bump(p.y, -0.02, 0.02) * Math.max(0, Math.cos(a)) * (1 - blend(-0.01, 0.03, s * p.x)); // hypothenar heel
       p.z -= 0.002 * bump(p.y, -0.05, 0.016) * bump(p.x, 0, 0.014) * Math.max(0, Math.cos(a)) ** 2; // palm hollow between the pads
+      // Palmar pads: a fleshy mound under each finger base on the palm side, lobed (dipping at the finger webs)
+      // and falling off into the palm hollow below them.
+      const pad = FINGERS.reduce((v, [x, y]) => v + bump(p.x, s * x, 0.0085) * bump(p.y, y + 0.011, 0.0075), 0);
+      p.z += 0.0022 * pad * Math.max(0, Math.cos(a)) ** 2;
       return p;
     }, 64, 72);
     part(openG, palmGeo, handMat);
