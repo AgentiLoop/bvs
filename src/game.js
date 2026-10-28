@@ -860,8 +860,9 @@ export class Game {
     const name = a.phase === 'seq' ? S.seq[a.k] : S.fin, M = SMOVES[name] || MOVES[name];
     a.kt += dt;
     if (a.phase === 'seq') {
-      // pin the victim in front of the attacker for the whole string
-      o.x = f.x + Math.sin(f.yaw) * 1.0; o.z = f.z + Math.cos(f.yaw) * 1.0; o.y = 0; o.vy = 0; o.kx = o.kz = 0;
+      // pin the victim in front of the attacker for the whole string (0.9 m in a clinch, the fatal blow's, so the hands reach his head)
+      const pd = this.gripOf(f, o) ? 0.9 : 1.0;
+      o.x = f.x + Math.sin(f.yaw) * pd; o.z = f.z + Math.cos(f.yaw) * pd; o.y = 0; o.vy = 0; o.kx = o.kz = 0;
       o.launched = false; o.act = null; o.stun = Math.max(o.stun, 0.4); o.block = false;
     }
     if (!a.hit && a.kt >= M.hit) {
@@ -1009,7 +1010,8 @@ export class Game {
       fx.decals.add(o.x, o.z, 1.3); fx.impact(o.x, 0, o.z, 0.8);
       this.hurt(o, f, S.finish, this.contact(f, o, S.finish));
     }
-    if (!a.done) pin(0.8, f.y + (a.t < S.grab ? 0 : 0.9 * clamp((a.t - S.grab) / 0.2, 0, 1)));
+    // carried overhead 0.55 m out like the throw's lift, so his hands keep their grip on the torso
+    if (!a.done) { const u = a.t < S.grab ? 0 : clamp((a.t - S.grab) / 0.2, 0, 1); pin(0.8 - 0.25 * u, f.y + 0.9 * u); }
     return a.t < dn + 0.6;
   }
   canBreak(f) {
@@ -1839,7 +1841,7 @@ export class Game {
       if (f.heldBy && f.y > 0.2) return T(MP.held);
       // in a fatal-blow hold: hanging by the throat from Superman's hand / doubled over, head dragged down to Batman's knee
       const gb = this.gripOf(f === this.F.bat ? this.F.sup : this.F.bat, f);
-      if (gb && gb.at === 'neck' && f.y > 0.2) return T(MP.held);
+      if (gb && gb.at !== 'head' && f.y > 0.2) return T(MP.held); // (also carried up in Superman's fatality)
       if (gb && gb.at === 'head') return T(MP.hitBody, { lean: 0.5 }); // bent at the waist, head held at the knee's height
       if (f.heldBy || !f.zone) return T(POSES[f.heavy ? 'hit' : 'flinch']);
       const u = 1 - f.stun / (f.stunMax || 1);
@@ -1892,11 +1894,19 @@ export class Game {
       lh: fist(g.lh, 0), rh: fist(g.rh, 1.9), lf: foot(g.lf, 1), rf: foot(g.rf, -1), gait: f.moving });
   }
 
-  // what f's hands are gripping on o this frame (heroes.js s.holdAt / s.holdSide), or null
+  // what f's hands are gripping on o this frame (heroes.js s.holdAt / s.holdSide), or null: throws, the fatal-blow
+  // and super clinch poses (GRIP), and Superman's fatality carrying the foe up and down (torso, like his throw)
   gripOf(f, o) {
     if (o.heldBy === f) return GRIP.throw;
     const a = f.act;
-    return a && a.type === 'blow' && a.phase === 'seq' && GRIP[a.pose] || null;
+    if (!a) return null;
+    if (a.type === 'blow') return a.phase === 'seq' && GRIP[a.pose] || null;
+    if (a.type === 'fatal') return f.key === 'sup' && !a.done ? GRIP.throw : null;
+    if (a.type !== 'super' || a.phase !== 'seq') return null;
+    const SM = SMOVES[SUPERS[f.key].seq[a.k]];
+    let n = null;
+    if (SM) for (const [t, p] of SM.keys) if (a.kt >= t) n = p;
+    return GRIP[n] || null;
   }
 
   pose(dt) {
