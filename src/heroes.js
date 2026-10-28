@@ -1208,6 +1208,50 @@ function footLock(l, o, T, up, r, mode, dt) {
     if (k.st >= 1) { if (mode === 1) { l.lk = null; return; } k.st = -1; k.y = 0; }
   }
 }
+// Walking slid the planted feet 2200-2400 cm per 90 s CPU fight: the gait slides a planted foot back under the hips
+// at the speed the step cycle assumes, but the body turns to face the foe as it walks, the travel direction is
+// smoothed, the cycle is capped at 4.5 strides/s and its stride follows the eased gait amount. Gait lock (game,
+// walking, no foot lock): a foot holds its floor spot for its whole planted half of the cycle, and its swing runs
+// from where it lifted off to where the gait puts it at touchdown. Left GLOCK.max behind (the walker turned or
+// reversed) or once the walk is over, it is handed to the foot lock, which steps it.
+// It lifts the whole boot (at least GLOCK.h, or 0.4 x the swing: a slow walk's gait lift alone left the swinging boot
+// shuffling along the roof), and the planted boot keeps its heading (it turned with the body about the ankle, so its
+// toe and heel swept the floor as the fighter turned to face the foe) until it swings, turning to the body's on the way.
+// l.gk = { x, z (held spot), sw (swinging), sx, sz (lift-off spot), y, sy (held / lift-off heading), len (swing), bx, bz (ball),
+// ox, oz, oy, dy (this frame's output: spot, boot lift, heading offset), w }.
+const GLOCK = { g: [0.01, 0.05], max: 0.3, h: 0.06, yaw: 0.6 };
+const wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const toStep = (l, k) => {
+  if (k && !l.lk) l.lk = { x: k.x, z: k.z, y: 0, st: -1, fx: 0, fz: 0, len: 0, bx: null, bz: 0, ax: l.ga ? l.ga.x : k.x, az: l.ga ? l.ga.z : k.z, w: 1 };
+  l.gk = null;
+};
+function gaitLock(l, T, p, w, keep, yaw) {
+  let k = l.gk;
+  if (!keep) {
+    // walk over (gait faded): the foot is handed to the foot lock, which steps it back under the stance
+    if (w <= 0) { toStep(l, k); return; }
+    p -= Math.floor(p);
+    const sw = p >= 0.5;
+    if (!k) { const x = l.ga ? l.ga.x : T.x, z = l.ga ? l.ga.z : T.z; k = l.gk = { x, z, sw, sx: x, sz: z, y: yaw, sy: yaw, len: 0, bx: null, bz: 0, ox: x, oz: z, oy: 0, dy: 0, w }; }
+    k.w = w; k.oy = 0;
+    if (sw) {
+      // (lifting off from the ankle: a foot rolled onto its ball has moved off the held spot)
+      if (!k.sw) { k.sx = l.ga ? l.ga.x : k.x; k.sz = l.ga ? l.ga.z : k.z; k.sy = k.y; k.len = 0; k.sw = true; k.bx = null; }
+      const u = (p - 0.5) * 2, e = u * u * (3 - 2 * u);
+      k.x = k.sx + (T.x - k.sx) * e; k.z = k.sz + (T.z - k.sz) * e; k.y = k.sy + wrapA(yaw - k.sy) * e;
+      k.len = Math.max(k.len, Math.hypot(T.x - k.sx, T.z - k.sz));
+      k.oy = Math.min(GLOCK.h, k.len * 0.4) * Math.sin(Math.PI * u);
+    } else {
+      k.sw = false; // (touches down where the swing's last frame left it)
+      const d = Math.hypot(T.x - k.x, T.z - k.z);
+      if (d > GLOCK.max) { toStep(l, k); return; } // left far behind (the walker turned or reversed): a real step
+      const a = wrapA(k.y - yaw);
+      if (Math.abs(a) > GLOCK.yaw) k.y = yaw + Math.sign(a) * GLOCK.yaw;
+    }
+    k.ox = T.x + (k.x - T.x) * w; k.oz = T.z + (k.z - T.z) * w; k.oy *= w; k.dy = wrapA(k.y - yaw) * w;
+  }
+  if (k) { T.x = k.ox; T.z = k.oz; }
+}
 function kneePole(H, l, tg, a = 0) {
   l.th.getWorldPosition(_P); yawXZ(H.root.worldToLocal(_P), a);
   let vy = tg[1] - _P.y, vz = tg[2] - _P.z;
@@ -1696,9 +1740,11 @@ function posePass(H, s, t, ground, raise) {
       _T.set(tg[0] + off * GAIT_A * g * gx, tg[1] + up * GAIT_LIFT * g, tg[2] + off * GAIT_A * g * gz);
     } else _T.set(tg[0], tg[1] + lift * 0.18 * g, tg[2] + dz * 0.32 * g);
     H.root.localToWorld(_T);
+    if (s.gph != null && s.lock != null) gaitLock(l, _T, s.gph / (Math.PI * 2) + p, s.lock === 1 && !l.lk ? blend(GLOCK.g[0], GLOCK.g[1], g) : 0, raise || s.again, s.yaw - ex);
+    const gk = s.lock != null && l.gk, qF = gk && gk.dy ? _qs3.setFromAxisAngle(_Y, gk.dy).multiply(qP) : qP;
     // foot lock (see LOCK): the planted foot stays on its floor spot, easing out of it as the foot rises; a step
     // lifts the whole boot (sl: the boot-corner pass below keeps it that far off the roof, toes included)
-    let sl = 0, lw = 0;
+    let sl = gk ? gk.oy : 0, lw = 0;
     if (s.lock != null) {
       const up = Math.max(0, _T.y - raise - ground - SOLE);
       if (!raise && !s.again) footLock(l, H.legs[side === 'L' ? 'R' : 'L'], _T, up, Math.hypot(tg0[0], tg0[2]), s.lock, s.dt || 0);
@@ -1722,7 +1768,7 @@ function posePass(H, s, t, ground, raise) {
     const air = blend(1.15, 1.5, s.p[1] + raise - ground) * blend(0.1, 0.35, _T.y - ground - SOLE);
     kneePole(H, l, tgP, ex);
     solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
-    orientFoot(l, qP, air);
+    orientFoot(l, qF, air);
     // When the body is pitched (rolls, tumbles) the boot's toe/heel can still dip through the roof even
     // with the ankle above it: lift the ankle by the deficit of the lowest boot corner and re-solve.
     // Repeated: a heel lifted by the dorsiflexion cap changes the shin angle as the ankle rises.
@@ -1733,22 +1779,23 @@ function posePass(H, s, t, ground, raise) {
       _T.y += ground + sl - low;
       kneePole(H, l, tgP, ex);
       solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
-      orientFoot(l, qP);
+      orientFoot(l, qF);
     }
-    const k = l.lk;
-    if (lw > 0 && k.st < 0) {
+    const k = l.lk, pk = lw > 0 && k.st < 0 ? k : gk && !gk.sw ? gk : null; // (a planted walking foot rolls onto its ball too)
+    if (pk) {
       _P.copy(BALL); l.an.localToWorld(_P); _LK.copy(HEEL); l.an.localToWorld(_LK);
-      if (k.bx == null) { if (!raise && !s.again) { k.bx = _P.x; k.bz = _P.z; } }
+      if (pk.bx == null) { if (!raise && !s.again) { pk.bx = _P.x; pk.bz = _P.z; } }
       else {
-        const on = lw * blend(0.01, 0.03, _LK.y - _P.y); // heel up: the ball holds its spot
+        const on = (pk === k ? lw : gk.w) * blend(0.01, 0.03, _LK.y - _P.y); // heel up: the ball holds its spot
         if (on > 0) {
-          _T.x += (k.bx - _P.x) * on; _T.z += (k.bz - _P.z) * on;
+          _T.x += (pk.bx - _P.x) * on; _T.z += (pk.bz - _P.z) * on;
           kneePole(H, l, tgP, ex);
           solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
-          orientFoot(l, qP);
+          orientFoot(l, qF);
         }
       }
     }
     if (k && !s.again) { l.an.getWorldPosition(_P); k.ax = _P.x; k.az = _P.z; }
+    if (!s.again) l.an.getWorldPosition(l.ga ||= new THREE.Vector3()); // (gait lock: where a newly held foot starts)
   }
 }
