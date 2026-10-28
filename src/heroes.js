@@ -152,7 +152,7 @@ const bump = (x, center, width) => Math.exp(-(((x - center) / width) ** 2));
 const blend = (a, b, x) => THREE.MathUtils.smoothstep(x, a, b);
 // Hip-crease corrective: how deep (d) the thigh's root compresses around thigh-local height y (width w), fading in
 // as the thigh swings a0..a1 rad away from hanging straight down in the hips' frame.
-const CREASE = { d: 0.045, y: -0.17, w: 0.11, a0: 1.0, a1: 1.6, k: 1, ki: 0.8 };
+const CREASE = { d: 0.045, y: -0.17, w: 0.11, a0: 1.0, a1: 1.6, k: 1, ki: 1.6 };
 // Seat corrective: the trunks' backside rounds out to radius r (minus k * (|x| - 6 cm)^2 toward the hip's side)
 // from the hip joint line as the thigh lifts forward a0..a1 rad.
 const SEAT = { r: 0.13, k: 2, a0: 0.3, a1: 1.5 };
@@ -627,7 +627,7 @@ export function makeHero(kind) {
       const dF = new Float32Array(n * 3), dO = new Float32Array(n * 3), dI = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) {
         const a = U.getX(i) * Math.PI * 2, c = CREASE.d * bump(P0.getY(i), CREASE.y, CREASE.w);
-        dF[i * 3 + 2] = -c * Math.max(0, Math.cos(a)) ** 2;
+        dF[i * 3 + 2] = -c * Math.max(0, Math.cos(a)); // the whole front half folds (cos^2 left the front-inner / outer quadrants poking through in the roundhouse)
         dO[i * 3] = -s * c * Math.max(0, s * Math.sin(a)) ** 2;
         dI[i * 3] = s * c * Math.max(0, -s * Math.sin(a)) ** 2;
       }
