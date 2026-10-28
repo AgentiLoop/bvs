@@ -7,6 +7,7 @@ const _v = new THREE.Vector3();
 const COLLIDERS = [
   ['chest', [0.1, 0.2, 0.0], 0.15], ['chest', [-0.1, 0.2, 0.0], 0.15], ['chest', [0, 0.3, 0.0], 0.11],
   ['spine', [0, 0.1, 0], 0.13], ['hips', [0, 0, 0], 0.17], ['head', [0, 0.11, 0], 0.12],
+  ['hips', [0.068, -0.075, -0.075], 0.088], ['hips', [-0.068, -0.075, -0.075], 0.088], // glute cheeks
 ];
 // Capsules (joint -> joint) keep the cloth out of the legs and upper arms.
 const CAPSULES = [

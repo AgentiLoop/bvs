@@ -155,6 +155,9 @@ const blend = (a, b, x) => THREE.MathUtils.smoothstep(x, a, b);
 const CREASE = { d: 0.045, y: -0.17, w: 0.11, a0: 1.0, a1: 1.6, k: 1, ki: 1.6 };
 // Seat corrective: the trunks' backside rounds out to radius r (minus k * (|x| - 6 cm)^2 toward the hip's side)
 // from the hip joint line as the thigh lifts forward a0..a1 rad.
+// Gluteus maximus cheek (hips space): depth a (x bulk) at |x| = x (width w), peak height y, rising over u, tucking
+// under over l with a steeper (power p) underside into the gluteal fold.
+const GL = { a: 0.065, x: 0.068, w: 0.055, y: -0.065, u: 0.07, l: 0.07, p: 2.5 };
 const SEAT = { r: 0.13, k: 2, a0: 0.3, a1: 1.5, l0: 1.0 }; // l0: the thigh's seat fill fades in from l0 rad (later, so the guard keeps its shape)
 
 function surface(rows, sculpt = (p) => p, rings = 64, sides = 48) {
@@ -258,15 +261,18 @@ export function makeHero(kind) {
   const arms = {}, legs = {};
   // Superman is drawn as a powerhouse (full weight), Batman as a leaner athlete (80%) — legs and hips.
   const bulk = B ? 0.8 : 1;
-  // Neo-hero hips: legs this strong need the glutes that drive them. The trunks were a flat tube (glutes 1 cm
-  // behind the lower back), so the backside now carries two gluteus maximus cheeks (~4 cm proud, split by a
-  // shallow cleft) rising out of the lumbar hollow and tucking under at the gluteal fold, and the gluteus
-  // medius widens the hip so the outer thigh sweep grows out of the pelvis instead of out of a narrow brief.
-  // Hips-space height; the thigh mesh shares the shape below the trunks' hem.
-  const glute = y => bulk * 0.04 * bump(y, -0.045, 0.05), medius = y => bulk * 0.014 * bump(y, -0.03, 0.045);
+  // Neo-hero hips: legs this strong need the glutes that drive them. The backside carries two gluteus maximus
+  // cheeks, each its own dome centred GL.x out from the midline (so a real cleft runs down between them and each
+  // cheek rounds off toward the hip's side), rising out of the lumbar hollow and filling out low, then tucking under
+  // at the gluteal fold (a steeper underside, GL.p) into the hamstrings. The gluteus medius widens the hip so the
+  // outer thigh sweep grows out of the pelvis instead of out of a narrow brief.
+  // Hips-space x / height; the thigh mesh shares the shape below the trunks' hem.
+  const cheek = (x, y) => bulk * GL.a * bump(Math.abs(x), GL.x, GL.w)
+    * (y > GL.y ? bump(y, GL.y, GL.u) : Math.exp(-(((GL.y - y) / GL.l) ** GL.p)));
+  const medius = y => bulk * 0.008 * bump(y, -0.05, y > -0.05 ? 0.05 : 0.03);
   const trunkRows = [[-0.095, 0.05, 0.05], [-0.06, 0.175, 0.106], [0.015, 0.168, 0.114], [0.085, 0.15, 0.106]];
   const trunkGeo = surface(trunkRows, (p, a) => {
-    p.z -= glute(p.y) * Math.max(0, -Math.cos(a)) ** 1.2 * (1 - 0.55 * bump(p.x, 0, 0.018));
+    p.z -= cheek(p.x, p.y) * blend(-0.1, 0.5, -Math.cos(a));
     p.x += Math.sign(p.x) * medius(p.y) * Math.sin(a) ** 2;
     return p;
   }, 32);
@@ -670,7 +676,7 @@ export function makeHero(kind) {
       p.x -= s * bulk * 0.018 * bump(p.y, -0.7, 0.06) * inn ** 1.5;     // inner calf head, lower and fuller
       p.z -= bulk * 0.018 * bump(p.y, -0.68, 0.06) * bk ** 1.5;         // calf peak
       p.z += bulk * 0.004 * bump(p.y, -0.68, 0.08) * fr ** 2;           // tibialis
-      p.z -= glute(p.y - 0.04) * bk ** 1.2;                             // gluteus maximus below the trunks' hem, up to the fold
+      p.z -= cheek(p.x + s * 0.1, p.y - 0.04) * blend(-0.1, 0.5, -Math.cos(a));  // gluteus maximus below the trunks' hem, down to the fold
       p.x += s * medius(p.y - 0.04) * out ** 2;                         // gluteus medius / trochanter carries the hip line down
       // Adductors: the inner thigh's mass sits front-inner, high, medial to the sartorius. Forward only, so the
       // inner edge stays at the midline (thighs already meet there).
@@ -825,7 +831,7 @@ export function makeHero(kind) {
       const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
       if (y < -0.2 || y > 0.8) continue;
       const [rx, rz] = y < 0.06 ? contour(trunkRows, y) : contour(torsoRows, y);
-      w[i] = blend(1.02, 1.22, Math.hypot(x / rx, z / (y < 0.06 && z < 0 ? rz + glute(y) : rz))); // trunks include the glutes
+      w[i] = blend(1.02, 1.22, Math.hypot(x / rx, z / (y < 0.06 && z < 0 ? rz + cheek(x, y) : rz))); // trunks include the glutes
     }
     og.setAttribute('inkW', new THREE.BufferAttribute(w, 1));
     const o = m.isSkinnedMesh ? new THREE.SkinnedMesh(og, ink) : new THREE.Mesh(og, ink);
