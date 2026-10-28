@@ -1470,7 +1470,7 @@ const _hx = new THREE.Vector3(), _hy = new THREE.Vector3(), _hz = new THREE.Vect
 const FIST_PTS = [[0, -0.055, 0.015, 0.05], [0.03, -0.07, 0.06, 0.012], [-0.008, -0.086, 0.068, 0.012]];
 for (const x of [-0.035, 0.035]) for (const y of [-0.015, -0.1]) for (const z of [-0.03, 0.04]) FIST_PTS.push([x, y, z, 0.012]);
 // against the opponent (s.foe) the knuckle face counts too: it's what lands on him
-const FOE_NEAR = [0.4, 0.5], _fp = new THREE.Vector3();
+const FOE_NEAR = [0.4, 0.5], FOE_STICK = 0.15, _fp = new THREE.Vector3(), _fp2 = new THREE.Vector3();
 const FOE_PTS = [...FIST_PTS, [0.028, -0.1, 0.015, 0.028], [-0.028, -0.1, 0.015, 0.028]];
 // w = wrist extension 0..1 (palm strikes): the hand bends back up to 66 deg so the heel of the palm leads
 // and the fingers point up (a palm-down extended arm turns into a palm-forward strike).
@@ -1890,11 +1890,20 @@ function posePass(H, s, t, ground, raise) {
     // bodies, 35-50 cm a frame (144 fps), and left it inside the own chest with the elbow behind the back. There the
     // foe's push fades out (kf) and only the own body holds the fist.)
     const X = !s.hold && s.foe, kf = X ? blend(FOE_NEAR[0], FOE_NEAR[1], H.chest.getWorldPosition(_C4).distanceTo(X.chest.getWorldPosition(_C5))) : 0;
-    // (m: where this fist was last frame, so a fist sunk into the foe leaves him on the side it came in from. From the
-    // arm's shoulder (the first frame) a guard fist that had come down onto the upper back of a foe ducking under it
-    // (crouched uppercut start, chest pitched forward 0.5-0.8 rad) was pushed out through his whole tilted chest instead:
-    // 25-37 cm down to belly height on a straight arm, every other frame, while walking in.)
-    const foe = (p, r) => { _fp.copy(p); if (!(pushOutOfTorso(X, p, r, a.fz || a.sh.getWorldPosition(_C4).lerp(H.chest.getWorldPosition(_C5), 0.5)) || pushOutOfHead(X, p, r))) return false; p.lerp(_fp, 1 - kf); return true; };
+    // (m: toward where this fist was last frame (a.fz), so a fist sunk into the foe leaves him on the side it came in
+    // from, unless that way out is FOE_STICK longer than toward the arm's shoulder. From the shoulder alone a guard fist
+    // that had come down onto the upper back of a foe ducking under it (crouched uppercut start, chest pitched forward
+    // 0.5-0.8 rad) was pushed out through his whole tilted chest: 25-37 cm down to belly height on a straight arm, every
+    // other frame, while walking in. From the last spot alone a fist that had once gone round his far side stayed dragged
+    // across there, 30-45 cm from its target, then let go in one frame (drive impact). Picking the shorter way each frame
+    // flipped between the two: 25% more 15 cm hand jumps.)
+    const foe = (p, r) => {
+      _fp.copy(p);
+      const hit = pushOutOfTorso(X, p, r, a.sh.getWorldPosition(_C4).lerp(H.chest.getWorldPosition(_C5), 0.5));
+      if (hit && a.fz && pushOutOfTorso(X, _fp2.copy(_fp), r, a.fz) && _fp2.distanceTo(_fp) < p.distanceTo(_fp) + FOE_STICK) p.copy(_fp2);
+      if (!(hit || pushOutOfHead(X, p, r))) return false;
+      p.lerp(_fp, 1 - kf); return true;
+    };
     const out = (p, r) => pushOutOfTorso(H, p, r) || pushOutOfHead(H, p, r) || kf > 0.01 && foe(p, r);
     for (let it = 0; it < 3; it++) {
       let moved = false;
