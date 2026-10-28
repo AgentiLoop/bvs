@@ -153,6 +153,9 @@ const blend = (a, b, x) => THREE.MathUtils.smoothstep(x, a, b);
 // Hip-crease corrective: how deep (d) the thigh's root compresses around thigh-local height y (width w), fading in
 // as the thigh swings a0..a1 rad away from hanging straight down in the hips' frame.
 const CREASE = { d: 0.045, y: -0.17, w: 0.11, a0: 1.0, a1: 1.6, k: 1, ki: 0.8 };
+// Seat corrective: the trunks' backside rounds out to radius r (minus k * (|x| - 6 cm)^2 toward the hip's side)
+// from the hip joint line as the thigh lifts forward a0..a1 rad.
+const SEAT = { r: 0.13, k: 2, a0: 0.3, a1: 1.5 };
 
 function surface(rows, sculpt = (p) => p, rings = 64, sides = 48) {
   const positions = [], uv = [], indices = [];
@@ -262,13 +265,40 @@ export function makeHero(kind) {
   // Hips-space height; the thigh mesh shares the shape below the trunks' hem.
   const glute = y => bulk * 0.04 * bump(y, -0.045, 0.05), medius = y => bulk * 0.014 * bump(y, -0.03, 0.045);
   const trunkRows = [[-0.095, 0.05, 0.05], [-0.06, 0.175, 0.106], [0.015, 0.168, 0.114], [0.085, 0.15, 0.106]];
-  skinSurface(hips, surface(trunkRows, (p, a) => {
+  const trunkGeo = surface(trunkRows, (p, a) => {
     p.z -= glute(p.y) * Math.max(0, -Math.cos(a)) ** 1.2 * (1 - 0.55 * bump(p.x, 0, 0.018));
     p.x += Math.sign(p.x) * medius(p.y) * Math.sin(a) ** 2;
     return p;
-  }, 32),
+  }, 32);
+  // Glutes in deep hip flexion: the back of the trunks followed the thigh, so a tuck / crouch / guard dragged
+  // the cheeks down under the seat and left the backside flat (radius from the hip joint 13 -> 9 cm). The
+  // glutes now stay on the pelvis, and per-side seat correctives (driven by forward thigh lift in applyPose)
+  // round the trunks down over the seat, the way the gluteus maximus stretches over a flexed hip.
+  const seatBack = p => blend(0.1, 0.7, -p.z / Math.hypot(p.x, p.z)); // how much of the trunks rides the pelvis, not the thigh
+  {
+    const P0 = trunkGeo.attributes.position, n = P0.count, dL = new Float32Array(n * 3), dR = new Float32Array(n * 3), p = new THREE.Vector3();
+    for (let i = 0; i < n; i++) {
+      const x = P0.getX(i), y = P0.getY(i) + 0.04, z = P0.getZ(i), r = Math.hypot(y, z); // around the hip joint line
+      const ang = Math.atan2(-y, -z), w = blend(0.05, 0.3, ang) * (1 - blend(1.3, 1.85, ang)) * blend(0.0, 0.03, Math.abs(x)) * seatBack(p.fromBufferAttribute(P0, i));
+      const rt = SEAT.r - SEAT.k * Math.max(0, Math.abs(x) - 0.06) ** 2, dr = Math.max(0, rt - r) * w;
+      if (!dr || z > 0.02) continue;
+      const D = x > 0 ? dL : dR, k = dr / (r || 1);
+      D[i * 3 + 1] = y * k; D[i * 3 + 2] = z * k;
+    }
+    const nrm = d => { // normal deltas so the stretched seat shades round
+      const g = trunkGeo.clone(), p = g.attributes.position.array, N0 = trunkGeo.attributes.normal.array;
+      for (let k = 0; k < p.length; k++) p[k] += d[k];
+      g.computeVertexNormals();
+      return new THREE.Float32BufferAttribute(g.attributes.normal.array.map((x, k) => x - N0[k]), 3);
+    };
+    trunkGeo.morphAttributes.normal = [dL, dR].map(nrm);
+    trunkGeo.morphAttributes.position = [dL, dR].map(d => new THREE.Float32BufferAttribute(d, 3));
+    trunkGeo.morphTargetsRelative = true;
+    trunkGeo.userData.seat = true;
+  }
+  skinSurface(hips, trunkGeo,
     B ? dark : red, p => {
-      const lower = (1 - blend(-0.075, 0.05, p.y)) * 1.0, l = blend(-0.06, 0.06, p.x);
+      const lower = (1 - blend(-0.075, 0.05, p.y)) * (1 - seatBack(p)), l = blend(-0.06, 0.06, p.x);
       return [[hips, 1 - lower], [legs.L.th, lower * l], [legs.R.th, lower * (1 - l)]];
     });
   part(hips, surface([[0.063, 0.153, 0.108], [0.071, 0.158, 0.113], [0.103, 0.153, 0.11], [0.11, 0.148, 0.105]], p => p, 12), yellow);
@@ -641,6 +671,7 @@ export function makeHero(kind) {
   const bones = [];
   root.traverse(o => { if (o.isBone) bones.push(o); });
   const skeleton = new THREE.Skeleton(bones);
+  const seat = []; // trunks + their outline: seat correctives [L, R]
   for (const { parent, geometry, material, weights } of skins) {
     const indices = [], values = [], pos = geometry.attributes.position;
     for (let i = 0; i < pos.count; i++) {
@@ -655,6 +686,7 @@ export function makeHero(kind) {
     mesh.frustumCulled = false;
     root.add(mesh); mesh.bind(skeleton);
     if (geometry.userData.leg) legs[geometry.userData.leg].crease.push(mesh);
+    if (geometry.userData.seat) seat.push(mesh);
   }
   // Comic-book ink outline: an inverted hull pushed out along the (skinned) normal, so it bends with
   // the body. Tiny details (eyes, mouth, brows) are skipped so they don't turn into black blobs.
@@ -699,13 +731,14 @@ export function makeHero(kind) {
     if (m.isSkinnedMesh) { root.add(o); o.bind(m.skeleton, m.bindMatrix); }
     else { o.position.copy(m.position); o.quaternion.copy(m.quaternion); o.scale.copy(m.scale); m.parent.add(o); }
     if (g.userData.leg) legs[g.userData.leg].crease.push(o); // the outline follows the crease too
+    if (g.userData.seat) seat.push(o);
   }
   // Torso cross-section [halfWidth, halfDepth] at a hips-space height, for cloth collision.
   const torsoSection = (y) => contour(torsoRows, y);
   const dmg = { dmgP: { value: Array.from({ length: DMG_N }, () => new THREE.Vector3(0, -99, 0)) }, dmgS: { value: new Float32Array(DMG_N) }, dmgWear: { value: 0 } };
   const patched = new Set();
   root.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) if (m.isMeshStandardMaterial && !patched.has(m)) { patched.add(m); battleDamage(m, dmg); } });
-  return { kind, root, hips, spine, chest, head, arms, legs, eyes, face: faceRig, torsoSection, chestDepth, dmg };
+  return { kind, root, hips, spine, chest, head, arms, legs, seat, eyes, face: faceRig, torsoSection, chestDepth, dmg };
 }
 
 // ---------- IK ----------
@@ -826,6 +859,8 @@ export function applyPose(H, s, t, ground = 0) {
     const deep = blend(CREASE.a1, 2.4, ang), f = lift * (1 + CREASE.k * deep) * Math.max(0, _A.z) / r, o = lift * Math.max(0, l.s * _A.x) / r;
     const inn = lift * Math.max(deep * CREASE.ki, Math.max(0, -l.s * _A.x) / r);
     for (const m of l.crease) { const w = m.morphTargetInfluences; w[0] = f; w[1] = o; w[2] = inn; }
+    const st = blend(SEAT.a0, SEAT.a1, ang) * Math.max(0, _A.z) / r; // seat: forward lift rounds the glute over the hip
+    for (const m of H.seat) m.morphTargetInfluences[side === 'L' ? 0 : 1] = st;
   }
 }
 // Knee pole into _P (world), from the root-local hip->foot direction in the sagittal plane: (vy, vz) -> (vz, -vy)
