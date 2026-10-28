@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { applyPose, setFace, GAIT_A, GAIT_SIDE, GAIT_D, DMG_N } from './heroes.js';
 import { POSES, face } from './timeline.js';
-import { groundAt } from './world.js';
+import { groundAt, camHit } from './world.js';
 
 const NUM = ['h', 'lean', 'roll', 'pitch', 'gait', 'tw', 'lo', 'ro', 'lw', 'rw', 'limp']; // lo/ro hand open 0 fist..1 flat, lw/rw wrist, limp slack wrists (heroes.js)
 const ARR = ['lh', 'rh', 'lf', 'rf'];
@@ -14,6 +14,11 @@ const HAND_RATE = 12;
 // A clean hit's snap back of the trunk (lean / twist, game.js hurt) eases in at this rate (1/s, real time): applied in
 // one frame, the 0.6 rad heavy-hit jolt threw the arms 40-53 cm in that frame.
 const JOLT = 25;
+// Fight camera: swung round the pair more than this (rad) to see past a roof prop (world.js OCCLUDERS), it stays on that side.
+const CAM_FLIP = Math.PI / 2;
+// swing angles tried, nearest first: up to 1 rad either way (further and the fighters line up, one hiding the other),
+// then round to the far side of the pair
+const CAM_TRY = [...Array.from({ length: 11 }, (_, i) => i * 0.1), ...Array.from({ length: 10 }, (_, i) => Math.PI - i * 0.1)];
 const ARENA = { x0: -6.5, x1: 6.5, z0: -2.2, z1: 3.0 };
 const BLOCK = { lean: 0.3, lh: [0.1, 0.66, 0.28], rh: [-0.1, 0.64, 0.26] };
 const ENTER_END = 3.4, GRAV = 14;
@@ -365,7 +370,7 @@ export class Game {
     this.F = { bat: mk(bat, 'bat', -7.4, Math.PI / 2), sup: mk(sup, 'sup', 2.2, -Math.PI / 2) };
     this.F.sup.y = 26; this.F.sup.cur = T(POSES.fly, { pitch: 0.35 });
     this.me = this.F[choice]; this.cpu = this.F[choice === 'bat' ? 'sup' : 'bat'];
-    this.camPos.set(0, 3.5, 13); this.camLook.set(0, 3, 0); this.camN.set(0, 1);
+    this.camPos.set(0, 3.5, 13); this.camLook.set(0, 3, 0); this.camN.set(0, 1); this.camDodge = 0;
     this.heat = null;
     this.pose(0);
     this.ctx.batCape.reset(); this.ctx.supCape.reset();
@@ -2041,6 +2046,13 @@ export class Game {
     }
     const C = this.koCam;
     if (C && C.t < 1.6) this.camRoll += C.side * 0.07 * Math.sin(Math.PI * C.t / 1.6);
+    // never inside a roof prop or with one between it and either fighter (any shot, incl. the orbiting cinematics):
+    // pull in along the view line until clear
+    const p = this.camPos.clone().add(this.camOff), q = new THREE.Vector3(), { bat, sup } = this.F;
+    const fa = new THREE.Vector3(bat.x, bat.y + 1, bat.z), fb = new THREE.Vector3(sup.x, sup.y + 1, sup.z);
+    let t = camHit(this.camLook, p);
+    while (q.copy(this.camLook).lerp(p, t), t > 0.2 && (camHit(fa, q) < 1 || camHit(fb, q) < 1)) t -= 0.05;
+    if (t < 1) this.camOff.copy(q).sub(this.camPos);
   }
   aim(dt) {
     const { bat, sup } = this.F;
@@ -2087,8 +2099,18 @@ export class Game {
       if (c.t >= c.end || c.t > 6) this.cine = null;
       return;
     }
-    const dist = 3.4 + sep * 0.8;
-    const pos = new THREE.Vector3(mid.x + this.camN.x * dist, Math.max(1.4, mid.y * 0.6 + 0.9 + sep * 0.12), mid.z + this.camN.y * dist);
+    const dist = 3.4 + sep * 0.8, py = Math.max(1.4, mid.y * 0.6 + 0.9 + sep * 0.12);
+    const at = (r) => { const c = Math.cos(r), s = Math.sin(r), nx = this.camN.x * c - this.camN.y * s, nz = this.camN.x * s + this.camN.y * c;
+      return new THREE.Vector3(mid.x + nx * dist, py, mid.z + nz * dist); };
+    // a roof prop in the way (camera inside the stairwell / tower, or one blocking either fighter): swing round the
+    // pair to the nearest clear angle, eased in; past CAM_FLIP the far side becomes the camera's side for good
+    const clear = (p) => camHit(mid, p) >= 1 && camHit(a, p) >= 1 && camHit(b, p) >= 1;
+    let want = 0;
+    const sg = (this.camDodge || 0) < 0 ? -1 : 1;
+    for (const r of CAM_TRY) if (clear(at(r * sg))) { want = r * sg; break; } else if (r && clear(at(-r * sg))) { want = -r * sg; break; }
+    this.camDodge = (this.camDodge || 0) + (want - (this.camDodge || 0)) * Math.min(1, dt * 3);
+    const pos = at(this.camDodge);
+    if (Math.abs(this.camDodge) > CAM_FLIP) { this.camN.rotateAround(new THREE.Vector2(), this.camDodge); this.camDodge = 0; }
     mid.y = Math.max(1.0, mid.y);
     const k = Math.min(1, dt * 4);
     this.camPos.lerp(pos, k); this.camLook.lerp(mid, k);

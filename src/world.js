@@ -4,6 +4,34 @@ import { mulberry32 } from './rng.js';
 
 export const ROOF = { x: 8, z: 6 };
 export const groundAt = (x, z) => (Math.abs(x) < ROOF.x && Math.abs(z) < ROOF.z ? 0 : -60);
+// Solid roof props the fight camera must not sit in or look through (world AABBs [x0, y0, z0, x1, y1, z1], matching
+// buildWorld / buildTower below).
+export const OCCLUDERS = [
+  [3.0, 0, -5.7, 6.2, 2.75, -3.1], // stairwell housing + roof cap
+  [-2.35, 0, -5.25, -0.85, 1.0, -4.15], [-0.35, 0, -5.25, 1.15, 1.0, -4.15], // AC units
+  [-3.4, 2.7, -5.73, 3.0, 4.3, -5.57], [-3.06, 0, -5.76, -2.94, 2.8, -5.64], [2.54, 0, -5.76, 2.66, 2.8, -5.64], // GOTHAM sign + posts
+  [-7.5, 2.55, -5.1, -4.5, 5.8, -2.1], [-7.0, 0, -4.6, -5.0, 2.6, -2.6], // water tank + cone, legs / braces
+  [6.9, 0, 4.9, 7.1, 5.3, 5.1], // antenna mast
+  [-8.3, 0, 6, 8.3, 0.45, 6.3], [-8.3, 0, -6.3, 8.3, 0.45, -6], [8, 0, -6, 8.3, 0.45, 6], [-8.3, 0, -6, -8, 0.45, 6], // ledges
+];
+// Fraction 0..1 along a -> b where the segment first enters an occluder grown by pad (1 = clear). Boxes that already
+// contain a are ignored (a fighter brushing a prop must not collapse the camera onto him).
+export function camHit(a, b, pad = 0.35) {
+  let best = 1;
+  const A = [a.x, a.y, a.z], D = [b.x - a.x, b.y - a.y, b.z - a.z];
+  for (const B of OCCLUDERS) {
+    let t0 = -Infinity, t1 = Infinity;
+    for (let i = 0; i < 3 && t0 <= t1; i++) {
+      const lo = B[i] - pad, hi = B[i + 3] + pad;
+      if (Math.abs(D[i]) < 1e-9) { if (A[i] < lo || A[i] > hi) t0 = Infinity; continue; }
+      let u = (lo - A[i]) / D[i], v = (hi - A[i]) / D[i];
+      if (u > v) [u, v] = [v, u];
+      t0 = Math.max(t0, u); t1 = Math.min(t1, v);
+    }
+    if (t0 <= t1 && t0 >= 0 && t0 < best) best = t0;
+  }
+  return best;
+}
 
 const std = (color, roughness = 0.8, metalness = 0, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness, metalness, ...extra });
 function box(parent, w, h, d, material, x, y, z, ry = 0) {
