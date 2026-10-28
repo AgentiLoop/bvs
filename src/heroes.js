@@ -608,6 +608,14 @@ export function makeHero(kind) {
       p.z += bulk * 0.004 * bump(p.y, -0.68, 0.08) * fr ** 2;           // tibialis
       p.z -= glute(p.y - 0.04) * bk ** 1.2;                             // gluteus maximus below the trunks' hem, up to the fold
       p.x += s * medius(p.y - 0.04) * out ** 2;                         // gluteus medius / trochanter carries the hip line down
+      // Sartorius: the long strap from the front of the hip bone to the inside of the knee. Its edge is the
+      // diagonal line that splits the quads from the inner thigh (the comic-book "teardrop" frame).
+      const t = (-0.08 - p.y) / 0.36;
+      if (t > 0 && t < 1) {
+        const as = s * (0.6 - 2.2 * t), d = Math.atan2(Math.sin(a - as), Math.cos(a - as));
+        const g = bulk * 0.004 * Math.sin(Math.PI * t) ** 0.7 * bump(d, 0, 0.2);
+        p.x -= g * Math.sin(a); p.z -= g * Math.cos(a);
+      }
       // Boot cuff: a slight flared lip just below the boot top so the boot reads as a real boot, not paint.
       const cuff = 1 + 0.07 * bump(p.y, -0.612, 0.011);
       p.x *= cuff; p.z *= cuff;
