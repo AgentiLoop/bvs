@@ -1856,10 +1856,13 @@ export class Game {
     if (f.stun > 0) {
       // reaction by where the blow landed, mirrored to the side it came from; heavy head shots whip all the way back.
       // Full strength while stunned, easing back into the guard over the last 40% of the stun.
-      if (f.heldBy && f.y > 0.2) return T(MP.held);
+      // (Superman's hoist hangs him in the 'held' pose from the grab: whipped back in the heavy-hit pose his torso
+      // leaned out of the lifter's reach as the lift began)
+      const g = f === this.F.bat ? this.F.sup : this.F.bat;
+      if (f.heldBy && (f.y > 0.2 || TOSS[f.heldBy.key].lift)) return T(MP.held);
       // in a fatal-blow hold: hanging by the throat from Superman's hand / doubled over, head dragged down to Batman's knee
-      const gb = this.gripOf(f === this.F.bat ? this.F.sup : this.F.bat, f);
-      if (gb && gb.at !== 'head' && f.y > 0.2) return T(MP.held); // (also carried up in Superman's fatality)
+      const gb = this.gripOf(g, f);
+      if (gb && gb.at !== 'head' && (f.y > 0.2 || g.act?.type === 'fatal')) return T(MP.held); // (also carried up in Superman's fatality)
       if (gb && gb.at === 'head') return T(MP.hitBody, { lean: 0.5 }); // bent at the waist, head held at the knee's height
       if (f.heldBy || !f.zone) return T(POSES[f.heavy ? 'hit' : 'flinch']);
       const u = 1 - f.stun / (f.stunMax || 1);
