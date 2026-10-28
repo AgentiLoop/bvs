@@ -1321,7 +1321,7 @@ function footLock(l, o, T, up, r, mode, dt, far, c) {
   }
   if (k.st < 0) {
     if (mode === 1 && d < LOCK.rest) { l.lk = null; return; }
-    if ((d > (mode === 2 ? LOCK.d : LOCK.rest) || far && d > 0.03) && !busy && !loaded) { k.fx = k.x = k.ax; k.fz = k.z = k.az; k.len = Math.hypot(T.x - k.x, T.z - k.z); k.st = 0; k.bx = null; k.dur = Math.min(LOCK.t, og); }
+    if ((d > (mode === 2 ? LOCK.d : LOCK.rest) || far && d > 0.03) && !busy && !loaded) { k.fx = k.x = k.ax; k.fz = k.z = k.az; k.len = Math.hypot(T.x - k.x, T.z - k.z); k.st = 0; k.bx = null; k.dur = Math.min(LOCK.t, og); k.fast = far; }
     else if (d > LOCK.max) {
       const m = (d - LOCK.max) / d, dx = (T.x - k.x) * m, dz = (T.z - k.z) * m;
       k.x += dx; k.z += dz; if (k.bx != null) { k.bx += dx; k.bz += dz; }
@@ -1329,7 +1329,9 @@ function footLock(l, o, T, up, r, mode, dt, far, c) {
   }
   if (k.st >= 0) {
     k.st = Math.min(1, k.st + dt / (k.dur || LOCK.t));
-    const e = k.st * k.st * (3 - 2 * k.st);
+    // (a foot stepping up from past the hip's reach (far) leaves at speed (ease-out): eased in, it lingered behind as it
+    // lifted, the straight rear leg 35-43 deg behind the pelvis in walks, stuns and drive impacts)
+    const e = k.fast ? k.st * (2 - k.st) : k.st * k.st * (3 - 2 * k.st);
     k.x = k.fx + (T.x - k.fx) * e; k.z = k.fz + (T.z - k.fz) * e;
     k.y = Math.min(LOCK.h, k.len * 0.4) * Math.sin(Math.PI * k.st);
     if (k.st >= 1) { if (mode === 1) { l.lk = null; return; } k.st = -1; k.y = 0; }
@@ -1347,7 +1349,7 @@ function footLock(l, o, T, up, r, mode, dt, far, c) {
 // l.gk = { x, z (held spot), sw (swinging), sx, sz (lift-off spot), y, sy (held / lift-off heading), len (swing), bx, bz (ball),
 // ox, oz, oy, dy (this frame's output: spot, boot lift, heading offset), w }.
 const _ruQ = new THREE.Quaternion(), _ruV = new THREE.Vector3();
-const GLOCK = { g: [0.01, 0.05], max: 0.3, h: 0.06, yaw: 0.6 };
+const GLOCK = { g: [0.01, 0.05], max: 0.3, h: 0.06, yaw: 0.6, join: 0.15 };
 const wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 // (from the spot the gait last put the foot (ox / oz), not its held spot: with the gait fading out those differ and
 // the foot snapped back 10-15 cm when the walk stopped)
@@ -1939,7 +1941,18 @@ function posePass(H, s, t, ground, raise) {
     } else _T.set(tg[0], tg[1] + lift * 0.18 * g, tg[2] + dz * 0.32 * g);
     H.root.localToWorld(_T); if (l.lk) { _T.x -= _wsx; _T.z -= _wsz; } // (weightShift moves the body, not the held feet: a kick goes with it)
     if (_T.y - raise - ground < SOLE + LOCK.up) clampBack(l, _T, _hbQ, _hbF); // a planted foot no further behind than the hip extends
-    const fy = ground + SOLE + raise, gk0 = l.gk;
+    const fy = ground + SOLE + raise;
+    // (a walk setting off with a foot still planted in the foot lock (after a move, or stepping back under the stance)
+    // lock-stepped it at LOCK.t a step while the body walked on at up to 3 m/s: the foot it left behind was dragged up
+    // onto its toes and both boots hung 3-7 cm off the roof. Once the gait is in, the planted foot joins it where it stands.)
+    // (only with GLOCK.join of its planted part of the cycle still ahead: joining in its swing phase while the other
+    // foot was mid-step held the swing back, then ran it in one or two frames, 80 cm at 30 fps)
+    const gp = s.gph != null ? (s.gph / (Math.PI * 2) + p) - Math.floor(s.gph / (Math.PI * 2) + p) : 1;
+    if (gp < GAIT_D - GLOCK.join && s.lock === 1 && g >= GLOCK.g[1] && l.lk && l.lk.st < 0 && l.lk.w >= 1 && !raise && !s.again && thighBack(l, l.lk.x, fy, l.lk.z, _hbQ) <= HIP_BACK[1]) {
+      const k = l.lk, y = s.yaw - ex;
+      l.gk = { x: k.x, z: k.z, sw: false, sx: k.x, sz: k.z, y, sy: y, len: 0, bx: null, bz: 0, ox: k.x, oz: k.z, oy: 0, dy: 0, w: 1, p: gp }; l.lk = null;
+    }
+    const gk0 = l.gk;
     if (s.gph != null && s.lock != null) gaitLock(l, _T, s.gph / (Math.PI * 2) + p, s.lock === 1 && !l.lk ? blend(GLOCK.g[0], GLOCK.g[1], g) : 0, raise || s.again, s.yaw - ex,
       gk0 && !gk0.sw && thighBack(l, gk0.x, fy, gk0.z, _hbQ) > HIP_BACK[1], H.legs[side === 'L' ? 'R' : 'L']);
     // (a gait-locked foot's swing lift follows its own swing (u): held down for the other foot's step it kept the
