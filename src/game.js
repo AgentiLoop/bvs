@@ -44,7 +44,7 @@ const MP = {
   side:    { ...G, h: 0.72, lean: 0.3 },
   backdash:{ ...G, h: 0.8, lean: -0.25, lf: [0.12, -0.7, -0.1], rf: [-0.12, -0.75, 0.15] },
   grab:    { ...G, lean: 0.45, lh: [0.18, 0.62, 0.62], rh: [-0.18, 0.62, 0.62], lo: 0.8, ro: 0.8 },
-  hipToss: { ...G, h: 0.72, lean: 0.75, tw: 1.1, roll: 0.15, lh: [0.3, 0.45, 0.55], rh: [-0.2, 0.45, 0.6], lo: 0.45, ro: 0.45 },
+  hipToss: { ...G, h: 0.72, lean: 0.75, tw: 1.1, roll: 0.15, lh: [0.4, 0, 0.3], rh: [-0.2, 0.45, 0.6], lo: 0.45, ro: 0.45 },
   lift:    { ...G, h: 0.98, lean: -0.2, lh: [0.18, 1.15, 0.4], rh: [-0.18, 1.15, 0.4], lo: 0.45, ro: 0.45 },
   // hoisted overhead: upright and kicking, boots hanging clear of the lifter's chest
   held:    { h: 0.92, lean: 0.1, roll: 0, lh: [0.45, 0.72, 0.18], rh: [-0.45, 0.78, 0.15], lf: [0.14, -0.86, -0.1], rf: [-0.14, -0.8, -0.2], lo: 0.75, ro: 0.75 },

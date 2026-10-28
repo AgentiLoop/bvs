@@ -1461,7 +1461,7 @@ const GRIP_Y = [0.28, 0.6], GRIP_TOP = 0.66, PALM_C = new THREE.Vector3(0, -0.05
 // Neck and head grips test fingers against the neck section above the torso, not the shoulders extended upward.
 const NECK_Y = [0.745, 0.8], NECK_TOP = 0.835, HEAD_GRIP = new THREE.Vector3(0.8, 0.15, -0.55).normalize();
 let _gBand = GRIP_Y, _gTop = GRIP_TOP, _gHead = false, _gLoop = false;
-const GRIP_ACROSS = [0.05, 0.15], GRIP_FRONT = [0.15, 0.28];
+const GRIP_ACROSS = [0.05, 0.15], GRIP_FRONT = [0.15, 0.28], REL_V = 3;
 const _gS = new THREE.Vector3(), _gN = new THREE.Vector3(), _gL = new THREE.Vector3(), _gW = new THREE.Vector3(), _gP = new THREE.Vector3(), _gT = new THREE.Vector3(), _gm = new THREE.Matrix4();
 function torsoSurface(O, w, S, N, sh) {
   if (_gHead) { // back of the head, on the side of the holder's shoulder (so the hand never flips across)
@@ -1695,6 +1695,19 @@ function posePass(H, s, t, ground, raise) {
       }
       _gLoop = false;
       _T.lerp(_gT, 1 - hw);
+    }
+    // Letting go (the hip toss turns the held spot away across the chest): the hand flew back to its pose 16-26 cm
+    // a frame (10-15 m/s) and wrung the upper arm 100-175 deg on the way. A releasing hand now travels back in the
+    // chest frame at most REL_V m/s.
+    const gr = a.grip;
+    if (gr && s.dt) {
+      _F.copy(_T); H.chest.worldToLocal(_F);
+      if (hw > 0.01 && hw >= (gr.rh ?? 0) - 1e-3) gr.rl = false; else if (gr.rp && hw < (gr.rh ?? 0)) gr.rl = true;
+      if (gr.rl) {
+        const d = _F.distanceTo(gr.rp), m = REL_V * s.dt;
+        if (d > m) { _F.lerp(gr.rp, 1 - m / d); _T.copy(_F); H.chest.localToWorld(_T); } else if (hw <= 0.01) gr.rl = false;
+      }
+      if (!raise && !s.again) { (gr.rp ||= new THREE.Vector3()).copy(_F); gr.rh = hw; }
     }
     solveIK(a.sh, a.el, 0.32, 0.30, _T, _P, true);
     // Elbows tucked across the body used to sink into the ribs: swing the elbow out past the torso.
