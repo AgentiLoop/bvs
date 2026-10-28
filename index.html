@@ -59,7 +59,8 @@
   #hpBatWrap { left: 4vw; } #hpBat i { background: linear-gradient(90deg, #2e3138, #4a4e57 35%, #ffd23a); }
   #hpSupWrap { right: 4vw; text-align: right; } #hpSup i { background: linear-gradient(270deg, #3a7bff, #c21a1a); margin-left: auto; }
   .hp b.mt { height: .8vh; width: 24vw; } #hpSupWrap b.mt { margin-left: auto; }
-  .mt i { background: linear-gradient(#9ff, #39f); transition: width .1s; } .mt.full i { background: linear-gradient(#fff, #f6c400); animation: pulse2 .4s infinite alternate; }
+  .mt i { transition: width .1s; } #mtBat i { background: linear-gradient(90deg, #39f, #9ff 70%, #fff); } #mtSup i { background: linear-gradient(270deg, #39f, #9ff 70%, #fff); }
+  #mtBat.full i, #mtSup.full i { background: linear-gradient(#fff, #f6c400); animation: pulse2 .4s infinite alternate; }
   @keyframes pulse2 { to { filter: brightness(1.8); } }
   #timer { position: absolute; top: 2.2vh; left: 0; right: 0; text-align: center; font-size: 3vw; font-weight: 900; }
   .pips { color: #f6c400; letter-spacing: .1em; }
