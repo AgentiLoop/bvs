@@ -156,8 +156,9 @@ const CREASE = { d: 0.045, y: -0.17, w: 0.11, a0: 1.0, a1: 1.6, k: 1, ki: 1.6 };
 // Seat corrective: the trunks' backside rounds out to radius r (minus k * (|x| - 6 cm)^2 toward the hip's side)
 // from the hip joint line as the thigh lifts forward a0..a1 rad.
 // Gluteus maximus cheek (hips space): depth a (x bulk) at |x| = x (width w), peak height y, rising over u, tucking
-// under over l with a steeper (power p) underside into the gluteal fold.
-const GL = { a: 0.065, x: 0.068, w: 0.055, y: -0.065, u: 0.07, l: 0.07, p: 2.5 };
+// under over l into the gluteal fold; one round dome (radial falloff, power p: full top, firm edge) rather than a
+// box-shaped product of falloffs. Gluteal dimple: depth d (x bulk) at |x| = dx (width dw), height dy (dh).
+const GL = { a: 0.065, x: 0.068, w: 0.055, y: -0.065, u: 0.07, l: 0.07, p: 3, d: 0.01, dx: 0.16, dw: 0.025, dy: -0.09, dh: 0.04 };
 const SEAT = { r: 0.13, k: 2, a0: 0.3, a1: 1.5, l0: 1.0 }; // l0: the thigh's seat fill fades in from l0 rad (later, so the guard keeps its shape)
 
 function surface(rows, sculpt = (p) => p, rings = 64, sides = 48) {
@@ -284,11 +285,16 @@ export function makeHero(kind) {
   // at the gluteal fold (a steeper underside, GL.p) into the hamstrings. The gluteus medius widens the hip so the
   // outer thigh sweep grows out of the pelvis instead of out of a narrow brief.
   // Hips-space x / height; the thigh mesh shares the shape below the trunks' hem.
-  const cheek = (x, y) => bulk * GL.a * bump(Math.abs(x), GL.x, GL.w)
-    * (y > GL.y ? bump(y, GL.y, GL.u) : Math.exp(-(((GL.y - y) / GL.l) ** GL.p)));
+  const cheek = (x, y) => bulk * GL.a * Math.exp(-(Math.hypot((Math.abs(x) - GL.x) / GL.w, (y - GL.y) / (y > GL.y ? GL.u : GL.l)) ** GL.p));
   const medius = y => bulk * 0.008 * bump(y, -0.05, y > -0.05 ? 0.05 : 0.03);
+  // Gluteal dimple: the hollow on the side of the seat, behind the trochanter where the gluteus maximus, medius
+  // and the top of the IT band meet, so each cheek reads as its own round mass from the side and the rear instead
+  // of sloping straight into the hip. Inward along the surface's radial direction (hips space, metres).
+  const dimple = (x, y) => bulk * GL.d * bump(Math.abs(x), GL.dx, GL.dw) * bump(y, GL.dy, GL.dh);
   const trunkRows = [[-0.095, 0.05, 0.05], [-0.06, 0.175, 0.106], [0.015, 0.168, 0.114], [0.085, 0.15, 0.106]];
   const trunkGeo = surface(trunkRows, (p, a) => {
+    const dm = dimple(p.x, p.y) * blend(0, 0.4, -Math.cos(a));
+    p.x -= dm * Math.sin(a); p.z -= dm * Math.cos(a);
     p.z -= cheek(p.x, p.y) * blend(-0.1, 0.5, -Math.cos(a));
     p.x += Math.sign(p.x) * medius(p.y) * Math.sin(a) ** 2;
     return p;
@@ -695,6 +701,8 @@ export function makeHero(kind) {
       p.z += bulk * 0.004 * bump(p.y, -0.68, 0.08) * fr ** 2;           // tibialis
       p.z -= cheek(p.x + s * 0.1, p.y - 0.04) * blend(-0.1, 0.5, -Math.cos(a));  // gluteus maximus below the trunks' hem, down to the fold
       p.x += s * medius(p.y - 0.04) * out ** 2;                         // gluteus medius / trochanter carries the hip line down
+      const dm = dimple(p.x + s * 0.1, p.y - 0.04) * blend(0, 0.4, bk);  // gluteal dimple on the side of the seat
+      p.x -= dm * Math.sin(a); p.z -= dm * Math.cos(a);
       // Adductors: the inner thigh's mass sits front-inner, high, medial to the sartorius. Forward only, so the
       // inner edge stays at the midline (thighs already meet there).
       p.z += adductor(p.y, a);
