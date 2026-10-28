@@ -634,7 +634,7 @@ addEventListener('keydown', (e) => {
   if (game.active) {
     if (e.key === 'Escape') { quitGame(); return; }
     if ((e.key === 'Enter' || e.code === 'Space') && !game.matchOver) { e.preventDefault(); if (!e.repeat) togglePause(); return; }
-    if (paused) return;
+    if (paused) { if ((e.key === 'h' || e.key === 'H') && !e.repeat) game.help(game.ui.help.style.display === 'none', true); return; } // H hides / shows the controls panel while paused
     if (e.code === 'Space' || e.key.startsWith('Arrow')) e.preventDefault();
     game.keydown(e);
     if (e.key === 'p' || e.key === 'P') { if (pixelMode) { pixelMode = false; comicMode = true; } else if (comicMode) comicMode = false; else pixelMode = true; resize(); }
