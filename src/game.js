@@ -58,8 +58,8 @@ const MP = {
   crouch:  { ...G, h: 0.54, lean: 0.55, lh: [0.12, 0.42, 0.38], rh: [-0.12, 0.36, 0.3], lf: [0.22, -0.47, 0.36], rf: [-0.22, -0.47, -0.3] },
   cblock:  { ...G, h: 0.52, lean: 0.45, lh: [0.1, 0.52, 0.3], rh: [-0.1, 0.5, 0.28], lf: [0.22, -0.46, 0.36], rf: [-0.22, -0.46, -0.3] },
   cjab:    { ...G, h: 0.54, lean: 0.55, tw: -0.25, lh: [0.21, 0.36, 0.95], rh: [-0.12, 0.36, 0.3], lf: [0.22, -0.47, 0.36], rf: [-0.22, -0.47, -0.3] },
-  ckickUp: { ...G, h: 0.5, lean: 0.5, lh: [0.12, 0.4, 0.38], rh: [-0.12, 0.34, 0.3], lf: [0.22, -0.43, 0.36], rf: [-0.2, -0.42, 0.18] },
-  ckick:   { ...G, h: 0.48, lean: 0.35, tw: 0.4, lh: [0.38, 0.05, 0.3], rh: [-0.12, 0.3, 0.3], lf: [0.24, -0.42, 0.3], rf: [-0.12, -0.4, 0.8] },
+  ckickUp: { ...G, h: 0.5, lean: 0.5, lh: [0.12, 0.4, 0.38], rh: [-0.12, 0.34, 0.3], lf: [0.22, -0.43, 0.36], rf: [-0.2, -0.34, 0.2] },
+  ckick:   { ...G, h: 0.48, lean: 0.35, tw: 0.4, lh: [0.38, 0.05, 0.3], rh: [-0.12, 0.3, 0.3], lf: [0.24, -0.42, 0.3], rf: [-0.12, -0.35, 0.8] },
   // projectiles: Batman winds the batarang back past his left shoulder and flicks it out; Superman spreads his arms and claps
   bThrowUp:{ ...G, tw: 0.6, lean: 0.2, rh: [0.1, 0.66, 0.36] },
   bThrow:  { ...G, lean: 0.45, tw: -0.5, rh: [-0.1, 0.62, 0.95] },
@@ -1997,7 +1997,12 @@ export class Game {
       f.holdW = (f.holdW || 0) + ((gr ? 1 : 0) - (f.holdW || 0)) * (dt ? 1 - Math.exp(-dt * 30) : 1);
       if (f.holdW > 0.01) { s.hold = o.H; s.holdW = f.holdW; s.holdAt = f.holdAt.at; s.holdSide = f.holdAt.side; }
       s.foe = o.H; // his torso / head: free hands stay out of him (heroes.js)
-      const P = { ...s, p: [f.x, base + s.h, f.z], yaw: f.yaw + c.tw }, gnd = groundAt(f.x, f.z);
+      const gnd = groundAt(f.x, f.z), a = f.act;
+      // planted feet hold their floor spot through strikes, throws and specials and step back after (heroes.js LOCK);
+      // dashes and sidesteps keep their sliding footwork
+      s.lock = !this.active || f.y > gnd + 0.01 || f.ko || f.down > 0 || f.launched || f.heldBy ? 0 : a && a.type !== 'dash' && a.type !== 'side' ? 2 : 1;
+      s.dt = dt;
+      const P = { ...s, p: [f.x, base + s.h, f.z], yaw: f.yaw + c.tw };
       applyPose(f.H, P, this.t, gnd);
       if (this.active) setFace(f.H, this.expr(f, dt));
       if (!first) first = { f, o, P, gnd };

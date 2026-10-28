@@ -1174,6 +1174,40 @@ const KNEE_LAT = [0.3, 0.7], TW_PLANT = [-0.8, 0.45], TW_SPINE = 0.7, LEAN_PELVI
 const _qs1 = new THREE.Quaternion(), _qs2 = new THREE.Quaternion(), _qs3 = new THREE.Quaternion();
 // (tg and the pole are in the pelvis' frame: the root turned back by a, the twist the waist takes; posePass)
 const yawXZ = (v, a) => { const c = Math.cos(a), s = Math.sin(a), x = v.x; v.x = x * c + v.z * s; v.z = v.z * c - x * s; return v; };
+// Game strikes lunge the body forward (f.x moves up to 0.36 m before the hit) and twist it, and hip-relative feet
+// went along: both planted feet skated through every cross, uppercut and front kick, and a kick's standing foot slid
+// 20-46 cm. Foot lock (game sets s.lock: 2 = in a strike, 1 = standing, let go; 0 / film = off): a planted foot keeps
+// its spot on the floor while the body moves over it, and once its pose target has drifted LOCK.d away it takes a
+// step there (lifted, LOCK.t s, one foot at a time; past LOCK.max it is dragged). Out of the strike the feet step
+// back under the stance. A foot rising off the floor (a kick) or reaching out (sweep) eases out of the lock.
+// l.lk = { x, z (world), y (step lift), st (step progress, -1 planted), fx, fz, len (step start / length), bx, bz (ball
+// of the foot, world: a planted foot up on its toes pivots on it as the body turns, instead of on the ankle), ax, az
+// (where the ankle really ended up last frame: a step starts from there), w (1 held .. 0 let go) }.
+const LOCK = { d: 0.15, rest: 0.015, max: 0.35, t: 0.16, h: 0.07, up: 0.12, ease: 0.08 };
+const _LK = new THREE.Vector3(), BALL = new THREE.Vector3(0, -0.074, 0.15), HEEL = new THREE.Vector3(0, -0.074, -0.058);
+function footLock(l, o, T, up, r, mode, dt) {
+  const k = l.lk, planted = up < LOCK.up && r < 0.575;
+  if (!mode) { l.lk = null; return; }
+  if (!k) { if (mode === 2 && planted) l.lk = { x: T.x, z: T.z, y: 0, st: -1, fx: 0, fz: 0, len: 0, bx: null, bz: 0, ax: T.x, az: T.z, w: 1 }; return; }
+  // lifting off (a kick) or reaching out (sweep): the foot lets go of its spot over LOCK.ease s, then the lock ends
+  if (k.w < 1 || !planted) { k.w = Math.max(0, k.w - dt / LOCK.ease); k.y *= k.w; if (k.w <= 0) l.lk = null; return; }
+  const d = Math.hypot(T.x - k.x, T.z - k.z), busy = o.lk && o.lk.st >= 0;
+  if (k.st < 0) {
+    if (mode === 1 && d < LOCK.rest) { l.lk = null; return; }
+    if (d > (mode === 2 ? LOCK.d : LOCK.rest) && !busy) { k.fx = k.x = k.ax; k.fz = k.z = k.az; k.len = Math.hypot(T.x - k.x, T.z - k.z); k.st = 0; k.bx = null; }
+    else if (d > LOCK.max) {
+      const m = (d - LOCK.max) / d, dx = (T.x - k.x) * m, dz = (T.z - k.z) * m;
+      k.x += dx; k.z += dz; if (k.bx != null) { k.bx += dx; k.bz += dz; }
+    }
+  }
+  if (k.st >= 0) {
+    k.st = Math.min(1, k.st + dt / LOCK.t);
+    const e = k.st * k.st * (3 - 2 * k.st);
+    k.x = k.fx + (T.x - k.fx) * e; k.z = k.fz + (T.z - k.fz) * e;
+    k.y = Math.min(LOCK.h, k.len * 0.4) * Math.sin(Math.PI * k.st);
+    if (k.st >= 1) { if (mode === 1) { l.lk = null; return; } k.st = -1; k.y = 0; }
+  }
+}
 function kneePole(H, l, tg, a = 0) {
   l.th.getWorldPosition(_P); yawXZ(H.root.worldToLocal(_P), a);
   let vy = tg[1] - _P.y, vz = tg[2] - _P.z;
@@ -1655,13 +1689,27 @@ function posePass(H, s, t, ground, raise) {
   const q = -tq, qp = q + ex, qP = ex ? _qs1.copy(_qb).multiply(_qs2.setFromAxisAngle(_Y, -ex)) : _qb;
   for (const [side, tg0, lift, dz, p] of [['L', s.lf, Math.max(0, cw), sw, 0], ['R', s.rf, Math.max(0, -cw), -sw, 0.5]]) {
     const l = H.legs[side];
-    const tg = q ? [tg0[0] * Math.cos(q) + tg0[2] * Math.sin(q), tg0[1], tg0[2] * Math.cos(q) - tg0[0] * Math.sin(q)] : tg0;
-    const tgP = ex ? [tg0[0] * Math.cos(qp) + tg0[2] * Math.sin(qp), tg0[1], tg0[2] * Math.cos(qp) - tg0[0] * Math.sin(qp)] : tg;
+    let tg = q ? [tg0[0] * Math.cos(q) + tg0[2] * Math.sin(q), tg0[1], tg0[2] * Math.cos(q) - tg0[0] * Math.sin(q)] : tg0;
+    let tgP = ex ? [tg0[0] * Math.cos(qp) + tg0[2] * Math.sin(qp), tg0[1], tg0[2] * Math.cos(qp) - tg0[0] * Math.sin(qp)] : tg;
     if (s.gph != null) {
       const [off, up] = gaitStep(s.gph / (Math.PI * 2) + p);
       _T.set(tg[0] + off * GAIT_A * g * gx, tg[1] + up * GAIT_LIFT * g, tg[2] + off * GAIT_A * g * gz);
     } else _T.set(tg[0], tg[1] + lift * 0.18 * g, tg[2] + dz * 0.32 * g);
     H.root.localToWorld(_T);
+    // foot lock (see LOCK): the planted foot stays on its floor spot, easing out of it as the foot rises; a step
+    // lifts the whole boot (sl: the boot-corner pass below keeps it that far off the roof, toes included)
+    let sl = 0, lw = 0;
+    if (s.lock != null) {
+      const up = Math.max(0, _T.y - raise - ground - SOLE);
+      if (!raise && !s.again) footLock(l, H.legs[side === 'L' ? 'R' : 'L'], _T, up, Math.hypot(tg0[0], tg0[2]), s.lock, s.dt || 0);
+      const k = l.lk;
+      if (k) {
+        const w = k.w;
+        _T.x += (k.x - _T.x) * w; _T.z += (k.z - _T.z) * w; sl = k.y * w; lw = w;
+        _LK.copy(_T); _LK.y -= raise; H.root.worldToLocal(_LK);
+        tg = [_LK.x, _LK.y, _LK.z]; tgP = ex ? [...yawXZ(_LK, ex).toArray()] : tg;
+      }
+    }
     _T.y -= raise; // body-lift pass: feet stay planted where the first pass put them
     // Keep the boot sole on top of the roof (ankle sits 7.4 cm above the sole) instead of sinking into it;
     // targets far below (falling off the roof) are left alone.
@@ -1681,11 +1729,26 @@ function posePass(H, s, t, ground, raise) {
     for (let it = 0; it < 4 && _T.y > ground - 0.6; it++) {
       let low = Infinity;
       for (const c of BOOT_CORNERS) { _P.copy(c); l.an.localToWorld(_P); low = Math.min(low, _P.y); }
-      if (low >= ground - 0.002) break;
-      _T.y += ground - low;
+      if (low >= ground + sl - 0.002) break;
+      _T.y += ground + sl - low;
       kneePole(H, l, tgP, ex);
       solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
       orientFoot(l, qP);
     }
+    const k = l.lk;
+    if (lw > 0 && k.st < 0) {
+      _P.copy(BALL); l.an.localToWorld(_P); _LK.copy(HEEL); l.an.localToWorld(_LK);
+      if (k.bx == null) { if (!raise && !s.again) { k.bx = _P.x; k.bz = _P.z; } }
+      else {
+        const on = lw * blend(0.01, 0.03, _LK.y - _P.y); // heel up: the ball holds its spot
+        if (on > 0) {
+          _T.x += (k.bx - _P.x) * on; _T.z += (k.bz - _P.z) * on;
+          kneePole(H, l, tgP, ex);
+          solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
+          orientFoot(l, qP);
+        }
+      }
+    }
+    if (k && !s.again) { l.an.getWorldPosition(_P); k.ax = _P.x; k.az = _P.z; }
   }
 }
