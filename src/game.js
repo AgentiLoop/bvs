@@ -16,19 +16,27 @@ const BLOCK = { lean: 0.3, lh: [0.1, 0.66, 0.28], rh: [-0.1, 0.64, 0.26] };
 const ENTER_END = 3.4, GRAV = 14;
 const STICK_CROUCH = 0.6; // left stick pulled down past this = crouch (instead of walking toward the camera)
 const P = POSES, G = POSES.guard;
-// Strike poses (hip-relative like POSES; tw = body twist about the vertical axis).
+// Strike poses (hip-relative like POSES; tw = body twist about the vertical axis, added to the root yaw:
+// + turns the body to its left, bringing the RIGHT shoulder and hip forward). Punches, palms, elbows, the haymaker,
+// drive impact, grapnel aim and kicks had it backwards: a right cross / hook / uppercut pulled the right shoulder
+// back (fist thrown 0.4-0.5 m wide of the foe), a left jab the left one, the wind-ups coiled the wrong way and the
+// drive impact crossed the legs. Lead (left) strikes are now -, rear (right) strikes +, wind-ups the opposite, with
+// the striking fist re-aimed onto the foe's centre line. (Batman's batarang, gauntlet slash and back elbow are
+// backhands, coiling + and unwinding -; the hip toss turns + to put his back in.) The roundhouse (and Batman's cape
+// kick) were a straight leg raised in front while the body turned away, the foot 0.5 m wide: now the hips turn into
+// it, the trunk tilts away over the standing leg and the leg comes round from the side, abducted ~50 deg.
 const MP = {
-  jab:     { ...G, lean: 0.46, tw: 0.25, lh: [0.02, 0.56, 0.98], rh: [-0.12, 0.46, 0.3] },
-  cross:   { ...P.punchR, tw: -0.35 },
-  hookUp:  { ...G, tw: 0.35, rh: [-0.44, 0.52, 0.2] },
-  hook:    { ...G, lean: 0.5, tw: -0.55, roll: 0.08, lh: [0.16, 0.44, 0.26], rh: [-0.12, 0.54, 0.66] },
-  dip:     { ...G, h: 0.6, lean: 0.5, tw: 0.2, rh: [-0.14, 0.05, 0.3] },
-  upper:   { ...P.upper, tw: -0.25 },
+  jab:     { ...G, lean: 0.46, tw: -0.25, lh: [0.22, 0.56, 1.02], rh: [-0.12, 0.46, 0.3] },
+  cross:   { ...P.punchR, tw: 0.35, rh: [-0.35, 0.55, 1.03] },
+  hookUp:  { ...G, tw: -0.35, rh: [-0.44, 0.52, 0.2] },
+  hook:    { ...G, lean: 0.5, tw: 0.55, roll: 0.08, lh: [0.16, 0.44, 0.26], rh: [-0.45, 0.54, 0.65] },
+  dip:     { ...G, h: 0.6, lean: 0.5, tw: -0.2, rh: [-0.14, 0.05, 0.3] },
+  upper:   { ...P.upper, tw: 0.25 },
   chamber: { ...G, h: 0.84, lean: 0.1, rf: [-0.18, -0.2, 0.42] },
   front:   { ...P.kickR },
   roundUp: { ...G, h: 0.86, lean: -0.1, tw: 0.4, rh: [-0.12, 0.48, 0.42], rf: [-0.3, -0.15, 0.3] },
-  round:   { h: 0.95, lean: -0.45, roll: -0.15, tw: -0.9, lh: [0.38, 0.32, 0.06], rh: [-0.3, 0.42, 0.05], lf: [0.12, -0.9, -0.05], rf: [0.02, 0.6, 0.78] },
-  sweep:   { h: 0.44, lean: 0.6, roll: 0, tw: -0.5, lh: [0.48, -0.3, 0.3], rh: [-0.1, -0.36, 0.42], lf: [0.22, -0.4, 0.3], rf: [-0.72, -0.4, 0.42] },
+  round:   { h: 1.04, lean: -0.2, roll: -0.5, tw: 0.9, lh: [0.14, 0.5, 0.36], rh: [-0.5, 0.14, 0.04], lf: [0.51, -0.81, 0.08], rf: [-0.83, -0.13, 0.56] },
+  sweep:   { h: 0.44, lean: 0.6, roll: 0, tw: 0.5, lh: [0.48, -0.3, 0.3], rh: [-0.1, -0.36, 0.42], lf: [0.22, -0.4, 0.3], rf: [-0.72, -0.4, 0.42] },
   dive:    { ...P.tuck, h: 0.55, lean: 0.75, lh: [0.3, 0.3, 0.25], rh: [-0.04, 0.12, 0.95] },
   airkick: { h: 0.62, lean: -0.3, roll: 0, lh: [0.3, 0.4, 0.12], rh: [-0.25, 0.35, 0.1], lf: [0.14, -0.4, 0.2], rf: [-0.06, -0.3, 0.82] },
   air:     { ...P.hit, h: 0.6, lo: 0.5, ro: 0.5 },
@@ -49,20 +57,20 @@ const MP = {
   // crouching: knees deep, hips low, guard tucked in front of the face
   crouch:  { ...G, h: 0.54, lean: 0.55, lh: [0.12, 0.42, 0.38], rh: [-0.12, 0.36, 0.3], lf: [0.22, -0.47, 0.36], rf: [-0.22, -0.47, -0.3] },
   cblock:  { ...G, h: 0.52, lean: 0.45, lh: [0.1, 0.52, 0.3], rh: [-0.1, 0.5, 0.28], lf: [0.22, -0.46, 0.36], rf: [-0.22, -0.46, -0.3] },
-  cjab:    { ...G, h: 0.54, lean: 0.55, tw: 0.25, lh: [0.04, 0.36, 0.92], rh: [-0.12, 0.36, 0.3], lf: [0.22, -0.47, 0.36], rf: [-0.22, -0.47, -0.3] },
+  cjab:    { ...G, h: 0.54, lean: 0.55, tw: -0.25, lh: [0.21, 0.36, 0.95], rh: [-0.12, 0.36, 0.3], lf: [0.22, -0.47, 0.36], rf: [-0.22, -0.47, -0.3] },
   ckickUp: { ...G, h: 0.5, lean: 0.5, lh: [0.12, 0.4, 0.38], rh: [-0.12, 0.34, 0.3], lf: [0.22, -0.43, 0.36], rf: [-0.2, -0.42, 0.18] },
-  ckick:   { ...G, h: 0.48, lean: 0.35, tw: -0.4, lh: [0.38, 0.05, 0.3], rh: [-0.12, 0.3, 0.3], lf: [0.24, -0.42, 0.3], rf: [-0.12, -0.4, 0.8] },
+  ckick:   { ...G, h: 0.48, lean: 0.35, tw: 0.4, lh: [0.38, 0.05, 0.3], rh: [-0.12, 0.3, 0.3], lf: [0.24, -0.42, 0.3], rf: [-0.12, -0.4, 0.8] },
   // projectiles: Batman winds the batarang back past his left shoulder and flicks it out; Superman spreads his arms and claps
   bThrowUp:{ ...G, tw: 0.6, lean: 0.2, rh: [0.1, 0.66, 0.36] },
   bThrow:  { ...G, lean: 0.45, tw: -0.5, rh: [-0.1, 0.62, 0.95] },
   clapUp:  { ...G, h: 0.9, lean: -0.05, lh: [0.6, 0.7, 0.2], rh: [-0.6, 0.7, 0.2], lo: 1, ro: 1 },
   clap:    { ...G, h: 0.82, lean: 0.4, lh: [0.03, 0.55, 0.72], rh: [-0.03, 0.55, 0.72], lo: 1, ro: 1 },
   // grapnel gun: arm locked straight at the target (raised toward the skyline for a zip), then hanging off the line in flight
-  gunAim:  { ...G, lean: 0.2, tw: -0.3, rh: [-0.05, 0.66, 0.95] },
-  gunUp:   { ...G, lean: 0.05, tw: -0.2, rh: [-0.08, 1.15, 0.55] },
+  gunAim:  { ...G, lean: 0.2, tw: 0.3, rh: [-0.22, 0.66, 0.98] },
+  gunUp:   { ...G, lean: 0.05, tw: 0.2, rh: [-0.08, 1.15, 0.55] },
   gunZip:  { ...G, h: 0.92, lean: -0.15, lh: [0.25, 0.5, 0.2], rh: [-0.12, 1.25, 0.3], lf: [0.14, -0.6, 0.15], rf: [-0.14, -0.5, -0.1] },
   // rising uppercut: fist driven straight up, body corkscrewing, lead knee tucked
-  riseUp:  { ...P.upper, h: 0.88, lean: -0.05, tw: -0.45, lh: [0.22, 0.3, 0.2], rh: [-0.04, 1.2, 0.3], lf: [0.15, -0.45, 0.3], rf: [-0.15, -0.88, -0.1] },
+  riseUp:  { ...P.upper, h: 0.88, lean: -0.05, tw: 0.45, lh: [0.22, 0.3, 0.2], rh: [-0.04, 1.2, 0.3], lf: [0.15, -0.45, 0.3], rf: [-0.15, -0.88, -0.1] },
   // parry: the lead hand sweeps the blow up and out past the head (standing) or down past the knee (crouching)
   // MK breaker: chest thrown open, arms flung wide and back, up on the toes
   burst:   { ...G, h: 0.9, lean: -0.3, tw: 0, lh: [0.62, 0.8, -0.05], rh: [-0.62, 0.8, -0.05], lf: [0.22, -0.86, 0.12], rf: [-0.22, -0.86, -0.14], lo: 1, ro: 1 },
@@ -71,9 +79,9 @@ const MP = {
   // fatal blow: Batman drags the head down into a rising knee, then drops a hammer elbow; Superman holds him up by the throat
   kneeHold:{ ...G, h: 0.88, lean: 0.4, lh: [0.14, 0.62, 0.62], rh: [-0.14, 0.62, 0.62], lo: 0.45, ro: 0.45 },
   knee:    { ...G, h: 0.9, lean: 0.5, lh: [0.14, 0.42, 0.55], rh: [-0.14, 0.42, 0.55], rf: [-0.12, -0.3, 0.48], lo: 0.45, ro: 0.45 },
-  elbowUp: { ...G, h: 0.92, lean: -0.1, tw: 0.45, lh: [0.25, 0.55, 0.45], rh: [-0.22, 1.18, 0.12] },
-  elbow:   { ...G, h: 0.76, lean: 0.7, tw: -0.3, lh: [0.24, 0.36, 0.2], rh: [-0.06, 0.42, 0.5] },
-  choke:   { ...G, h: 0.98, lean: 0, tw: 0.3, lh: [0.04, 1.02, 0.56], rh: [-0.3, 0.42, 0.14], lf: [0.2, -0.86, 0.2], rf: [-0.2, -0.86, -0.3], lo: 0.5 },
+  elbowUp: { ...G, h: 0.92, lean: -0.1, tw: -0.45, lh: [0.25, 0.55, 0.45], rh: [-0.22, 1.18, 0.12] },
+  elbow:   { ...G, h: 0.76, lean: 0.7, tw: 0.3, lh: [0.24, 0.36, 0.2], rh: [-0.06, 0.42, 0.5] },
+  choke:   { ...G, h: 0.98, lean: 0, tw: -0.3, lh: [0.04, 1.02, 0.56], rh: [-0.3, 0.42, 0.14], lf: [0.2, -0.86, 0.2], rf: [-0.2, -0.86, -0.3], lo: 0.5 },
   // hit reactions by where the blow lands: head whips back with the rear foot stepping out to catch the weight,
   // a body blow doubles him over clutching the gut, a low kick yanks the front leg out with the arms thrown wide
   hitHead: { h: 0.84, lean: -0.45, roll: 0.12, tw: 0.25, lh: [0.32, 0.68, 0.02], rh: [-0.34, 0.6, 0.08], lf: [0.18, -0.76, 0.32], rf: [-0.2, -0.76, -0.5], lo: 0.5, ro: 0.5 },
@@ -82,24 +90,24 @@ const MP = {
   // super strings, per hero. Batman: gauntlet palm, spinning back elbow, clinch knee, backhand gauntlet-fin slash,
   // spinning cape heel kick. Superman: dipping liver shot, wide haymaker, thunderclap at the ears, double-axe-handle
   // smash, rising flying uppercut with the knee tucked.
-  bPalm:   { ...G, lean: 0.52, tw: 0.32, lh: [0.0, 0.5, 0.96], rh: [-0.12, 0.44, 0.28], lo: 1, lw: 1 },
+  bPalm:   { ...G, lean: 0.52, tw: -0.32, lh: [0.31, 0.5, 1.01], rh: [-0.12, 0.44, 0.28], lo: 1, lw: 1 },
   bElbowUp:{ ...G, lean: 0.2, tw: 0.95, lh: [0.18, 0.5, 0.35], rh: [0.1, 0.6, 0.4] },
   bElbow:  { ...G, lean: 0.38, tw: -0.85, roll: -0.08, lh: [0.18, 0.5, 0.38], rh: [0.12, 0.62, 0.55] },
   bSlashUp:{ ...G, lean: 0.25, tw: 0.65, rh: [0.1, 0.66, 0.38] },
   bSlash:  { ...G, lean: 0.5, tw: -0.75, roll: -0.1, lh: [0.18, 0.5, 0.38], rh: [-0.58, 0.36, 0.74] },
-  bSpinUp: { ...G, h: 0.82, lean: 0.1, tw: 1.4, rf: [-0.25, -0.52, 0.0] },
-  bSpin:   { h: 0.95, lean: -0.5, roll: -0.22, tw: -1.25, lh: [0.42, 0.3, 0.03], rh: [-0.34, 0.4, 0.02], lf: [0.12, -0.9, -0.05], rf: [0.04, 0.62, 0.8] },
-  sBody:   { ...G, h: 0.72, lean: 0.62, tw: 0.38, lh: [0.05, 0.24, 0.86], rh: [-0.14, 0.5, 0.5] },
-  sHayUp:  { ...G, lean: 0.15, tw: 0.8, rh: [-0.4, 0.72, 0.16] },
-  sHay:    { ...G, lean: 0.56, tw: -0.72, roll: 0.06, lh: [0.22, 0.44, 0.32], rh: [-0.08, 0.62, 0.72] },
+  bSpinUp: { ...G, h: 0.82, lean: 0.1, tw: -1.4, rf: [-0.25, -0.52, 0.0] },
+  bSpin:   { h: 1.04, lean: -0.3, roll: -0.55, tw: 0.85, lh: [0.14, 0.5, 0.36], rh: [-0.5, 0.14, 0.04], lf: [0.56, -0.78, 0.08], rf: [-0.83, -0.11, 0.61] },
+  sBody:   { ...G, h: 0.72, lean: 0.62, tw: -0.38, lh: [0.44, 0.24, 0.87], rh: [-0.14, 0.5, 0.5] },
+  sHayUp:  { ...G, lean: 0.15, tw: -0.8, rh: [-0.4, 0.72, 0.16] },
+  sHay:    { ...G, lean: 0.56, tw: 0.72, roll: 0.06, lh: [0.22, 0.44, 0.32], rh: [-0.59, 0.62, 0.66] },
   sClap:   { ...G, h: 0.82, lean: 0.45, lh: [0.07, 0.76, 0.76], rh: [-0.07, 0.76, 0.76], lo: 1, ro: 1, lw: -1, rw: -1 },
   sHammerUp:{ ...G, h: 0.86, lean: -0.15, lh: [0.06, 1.18, 0.22], rh: [-0.06, 1.18, 0.22] },
   sHammer: { ...G, h: 0.66, lean: 0.78, lh: [0.04, 0.3, 0.76], rh: [-0.04, 0.3, 0.76] },
-  sRise:   { ...P.upper, h: 0.98, lean: -0.1, tw: -0.3, rh: [-0.02, 1.26, 0.46], rf: [-0.15, -0.5, 0.36] },
+  sRise:   { ...P.upper, h: 0.98, lean: -0.1, tw: 0.3, rh: [-0.02, 1.26, 0.46], rf: [-0.15, -0.5, 0.36] },
   // drive impact: coiled low with the rear fist cocked at the hip and the lead hand reaching, then the whole body
   // drives through a straight-arm palm with the rear leg pushing off
-  diUp:    { ...G, h: 0.74, lean: 0.25, tw: 0.75, roll: 0.05, lh: [0.18, 0.5, 0.5], rh: [-0.27, 0.14, 0.08], lf: [0.22, -0.62, 0.42], rf: [-0.2, -0.62, -0.4], lo: 0.7 },
-  di:      { ...G, h: 0.8, lean: 0.7, tw: -0.6, roll: -0.05, lh: [0.26, 0.4, 0.1], rh: [0.0, 0.62, 1.08], lf: [0.2, -0.7, 0.55], rf: [-0.18, -0.72, -0.62], ro: 1, rw: 1 },
+  diUp:    { ...G, h: 0.74, lean: 0.25, tw: -0.75, roll: 0.05, lh: [0.18, 0.5, 0.5], rh: [-0.27, 0.14, 0.08], lf: [0.22, -0.62, 0.42], rf: [-0.2, -0.62, -0.4], lo: 0.7 },
+  di:      { ...G, h: 0.8, lean: 0.7, tw: 0.6, roll: -0.05, lh: [0.26, 0.4, 0.1], rh: [-0.7, 0.62, 0.98], lf: [0.2, -0.7, 0.55], rf: [-0.18, -0.72, -0.62], ro: 1, rw: 1 },
   // pinned against the arena wall: back flat, arms flung out, head knocked back, then sliding down it
   splat:   { h: 0.9, lean: -0.55, roll: 0, tw: 0, lh: [0.6, 0.78, -0.3], rh: [-0.6, 0.74, -0.3], lf: [0.22, -0.86, 0.22], rf: [-0.2, -0.86, 0.1], lo: 1, ro: 1 },
 };
