@@ -162,7 +162,9 @@ const HF = { o: 0.008, yo: -0.13, wo: 0.08, po: 1.2, t: 0.012, ty: -0.01, tw: 0.
 // a sagging slab. It is now lifted 1.5 cm, a little smaller and narrower, with a rounder dome (p) and a longer
 // underside (l) that curves into the fold; the trunks' cheek fade moved up with it so the thigh's cheek doesn't
 // surface through the middle of the trunks.
-const GL = { a: 0.052, x: 0.068, w: 0.072, y: -0.085, u: 0.095, l: 0.08, p: 2.3, d: 0.01, dx: 0.16, dw: 0.025, dy: -0.09, dh: 0.04 };
+// Nightwing reference: the cheek projects well past a deeper lumbar curve (a 0.062, peak y -0.08) with a deeper side
+// dimple; a shorter underside (l) would crisp the fold but folded the trunk hem in MP poses, so l stays 0.08.
+const GL = { a: 0.062, x: 0.068, w: 0.072, y: -0.08, u: 0.095, l: 0.08, p: 2.3, d: 0.015, dx: 0.16, dw: 0.025, dy: -0.09, dh: 0.04 };
 // Seat corrective: fades in as the thigh lifts forward a0..a1 rad. With it the cheek (k of GL's dome) and a band of
 // the seat (depth d at hips height y, width w) flatten, so a crouch's backside is one smooth line into the hamstrings.
 // k 0: the held cheek stays round (k 1 erased it in the guard, whose forward thigh is already 0.77 of the way in).
@@ -274,7 +276,7 @@ export function makeHero(kind) {
     const erector = 0.012 * bump(ax, 0.034 + 0.03 * blend(0.2, 0.5, y), 0.021) * blend(0.08, 0.18, y) * (1 - blend(0.28, 0.52, y));
     // lumbar curve: the small of the back sinks in above the belt, so the columns stand in a hollow and the glutes
     // still swell out below it in profile (the columns alone filled the curve in by 1 cm)
-    const lumbar = -0.011 * bump(y, 0.21, 0.08) * c;
+    const lumbar = -0.016 * bump(y, 0.21, 0.08) * c;
     const groove = -0.005 * bump(ax, 0, 0.011) * blend(0.05, 0.12, y) * (1 - blend(0.62, 0.7, y));
     const trap = 0.005 * bump(ax, 0, 0.05 + 0.06 * blend(0.45, 0.62, y)) * bump(y, 0.56, 0.08);
     const xl = 0.08 + 0.13 * blend(0.1, 0.5, y); // the lat's outer edge sweeps out from the waist to the armpit
@@ -327,7 +329,7 @@ export function makeHero(kind) {
   const trunkGeo = surface(trunkRows, (p, a) => {
     const dm = dimple(p.x, p.y) * blend(0, 0.4, -Math.cos(a));
     p.x -= dm * Math.sin(a); p.z -= dm * Math.cos(a);
-    p.z -= cheek(p.x, p.y) * blend(-0.1, 0.5, -Math.cos(a)) * blend(-0.065, 0.005, p.y); // the trunks' hem tucks under the leg's cheek: no ledge at the hem
+    p.z -= cheek(p.x, p.y) * blend(-0.1, 0.5, -Math.cos(a)) * blend(-0.06, 0.01, p.y); // the trunks' hem tucks under the leg's cheek: no ledge at the hem
     p.x += Math.sign(p.x) * medius(p.y) * Math.sin(a) ** 2;
     p.x += Math.sign(p.x) * bulk * HF.t * bump(p.y, HF.ty, HF.tw) * Math.abs(Math.sin(a)) ** HF.tp;
     return p;
