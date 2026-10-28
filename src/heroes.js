@@ -158,9 +158,11 @@ const HF = { o: 0.008, yo: -0.13, wo: 0.08, po: 1.2, t: 0.012, ty: -0.01, tw: 0.
 // Gluteus maximus cheek (hips space): depth a (x bulk) at |x| = x (width w), peak height y, rising over u, tucking
 // under over l into the gluteal fold; one round dome (radial falloff, power p: full top, firm edge) rather than a
 // box-shaped product of falloffs. Gluteal dimple: depth d (x bulk) at |x| = dx (width dw), height dy (dh).
-// Lower, broader and softer than before (peak at the joint line, not up under the belt) so the seat reads as one
-// full dome from the side that tucks at the fold, instead of a high knob over a second bulge.
-const GL = { a: 0.055, x: 0.07, w: 0.075, y: -0.1, u: 0.1, l: 0.065, p: 2.5, d: 0.01, dx: 0.16, dw: 0.025, dy: -0.09, dh: 0.04 };
+// Peach: the peak sat low (y -0.1) on a 6 cm flat shelf that dropped off a cliff into the fold, so the seat read as
+// a sagging slab. It is now lifted 1.5 cm, a little smaller and narrower, with a rounder dome (p) and a longer
+// underside (l) that curves into the fold; the trunks' cheek fade moved up with it so the thigh's cheek doesn't
+// surface through the middle of the trunks.
+const GL = { a: 0.052, x: 0.068, w: 0.072, y: -0.085, u: 0.095, l: 0.08, p: 2.3, d: 0.01, dx: 0.16, dw: 0.025, dy: -0.09, dh: 0.04 };
 // Seat corrective: fades in as the thigh lifts forward a0..a1 rad. With it the cheek (k of GL's dome) and a band of
 // the seat (depth d at hips height y, width w) flatten, so a crouch's backside is one smooth line into the hamstrings.
 // k 0: the held cheek stays round (k 1 erased it in the guard, whose forward thigh is already 0.77 of the way in).
@@ -325,7 +327,7 @@ export function makeHero(kind) {
   const trunkGeo = surface(trunkRows, (p, a) => {
     const dm = dimple(p.x, p.y) * blend(0, 0.4, -Math.cos(a));
     p.x -= dm * Math.sin(a); p.z -= dm * Math.cos(a);
-    p.z -= cheek(p.x, p.y) * blend(-0.1, 0.5, -Math.cos(a)) * blend(-0.085, -0.01, p.y); // the trunks' hem tucks under the leg's cheek: no ledge at the hem
+    p.z -= cheek(p.x, p.y) * blend(-0.1, 0.5, -Math.cos(a)) * blend(-0.065, 0.005, p.y); // the trunks' hem tucks under the leg's cheek: no ledge at the hem
     p.x += Math.sign(p.x) * medius(p.y) * Math.sin(a) ** 2;
     p.x += Math.sign(p.x) * bulk * HF.t * bump(p.y, HF.ty, HF.tw) * Math.abs(Math.sin(a)) ** HF.tp;
     return p;
