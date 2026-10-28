@@ -712,7 +712,7 @@ export function makeHero(kind) {
       part(openG, seg(r, thumbL[k], 0, k === 2 ? 0.12 : 0.05, { x: s * 0.6, z: -0.8 }), handMat));
     addNail(thumb[2], 0.0096, thumbL[2], { x: s * 0.6, z: -0.8 });        // thumbnail faces out to the side and back
     const thumbTip = new THREE.Object3D(); openG.add(thumbTip);
-    arms[side] = { sh, el, hand, s, grip: { fistG, openG, fingers, thumb, thumbL, thumbTip, tips: [thumbTip, ...fingers.map(f => f.tip)], o: -1 } };
+    arms[side] = { sh, el, hand, s, swd: null, grip: { fistG, openG, fingers, thumb, thumbL, thumbTip, tips: [thumbTip, ...fingers.map(f => f.tip)], o: -1 } };
 
     const th = joint(hips, [s * 0.1, -0.04, 0]);
     const kn = joint(th, [0, -0.46, 0]);
@@ -978,13 +978,17 @@ function updateBones(b) {
 // hinge: roll the upper bone about its own axis so its local +z (the arm's biceps side) faces the inside of the
 // bend. setFromUnitVectors alone takes the shortest arc from hanging, so with the arm raised and the forearm
 // coming forward (uppercut, overhead fist) the biceps ended up on the back of the arm and the triceps in front.
-const _qh = new THREE.Quaternion(), _Y = new THREE.Vector3(0, 1, 0);
+// The elbow (hinge) also stops at ELBOW_MAX flexion: a fist pulled in to the shoulder (guards on a deep lean, the
+// spinning-elbow and liver-shot strings) folded the forearm 160 deg into the biceps; past the cap the fist stays
+// further out along the same line.
+const _qh = new THREE.Quaternion(), _Y = new THREE.Vector3(0, 1, 0), ELBOW_MAX = 145 * Math.PI / 180;
+const reachMin = (L1, L2, hinge) => hinge ? Math.sqrt(L1 * L1 + L2 * L2 + 2 * L1 * L2 * Math.cos(ELBOW_MAX)) : Math.abs(L1 - L2) + 0.01;
 function solveIK(upper, lower, L1, L2, target, pole, hinge) {
   upper.getWorldPosition(_A);
   _D.subVectors(target, _A);
   let d = _D.length();
   if (d < 1e-5) _D.set(0, -1, 0); else _D.multiplyScalar(1 / d);
-  d = Math.min(Math.max(d, Math.abs(L1 - L2) + 0.01), L1 + L2 - 0.001);
+  d = Math.min(Math.max(d, reachMin(L1, L2, hinge)), L1 + L2 - 0.001);
   const cosA = Math.min(1, Math.max(-1, (L1 * L1 + d * d - L2 * L2) / (2 * L1 * d)));
   const sinA = Math.sqrt(1 - cosA * cosA);
   _B.subVectors(pole, _A).addScaledVector(_D, -_B.dot(_D));
@@ -1000,6 +1004,75 @@ function solveIK(upper, lower, L1, L2, target, pole, hinge) {
   }
   _G.copy(_A).addScaledVector(_D, d);
   setBoneDir(lower, _F.subVectors(_G, _E));
+}
+
+// Elbow swivel kept inside the shoulder's range. The fixed pole (out, down and back) let the target drag the elbow
+// anywhere on its circle: reaching across to the far shoulder (batarang wind-up, hip toss, spinning elbow) the upper
+// arm pointed back behind the neck, low fists held out behind for balance (kicks) cocked the elbow up and back at
+// shoulder height, and wide fists (hook / haymaker wind-ups) rolled the humerus 90-140 deg out. Sample the circle
+// about the shoulder->fist line and keep the swivel nearest the pole whose upper arm stays out of the horizontal
+// zone behind the shoulder (az: lateral 0, forward 90, across 180) and whose humerus rotation (forearm about the
+// upper arm, measured from the arm swung up from hanging with the forearm forward; + = external) is in range.
+// Poses that were already inside the limits keep their elbow exactly.
+const SWIVEL = { n: 36, az: [-55, 150], rot: [-80, 95], w: 12, rate: 0.25 }, _qs = new THREE.Quaternion(), _sw = new THREE.Quaternion(),
+  _su = new THREE.Vector3(), _sf = new THREE.Vector3(), _sr = new THREE.Vector3(), _sx = new THREE.Vector3(), _sZ = new THREE.Vector3(0, 0, 1);
+function swivelPole(H, a, target, pole, L1, L2) {
+  a.sh.getWorldPosition(_A);
+  _D.subVectors(target, _A);
+  let d = _D.length();
+  if (d < 1e-5) return;
+  _D.multiplyScalar(1 / d);
+  d = Math.min(Math.max(d, reachMin(L1, L2, true)), L1 + L2 - 0.001);
+  const cosA = Math.min(1, Math.max(-1, (L1 * L1 + d * d - L2 * L2) / (2 * L1 * d))), sinA = Math.sqrt(1 - cosA * cosA);
+  if (sinA < 0.05) return; // arm (nearly) straight: the swivel only rolls it
+  _B.subVectors(pole, _A).addScaledVector(_D, -_B.dot(_D));
+  if (_B.lengthSq() < 1e-8) return;
+  _B.normalize(); _G.crossVectors(_D, _B);
+  H.chest.getWorldQuaternion(_qs).invert();
+  const D2R = Math.PI / 180, flexW = Math.sin(Math.acos(Math.min(1, Math.max(-1, (d * d - L1 * L1 - L2 * L2) / (2 * L1 * L2)))));
+  const cost = (th) => {
+    const c = Math.cos(th), sn = Math.sin(th);
+    _su.copy(_D).multiplyScalar(cosA).addScaledVector(_B, sinA * c).addScaledVector(_G, sinA * sn); // upper arm dir
+    _sf.copy(_D).multiplyScalar(d).addScaledVector(_su, -L1).normalize(); // forearm dir
+    _su.applyQuaternion(_qs); _su.x *= a.s; _sf.applyQuaternion(_qs); _sf.x *= a.s;
+    let pen = 0;
+    const h2 = 1 - _su.y * _su.y, az = Math.atan2(_su.z, _su.x) / D2R;
+    const ex = az < SWIVEL.az[0] ? SWIVEL.az[0] - az : az > SWIVEL.az[1] ? az - SWIVEL.az[1] : 0;
+    pen += (h2 * ex * D2R) ** 2;
+    if (_su.y < 0.9) {
+      _sr.copy(_sZ).applyQuaternion(_sw.setFromUnitVectors(DOWN, _su));
+      _sf.addScaledVector(_su, -_sf.dot(_su)).normalize();
+      const rot = -Math.atan2(_su.dot(_sx.crossVectors(_sr, _sf)), _sr.dot(_sf)) / D2R;
+      const rx = rot < SWIVEL.rot[0] ? SWIVEL.rot[0] - rot : rot > SWIVEL.rot[1] ? rot - SWIVEL.rot[1] : 0;
+      pen += (rx * D2R * flexW * (1 - blend(0.6, 0.9, _su.y))) ** 2;
+    }
+    return th * th + SWIVEL.w * pen;
+  };
+  // Global minimum on the first pose; after that the elbow tracks its own minimum from the last pose (a.swd, in the
+  // chest's frame), at most SWIVEL.rate per solve: with no good swivel for the fist (both sides of the circle equally
+  // bad) a fresh global search flipped the elbow across the arm in one frame, and the pole itself swings through the
+  // shoulder->fist line for fists raised overhead (60 cm elbow pops in the old rising uppercut / hammer wind-up).
+  const st0 = 2 * Math.PI / SWIVEL.n;
+  let best = 0, bc = Infinity, lo = -Math.PI, hi = Math.PI;
+  if (a.swd) {
+    _sx.copy(a.swd).applyQuaternion(_sw.copy(_qs).invert());
+    const x = _sx.dot(_B), y = _sx.dot(_G);
+    if (x * x + y * y > 0.04) { best = Math.atan2(y, x); bc = cost(best); lo = best - SWIVEL.rate; hi = best + SWIVEL.rate; }
+  }
+  if (bc === Infinity) for (let i = 0; i < SWIVEL.n; i++) {
+    const th = (i < SWIVEL.n / 2 ? i : i - SWIVEL.n) * st0, c = cost(th);
+    if (c < bc) { bc = c; best = th; }
+  } else {
+    const dir = cost(best - 0.01) < cost(best + 0.01) ? -1 : 1, st = Math.min(st0, SWIVEL.rate);
+    for (let th = best + dir * st, c = cost(th); c < bc && th >= lo && th <= hi; th += dir * st, c = cost(th)) { bc = c; best = th; }
+  }
+  for (let st = st0 / 2; st > 0.004; st /= 2) for (const th of [best - st, best + st]) { // refine between the steps
+    if (th < lo || th > hi) continue;
+    const c = cost(th);
+    if (c < bc) { bc = c; best = th; }
+  }
+  (a.swd ||= new THREE.Vector3()).copy(_B).multiplyScalar(Math.cos(best)).addScaledVector(_G, Math.sin(best)).applyQuaternion(_qs);
+  pole.copy(_A).addScaledVector(_B, Math.cos(best)).addScaledVector(_G, Math.sin(best));
 }
 
 const _C = new THREE.Vector3();
@@ -1158,6 +1231,23 @@ function lowestTip(a) {
   for (const f of g.fingers) y = Math.min(y, fingerPoint(g, f, 3, _hT).y);
   return y;
 }
+// Forearm twist kept inside pronation / supination: the palm direction above is picked in the body's frame, blind
+// to where the elbow is, so wide wind-ups (hook, haymaker), arms flung back (hit, burst, splat) and the hoisted
+// victim's raised arms turned the fist 105-170 deg past thumb-up, i.e. the forearm wrung backwards. Measured about
+// the forearm from thumb-up (palm toward the midline across the bend; + supinated: palm toward the biceps), it is
+// held within FOREARM_TWIST; a near-straight arm can also roll at the shoulder, so its range opens up to 180.
+const FOREARM_TWIST = 90 * Math.PI / 180, _fu = new THREE.Vector3(), _fb = new THREE.Vector3(), _fm = new THREE.Vector3();
+function forearmTwist(a) {
+  a.sh.getWorldPosition(_fu); a.el.getWorldPosition(_fb); _fu.subVectors(_fb, _fu).normalize(); // upper arm
+  const c = -_fu.dot(_hy), lim = FOREARM_TWIST + (Math.PI - FOREARM_TWIST) * (1 - blend(0.35, 0.7, Math.acos(Math.max(-1, Math.min(1, c))))); // _hy = -forearm
+  if (lim >= Math.PI) return;
+  _fb.copy(_fu).negate().addScaledVector(_hy, _fu.dot(_hy)).normalize(); // inside of the bend, across the forearm
+  _fm.crossVectors(_fu, _hy).multiplyScalar(-a.s).normalize(); // medial side of the forearm (thumb-up palm)
+  const t = Math.atan2(_hz.dot(_fb), _hz.dot(_fm));
+  if (Math.abs(t) <= lim) return;
+  const tc = Math.sign(t) * lim;
+  _hz.copy(_fm).multiplyScalar(Math.cos(tc)).addScaledVector(_fb, Math.sin(tc));
+}
 function orientHand(a, qRoot, w = 0, palm = null, pw = 0) {
   a.el.getWorldPosition(_hy); a.hand.getWorldPosition(_hf); a.sh.getWorldPosition(_hx);
   const ext = _hx.distanceTo(_hf) / 0.62;
@@ -1171,6 +1261,7 @@ function orientHand(a, qRoot, w = 0, palm = null, pw = 0) {
   _hz.addScaledVector(_hy, -_hz.dot(_hy));
   if (_hz.lengthSq() < 1e-6) { _hz.set(0, -1, 0).applyQuaternion(qRoot); _hz.addScaledVector(_hy, -_hz.dot(_hy)); } // forearm along the preferred palm line
   _hz.normalize();
+  if (!palm) forearmTwist(a);
   _hx.crossVectors(_hy, _hz);
   _hq.setFromRotationMatrix(_hm.makeBasis(_hx, _hy, _hz));
   a.el.getWorldQuaternion(_hr).invert();
@@ -1414,6 +1505,7 @@ function posePass(H, s, t, ground, raise) {
     pushOutOfTorso(H, _T, 0.065); // fists stay in front of / beside the chest, not sunk inside it
     const up = blend(0.6, 1.0, tg[1]); // fist raised above the shoulder: the elbow drops under it instead of flaring up and back
     _P.set(a.s * (0.5 + 0.1 * up), 0.2 - 0.7 * up, -0.6 + 0.7 * up); H.root.localToWorld(_P);
+    swivelPole(H, a, _T, _P, 0.32, 0.30);
     // s.hold = the opponent held in this hand (s.holdW 0..1 eases the grip in and out): reach for his body,
     // palm centre onto the nearest surface point, palm turned onto it.
     // A body out of reach (Superman's overhead lift, the slam) is let go rather than stretched for.
