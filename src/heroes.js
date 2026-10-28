@@ -1170,7 +1170,7 @@ export function applyPose(H, s, t, ground = 0) {
 // maps straight down to straight forward, a horizontal forward leg to straight up, a high kick to up-and-back.
 // The sideways pull (knees over spread feet) fades as the foot rises toward hip height (KNEE_LAT: share of the
 // hip->foot line pointing down): a foot kicked out wide rolled the knee 55 deg out (front kick, sweep, knee lift).
-const KNEE_LAT = [0.3, 0.7], TW_PLANT = [-0.8, 0.45], TW_SPINE = 0.7;
+const KNEE_LAT = [0.3, 0.7], TW_PLANT = [-0.8, 0.45], TW_SPINE = 0.7, LEAN_PELVIS = 0.54, HIP_RHYTHM = [1.6, 0.5], HIP_EXT = 0.8;
 const _qs1 = new THREE.Quaternion(), _qs2 = new THREE.Quaternion(), _qs3 = new THREE.Quaternion();
 // (tg and the pole are in the pelvis' frame: the root turned back by a, the twist the waist takes; posePass)
 const yawXZ = (v, a) => { const c = Math.cos(a), s = Math.sin(a), x = v.x; v.x = x * c + v.z * s; v.z = v.z * c - x * s; return v; };
@@ -1504,19 +1504,29 @@ function posePass(H, s, t, ground, raise) {
   // The pelvis tips forward too (anterior tilt) so the hinge starts at the hips, not just the back.
   // Only in standing/fighting stances: in tucks and kneels the thighs are already folded up to the belly.
   const tilt = Math.min(0.45, Math.max(0, s.lean)) * 0.3 * blend(0.5, 0.65, -Math.max(s.lf[1], s.rf[1]));
-  H.hips.rotation.set(tilt, 0, 0);
-  H.spine.rotation.set(s.lean * 0.6, 0, s.roll * 0.3);
+  const plant = (f) => (1 - blend(0.12, 0.3, s.p[1] + f[1] - ground)) * (1 - blend(0.5, 0.65, Math.hypot(f[0], f[2])));
+  // Leaning back (kicks, hit reactions, dodges) was all spine: the chest bent up to 43 deg back over an upright
+  // pelvis (a real lumbar + thoracic spine extends ~25-30), and a kick's straight leg rose 132-136 deg in the hip
+  // socket (hamstrings stop a straight leg near 90-110). The pelvis now tips back (posterior tilt) by LEAN_PELVIS of
+  // a backward lean, plus HIP_RHYTHM of a raised foot's swing past ~90 deg over a planted one (lumbopelvic rhythm);
+  // the spine takes it back, so the chest, arms and head end up where they were.
+  let pb = Math.min(0, s.lean) * LEAN_PELVIS;
+  for (const [f, o] of [[s.lf, s.rf], [s.rf, s.lf]]) pb -= Math.max(0, Math.atan2(f[2], -f[1]) - HIP_RHYTHM[0]) * HIP_RHYTHM[1] * plant(o) * (1 - plant(f));
+  // (a planted foot far behind, e.g. the rear leg of the head-hit reaction, stops the tilt short of over-extending its hip)
+  for (const f of [s.lf, s.rf]) { const lim = Math.min(0, -HIP_EXT - Math.atan2(f[2], -f[1])); if (lim > pb) pb += (lim - pb) * plant(f); }
+  const pt = tilt + pb;
+  H.hips.rotation.set(pt, 0, 0);
+  H.spine.rotation.set(s.lean * 0.6 - pb, 0, s.roll * 0.3);
   H.chest.rotation.set(s.lean * 0.75 + Math.sin(t * 2.1) * 0.012, 0, 0);
   // Planted twist (see the feet below): the pelvis turns over planted feet only within TW_PLANT. A bigger wind-up
   // (hip toss, spinning elbow, haymaker, drive impact) still slid both feet 13-33 cm, because past that the whole body
   // turned as one block. Up to TW_SPINE more is now taken by the waist and ribcage (lumbar + thoracic rotation,
   // half each) over a pelvis that stays put: the chest, arms and head end up exactly where they were.
-  const plant = (f) => (1 - blend(0.12, 0.3, s.p[1] + f[1] - ground)) * (1 - blend(0.5, 0.65, Math.hypot(f[0], f[2])));
   const tq = s.tw ? Math.max(TW_PLANT[0] - TW_SPINE, Math.min(TW_PLANT[1] + TW_SPINE, s.tw)) * plant(s.lf) * plant(s.rf) : 0;
   const ex = tq > TW_PLANT[1] ? tq - TW_PLANT[1] : tq < TW_PLANT[0] ? tq - TW_PLANT[0] : 0;
   if (ex) {
     H.hips.quaternion.premultiply(_qs1.setFromAxisAngle(_Y, -ex));
-    _qs2.setFromAxisAngle(_XA, -tilt).multiply(_qs1.setFromAxisAngle(_Y, ex / 2)).multiply(_qs3.setFromAxisAngle(_XA, tilt));
+    _qs2.setFromAxisAngle(_XA, -pt).multiply(_qs1.setFromAxisAngle(_Y, ex / 2)).multiply(_qs3.setFromAxisAngle(_XA, pt));
     _qs3.copy(H.spine.quaternion);
     H.spine.quaternion.premultiply(_qs2);
     H.chest.quaternion.premultiply(_qs1.copy(_qs3).invert().multiply(_qs2).multiply(_qs3));
