@@ -284,6 +284,9 @@ const KRUSH = { dmg: 1.5, dur: 1.25, ts: 0.18, moves: [
 // with his back `wall` m or less from the arena edge, hit or blocked, he is SPLATTED against the wall (`splat` s).
 const IMPACT = { cost: 25, armor: 2, hit: 0.42, dur: 0.95, reach: 1.7, lunge: [0.12, 0.42, 3.2], crumple: 1.5, splat: 1.1, wall: 1.6,
   strike: { dmg: 11, kb: 5, stun: 0.55, heavy: true, at: 'rh', blast: 1.4 }, cpu: 0.18 };
+// Drive impact pose timing (s): coil -> palm eased over `strike`, palm -> recovery over `out`. Switched at 0.3 / 0.72, the
+// rear fist went from the hip to full reach (~1.1 m) with its fastest move in the first frame: 66 cm in one 30 fps frame.
+const DI_BLEND = { strike: [0.24, 0.4], out: [0.66, 0.84] };
 // Power-ups: a glowing orb drops into the arena now and then (first at `first` s, then every `every` s if none is out);
 // walk through it to collect. rage: 1.5x damage for `time` s (red aura); meter: +50 super meter; heal: +15 HP.
 const ORB = { first: 8, every: 11, life: 9, y: 1.0, r: 0.75, fall: 1.2 };
@@ -1881,7 +1884,10 @@ export class Game {
     }
     if (a && a.type === 'flykick') { const u = a.t / 0.75; return u < 0.15 ? T(POSES.tuck) : T(POSES.flykick, { h: 0.75 }); }
     if (a && a.type === 'heat') return T(POSES.heat);
-    if (a && a.type === 'impact') return T(a.t < 0.3 ? MP.diUp : a.t < 0.72 ? MP.di : MP.whiff);
+    if (a && a.type === 'impact') { // the palm is driven out (and pulled back) over DI_BLEND instead of switching in one frame
+      const ss = ([t0, t1]) => { const u = clamp((a.t - t0) / (t1 - t0), 0, 1); return u * u * (3 - 2 * u); };
+      return a.t < DI_BLEND.out[0] ? mixPose(T(MP.diUp), T(MP.di), ss(DI_BLEND.strike)) : mixPose(T(MP.di), T(MP.whiff), ss(DI_BLEND.out));
+    }
     if (a && a.type === 'rise') return a.landT != null ? T(MP.crouch) : a.t < 0.05 ? T(MP.dip) : f.vy > -1.5 ? T(MP.riseUp) : T(POSES.tuck);
     if (f.brk > BREAK.inv - BREAK.pose && !a) return T(MP.burst);
     if (f.parryT > 0 && !a && f.stun <= 0) return T(f.parLow ? MP.parryLow : MP.parry);
