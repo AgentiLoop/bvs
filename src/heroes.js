@@ -1170,7 +1170,7 @@ export function applyPose(H, s, t, ground = 0) {
 // maps straight down to straight forward, a horizontal forward leg to straight up, a high kick to up-and-back.
 // The sideways pull (knees over spread feet) fades as the foot rises toward hip height (KNEE_LAT: share of the
 // hip->foot line pointing down): a foot kicked out wide rolled the knee 55 deg out (front kick, sweep, knee lift).
-const KNEE_LAT = [0.3, 0.7], TW_PLANT = [-0.8, 0.45], TW_SPINE = 0.7, LEAN_PELVIS = 0.54, HIP_RHYTHM = [1.6, 0.5], HIP_EXT = 0.8;
+const KNEE_LAT = [0.3, 0.7], TW_PLANT = [-0.8, 0.45], TW_SPINE = 0.7, LEAN_PELVIS = 0.54, HIP_RHYTHM = [1.6, 0.5], HIP_EXT = 0.8, SPINE_EXT = 0.5;
 const _qs1 = new THREE.Quaternion(), _qs2 = new THREE.Quaternion(), _qs3 = new THREE.Quaternion();
 // (tg and the pole are in the pelvis' frame: the root turned back by a, the twist the waist takes; posePass)
 const yawXZ = (v, a) => { const c = Math.cos(a), s = Math.sin(a), x = v.x; v.x = x * c + v.z * s; v.z = v.z * c - x * s; return v; };
@@ -1610,12 +1610,18 @@ function posePass(H, s, t, ground, raise) {
   // the spine takes it back, so the chest, arms and head end up where they were.
   let pb = Math.min(0, s.lean) * LEAN_PELVIS;
   for (const [f, o] of [[s.lf, s.rf], [s.rf, s.lf]]) pb -= Math.max(0, Math.atan2(f[2], -f[1]) - HIP_RHYTHM[0]) * HIP_RHYTHM[1] * plant(o) * (1 - plant(f));
+  // In-game leans go past the poses (a heavy hit adds -0.6, launches and stuns reach -0.9..-1.0), and the spine
+  // (1.35x lean less the tilt) still arched 41-48 deg back: the rest beyond SPINE_EXT now tips the pelvis too.
+  pb = Math.min(pb, s.lean * 1.35 + SPINE_EXT);
   // (a planted foot far behind, e.g. the rear leg of the head-hit reaction, stops the tilt short of over-extending its hip)
   for (const f of [s.lf, s.rf]) { const lim = Math.min(0, -HIP_EXT - Math.atan2(f[2], -f[1])); if (lim > pb) pb += (lim - pb) * plant(f); }
   const pt = tilt + pb;
+  // (with a planted rear foot the tilt stops at HIP_EXT, and stuns bent the spine 46-49 deg back over it: the chest
+  // and head then lean back only as far as SPINE_EXT allows)
+  const lb = Math.max(s.lean, (pb - SPINE_EXT) / 1.35);
   H.hips.rotation.set(pt, 0, 0);
-  H.spine.rotation.set(s.lean * 0.6 - pb, 0, s.roll * 0.3);
-  H.chest.rotation.set(s.lean * 0.75 + Math.sin(t * 2.1) * 0.012, 0, 0);
+  H.spine.rotation.set(lb * 0.6 - pb, 0, s.roll * 0.3);
+  H.chest.rotation.set(lb * 0.75 + Math.sin(t * 2.1) * 0.012, 0, 0);
   // Planted twist (see the feet below): the pelvis turns over planted feet only within TW_PLANT. A bigger wind-up
   // (hip toss, spinning elbow, haymaker, drive impact) still slid both feet 13-33 cm, because past that the whole body
   // turned as one block. Up to TW_SPINE more is now taken by the waist and ribcage (lumbar + thoracic rotation,
@@ -1631,7 +1637,7 @@ function posePass(H, s, t, ground, raise) {
   }
   // Chin tucked slightly in fighting stances (a glare from under the brow, not a raised chin).
   // hx / hy: optional extra head pitch / yaw (game mode: eyes track the opponent, snap back on hits).
-  H.head.rotation.set(-s.lean * 0.95 - tilt + Math.min(0.5, Math.max(0, s.lean)) * 0.25 + (s.hx || 0), s.hy || 0, 0);
+  H.head.rotation.set(-lb * 0.95 - tilt + Math.min(0.5, Math.max(0, s.lean)) * 0.25 + (s.hx || 0), s.hy || 0, 0);
   H.root.updateMatrixWorld(true);
 
   // Game mode passes gph (gait phase driven by distance travelled) and gdx/gdz (hip-local travel direction):
