@@ -1085,6 +1085,15 @@ function swivelPole(H, a, target, pole, L1, L2) {
   (a.swd ||= new THREE.Vector3()).copy(_B).multiplyScalar(Math.cos(best)).addScaledVector(_G, Math.sin(best)).applyQuaternion(_qs);
   pole.copy(_A).addScaledVector(_B, Math.cos(best)).addScaledVector(_G, Math.sin(best));
 }
+// Pole for re-solving an arm after its fist target was moved (out of the own torso / the foe's body, off the held
+// body). Through the elbow itself, the elbow's reach along the old shoulder->wrist line swung the bend round once the
+// fist moved far (a guard fist pushed 20-30 cm out of the foe in a clinch): the elbow flipped 30-38 cm in one frame
+// while walking, the fist all but still. Only the bend direction off that line is kept.
+const _bpE = new THREE.Vector3(), _bpW = new THREE.Vector3();
+function bendPole(a, out) {
+  a.sh.getWorldPosition(out); a.el.getWorldPosition(_bpE).sub(out); a.hand.getWorldPosition(_bpW).sub(out).normalize();
+  return out.addScaledVector(_bpE.addScaledVector(_bpW, -_bpE.dot(_bpW)), 4);
+}
 
 const _C = new THREE.Vector3();
 // Push a world point radially out of the torso's elliptical cross-section (plus margin), measured in the
@@ -1768,8 +1777,7 @@ function posePass(H, s, t, ground, raise) {
         if (out(_C, 0.012)) { _T.add(_C.sub(_F)); moved = true; break; }
       }
       if (!moved) break;
-      a.el.getWorldPosition(_C); a.sh.getWorldPosition(_A);
-      solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A), true);
+      solveIK(a.sh, a.el, 0.32, 0.30, _T, bendPole(a, _C), true);
       orientHand(a, _qb, w, gP, hw);
     }
     if (gp) gp.wk = gP ? gp.wk || [] : null; // per-finger eased grip curls (wrapFingers)
