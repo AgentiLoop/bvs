@@ -30,6 +30,9 @@ const P = POSES, G = POSES.guard;
 // it, the trunk tilts away over the standing leg and the leg comes round from the side, abducted ~50 deg.
 const MP = {
   jab:     { ...G, lean: 0.46, tw: -0.25, lh: [0.22, 0.56, 1.02], rh: [-0.12, 0.46, 0.3] },
+  // the cross loads from the guard (rear fist at the chin, hips coiled back), not the film's hip-pocket haymaker
+  // windup: dropping the fist to the hip then driving it to full reach moved the hand 71 cm in one 30 fps frame
+  crossLoad: { ...G, h: 0.76, lean: 0.42, tw: -0.12 },
   cross:   { ...P.punchR, tw: 0.35, rh: [-0.35, 0.55, 1.03] },
   hookUp:  { ...G, tw: -0.35, rh: [-0.44, 0.52, 0.2] },
   hook:    { ...G, lean: 0.5, tw: 0.55, roll: 0.08, lh: [0.16, 0.44, 0.26], rh: [-0.45, 0.54, 0.65] },
@@ -127,7 +130,7 @@ const EASY = { cpuDmg: 0.8, meDmg: 1.1, think: [0.28, 0.35] };
 // must be blocked standing; everything else is a mid (either block works). crouch = performed from the crouch.
 const MOVES = {
   jab:     { hi: true, dur: 0.28, hit: 0.09, cancel: 0.13, reach: 1.25, dmg: 4, kb: 1.2, stun: 0.28, lunge: 1.5, at: 'lh', blast: 0.35, next: { J: 'cross', K: 'front' }, keys: [[0, 'guard'], [0.03, 'jab'], [0.18, 'guard']] },
-  cross:   { hi: true, dur: 0.34, hit: 0.11, cancel: 0.16, reach: 1.35, dmg: 6, kb: 1.8, stun: 0.32, lunge: 2.5, at: 'rh', blast: 0.5, next: { J: 'hook', K: 'round' }, keys: [[0, 'windup'], [0.06, 'cross'], [0.24, 'guard']] },
+  cross:   { hi: true, dur: 0.34, hit: 0.11, cancel: 0.16, reach: 1.35, dmg: 6, kb: 1.8, stun: 0.32, lunge: 2.5, at: 'rh', blast: 0.5, next: { J: 'hook', K: 'round' }, keys: [[0, 'crossLoad'], [0.06, 'cross'], [0.24, 'guard']] },
   hook:    { hi: true, track: true, dur: 0.42, hit: 0.15, cancel: 0.21, reach: 1.25, dmg: 8, kb: 2.6, stun: 0.42, lunge: 2, at: 'rh', blast: 0.65, next: { J: 'upper', K: 'round' }, keys: [[0, 'hookUp'], [0.08, 'hook'], [0.3, 'guard']] },
   upper:   { dur: 0.55, hit: 0.16, reach: 1.2, dmg: 11, kb: 1.6, up: 7, stun: 0.6, lunge: 2.5, at: 'rh', blast: 1, heavy: true, keys: [[0, 'dip'], [0.1, 'upper'], [0.42, 'guard']] },
   front:   { dur: 0.5, hit: 0.2, cancel: 0.27, reach: 1.55, dmg: 9, kb: 3.4, stun: 0.45, lunge: 1.2, at: 'rf', blast: 0.75, next: { K: 'round', J: 'hook' }, keys: [[0, 'chamber'], [0.12, 'front'], [0.38, 'guard']] },
