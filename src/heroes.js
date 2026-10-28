@@ -1014,9 +1014,9 @@ function solveIK(upper, lower, L1, L2, target, pole, hinge) {
 // zone behind the shoulder (az: lateral 0, forward 90, across 180) and whose humerus rotation (forearm about the
 // upper arm, measured from the arm swung up from hanging with the forearm forward; + = external) is in range.
 // Poses that were already inside the limits keep their elbow exactly.
-const SWIVEL = { n: 36, az: [-55, 150], rot: [-80, 95], w: 12, rate: 0.25, esc: 1.5 }, _qs = new THREE.Quaternion(), _sw = new THREE.Quaternion(),
+const SWIVEL = { n: 36, az: [-55, 150], rot: [-80, 95], w: 12, wl: 4, rate: 0.25, esc: 1.5 }, _qs = new THREE.Quaternion(), _sw = new THREE.Quaternion(),
   _su = new THREE.Vector3(), _sf = new THREE.Vector3(), _sr = new THREE.Vector3(), _sx = new THREE.Vector3(), _sZ = new THREE.Vector3(0, 0, 1);
-function swivelPole(H, a, target, pole, L1, L2) {
+function swivelPole(H, a, target, pole, L1, L2, local) {
   a.sh.getWorldPosition(_A);
   _D.subVectors(target, _A);
   let d = _D.length();
@@ -1046,7 +1046,7 @@ function swivelPole(H, a, target, pole, L1, L2) {
       const rx = rot < SWIVEL.rot[0] ? SWIVEL.rot[0] - rot : rot > SWIVEL.rot[1] ? rot - SWIVEL.rot[1] : 0;
       pen += (rx * D2R * flexW * (1 - blend(0.6, 0.9, _su.y))) ** 2;
     }
-    return th * th + SWIVEL.w * pen;
+    return th * th + SWIVEL.w * (local ? SWIVEL.wl : 1) * pen;
   };
   // Global minimum on the first pose; after that the elbow tracks its own minimum from the last pose (a.swd, in the
   // chest's frame), at most SWIVEL.rate per solve: with no good swivel for the fist (both sides of the circle equally
@@ -1054,6 +1054,14 @@ function swivelPole(H, a, target, pole, L1, L2) {
   // shoulder->fist line for fists raised overhead (60 cm elbow pops in the old rising uppercut / hammer wind-up).
   const st0 = 2 * Math.PI / SWIVEL.n;
   let best = 0, bc = Infinity, lo = -Math.PI, hi = Math.PI;
+  if (local) { // (fist push-out re-solve, bendPole) only walk downhill from the pole given, no tracking state
+    bc = cost(0);
+    const dir = cost(-0.01) < cost(0.01) ? -1 : 1, st = Math.min(st0, SWIVEL.rate);
+    for (let th = dir * st, c = cost(th); c < bc && Math.abs(th) <= Math.PI; th += dir * st, c = cost(th)) { bc = c; best = th; }
+    for (let s2 = st / 2; s2 > 0.004; s2 /= 2) for (const th of [best - s2, best + s2]) { const c = cost(th); if (c < bc) { bc = c; best = th; } }
+    pole.copy(_A).addScaledVector(_B, Math.cos(best)).addScaledVector(_G, Math.sin(best));
+    return;
+  }
   if (a.swd) {
     _sx.copy(a.swd).applyQuaternion(_sw.copy(_qs).invert());
     const x = _sx.dot(_B), y = _sx.dot(_G);
@@ -1850,7 +1858,11 @@ function posePass(H, s, t, ground, raise) {
         if (out(_C, 0.012)) { _T.add(_C.sub(_F)); moved = true; break; }
       }
       if (!moved) break;
-      solveIK(a.sh, a.el, 0.32, 0.30, _T, bendPole(a, _C), true);
+      // (the bend kept from before the push, turned only as far as the shoulder's range needs (SWIVEL.wl x the
+      // penalty): a hook landing chest to chest on the foe (0.45 m) had its fist pushed back by the shoulder, and the
+      // kept bend left the elbow out to the side with the forearm wrung up and back, humerus rot 110-132)
+      bendPole(a, _C); swivelPole(H, a, _T, _C, 0.32, 0.30, true);
+      solveIK(a.sh, a.el, 0.32, 0.30, _T, _C, true);
       orientHand(a, _qb, w, gP, hw);
     }
     if (gp) gp.wk = gP ? gp.wk || [] : null; // per-finger eased grip curls (wrapFingers)
