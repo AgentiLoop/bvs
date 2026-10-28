@@ -153,13 +153,26 @@ const blend = (a, b, x) => THREE.MathUtils.smoothstep(x, a, b);
 // Hip-crease corrective: how deep (d) the thigh's root compresses around thigh-local height y (width w), fading in
 // as the thigh swings a0..a1 rad away from hanging straight down in the hips' frame.
 const CREASE = { d: 0.045, y: -0.17, w: 0.11, a0: 1.0, a1: 1.6, k: 1, ki: 1.6 };
-// Seat corrective: the trunks' backside rounds out to radius r (minus k * (|x| - 6 cm)^2 toward the hip's side)
-// from the hip joint line as the thigh lifts forward a0..a1 rad.
+// Hip fill (o, thigh) and trochanter (t, trunks) trimmed 0.022 -> 0.008 / 0.012: the hip-to-thigh join bulged out like saddlebags.
+const HF = { o: 0.008, yo: -0.13, wo: 0.08, po: 1.2, t: 0.012, ty: -0.01, tw: 0.045, tp: 3 };
 // Gluteus maximus cheek (hips space): depth a (x bulk) at |x| = x (width w), peak height y, rising over u, tucking
 // under over l into the gluteal fold; one round dome (radial falloff, power p: full top, firm edge) rather than a
 // box-shaped product of falloffs. Gluteal dimple: depth d (x bulk) at |x| = dx (width dw), height dy (dh).
-const GL = { a: 0.065, x: 0.068, w: 0.055, y: -0.065, u: 0.07, l: 0.07, p: 3, d: 0.01, dx: 0.16, dw: 0.025, dy: -0.09, dh: 0.04 };
-const SEAT = { r: 0.13, k: 2, a0: 0.3, a1: 1.5, l0: 1.0 }; // l0: the thigh's seat fill fades in from l0 rad (later, so the guard keeps its shape)
+// Lower, broader and softer than before (peak at the joint line, not up under the belt) so the seat reads as one
+// full dome from the side that tucks at the fold, instead of a high knob over a second bulge.
+const GL = { a: 0.055, x: 0.07, w: 0.075, y: -0.1, u: 0.1, l: 0.065, p: 2.5, d: 0.01, dx: 0.16, dw: 0.025, dy: -0.09, dh: 0.04 };
+// Seat corrective: fades in as the thigh lifts forward a0..a1 rad. With it the cheek (k of GL's dome) and a band of
+// the seat (depth d at hips height y, width w) flatten, so a crouch's backside is one smooth line into the hamstrings.
+// k 0: the held cheek stays round (k 1 erased it in the guard, whose forward thigh is already 0.77 of the way in).
+const SEAT = { a0: 0.5, a1: 1.5, k: 0, d: 0.02, y: -0.05, w: 0.04 };
+// Seat hold: (y, z) delta, around the hip joint, that undoes a forward thigh flexion of SEAT.a1 for a vertex with
+// thigh weight w (the rest on the hips), blended by m. A = (1 - w) I + w R(a1) is the skinning; the delta is
+// m * (A^-1 v - v), so at a1 the backside sits where it hangs and the flexed leg's cheek mirrors the standing one.
+const seatHold = (y, z, w, m) => {
+  const c = Math.cos(SEAT.a1), s = Math.sin(SEAT.a1), p = 1 - w + w * c, q = w * s, det = p * p + q * q;
+  return [m * ((p * y - q * z) / det - y), m * ((q * y + p * z) / det - z)];
+};
+const seatMask = (x, z) => blend(0.1, 0.5, -z / (Math.hypot(x, z) || 1)); // the back only: the front still folds with the thigh
 
 function surface(rows, sculpt = (p) => p, rings = 64, sides = 48) {
   const positions = [], uv = [], indices = [];
@@ -312,26 +325,30 @@ export function makeHero(kind) {
   const trunkGeo = surface(trunkRows, (p, a) => {
     const dm = dimple(p.x, p.y) * blend(0, 0.4, -Math.cos(a));
     p.x -= dm * Math.sin(a); p.z -= dm * Math.cos(a);
-    p.z -= cheek(p.x, p.y) * blend(-0.1, 0.5, -Math.cos(a));
+    p.z -= cheek(p.x, p.y) * blend(-0.1, 0.5, -Math.cos(a)) * blend(-0.085, -0.01, p.y); // the trunks' hem tucks under the leg's cheek: no ledge at the hem
     p.x += Math.sign(p.x) * medius(p.y) * Math.sin(a) ** 2;
+    p.x += Math.sign(p.x) * bulk * HF.t * bump(p.y, HF.ty, HF.tw) * Math.abs(Math.sin(a)) ** HF.tp;
     return p;
   }, 32);
   // Glutes in deep hip flexion: the back of the trunks followed the thigh, so a tuck / crouch / guard dragged
   // the cheeks down under the seat and left the backside flat (radius from the hip joint 13 -> 9 cm). The
   // glutes now stay on the pelvis, and per-side seat correctives (driven by forward thigh lift in applyPose)
-  // round the trunks down over the seat, the way the gluteus maximus stretches over a flexed hip.
+  // hold the backside where it hangs (seatHold), minus the cheek's bulge (SEAT.k / d: trimmed flat over the seat).
   const seatBack = p => blend(0.1, 0.7, -p.z / Math.hypot(p.x, p.z)); // how much of the trunks rides the pelvis, not the thigh
+  const trunkLower = p => (1 - blend(-0.075, 0.05, p.y)) * (1 - seatBack(p));
   {
     const P0 = trunkGeo.attributes.position, n = P0.count, dL = new Float32Array(n * 3), dR = new Float32Array(n * 3), p = new THREE.Vector3();
     for (let i = 0; i < n; i++) {
-      const x = P0.getX(i), y = P0.getY(i) + 0.04, z = P0.getZ(i), r = Math.hypot(y, z); // around the hip joint line
-      const ang = Math.atan2(-y, -z), w = blend(0.05, 0.3, ang) * (1 - blend(1.3, 1.85, ang)) * blend(0.0, 0.03, Math.abs(x)) * seatBack(p.fromBufferAttribute(P0, i));
-      const rt = SEAT.r - SEAT.k * Math.max(0, Math.abs(x) - 0.06) ** 2, dr = Math.max(0, rt - r) * w;
-      if (!dr || z > 0.02) continue;
-      const D = x > 0 ? dL : dR, k = dr / (r || 1);
-      D[i * 3 + 1] = y * k; D[i * 3 + 2] = z * k;
+      p.fromBufferAttribute(P0, i);
+      const m = seatMask(p.x, p.z), lw = trunkLower(p), l = blend(-0.06, 0.06, p.x);
+      if (!m) continue;
+      for (const [D, w, sh] of [[dL, lw * l, l], [dR, lw * (1 - l), 1 - l]]) {
+        const e = sh * (SEAT.k * cheek(p.x, p.y) + SEAT.d * bump(p.y, SEAT.y, SEAT.w)) * blend(-0.1, 0.5, -p.z / Math.hypot(p.x, p.z));
+        const [dy, dz] = seatHold(p.y + 0.04, p.z + e, w, m); // around the hip joint line
+        D[i * 3 + 1] = dy; D[i * 3 + 2] = dz + m * e;
+      }
     }
-    const nrm = d => { // normal deltas so the stretched seat shades round
+    const nrm = d => { // normal deltas so the held seat shades round
       const g = trunkGeo.clone(), p = g.attributes.position.array, N0 = trunkGeo.attributes.normal.array;
       for (let k = 0; k < p.length; k++) p[k] += d[k];
       g.computeVertexNormals();
@@ -344,7 +361,7 @@ export function makeHero(kind) {
   }
   skinSurface(hips, trunkGeo,
     B ? dark : red, p => {
-      const lower = (1 - blend(-0.075, 0.05, p.y)) * (1 - seatBack(p)), l = blend(-0.06, 0.06, p.x);
+      const lower = trunkLower(p), l = blend(-0.06, 0.06, p.x);
       return [[hips, 1 - lower], [legs.L.th, lower * l], [legs.R.th, lower * (1 - l)]];
     });
   part(hips, surface([[0.063, 0.153, 0.108], [0.071, 0.158, 0.113], [0.103, 0.153, 0.11], [0.11, 0.148, 0.105]], p => p, 12), yellow);
@@ -688,11 +705,9 @@ export function makeHero(kind) {
     // Tensor fasciae latae: the hip flexor's knot on the front-outer hip, between the sartorius' start and the top
     // of the IT band, that rounds the corner from the hip line into the quads (normal displacement, metres).
     const tfl = (y, a) => bulk * 0.005 * bump(y, -0.13, 0.05) * bump(Math.atan2(Math.sin(a - s * 1.15), Math.cos(a - s * 1.15)), 0, 0.35);
+    const hipFill = (y, a) => bulk * HF.o * bump(y, HF.yo, HF.wo) * Math.max(0, s * Math.sin(a)) ** HF.po;
     const legGeo = surface(legRows, (p, a) => {
       p.x += s * 0.008 * bump(p.y, -0.2, 0.15);
-      // The outer upper thigh flared 5 cm wider than the hips (legs looked bolted on). Slim it so the
-      // hip line flows down into the thigh, which then tapers to the knee like a comic-book hero's.
-      p.x -= s * 0.03 * bump(p.y, -0.09, 0.15) * Math.max(0, s * Math.sin(a)) ** 1.5;
       p.x += s * 0.014 * bump(p.y, -0.26, 0.09) * Math.max(0, s * Math.sin(a)) ** 1.5; // outer-quad sweep below the hip
       p.z += 0.014 * bump(p.y, -0.27, 0.1) * Math.max(0, Math.cos(a)); // quad sweep
       p.z += bulk * 0.008 * bump(p.y, -0.24, 0.08) * Math.max(0, Math.cos(a)) ** 3; // rectus femoris ridge down the front
@@ -716,10 +731,12 @@ export function makeHero(kind) {
       p.x -= s * bulk * 0.018 * bump(p.y, -0.7, 0.06) * inn ** 1.5;     // inner calf head, lower and fuller
       p.z -= bulk * 0.018 * bump(p.y, -0.68, 0.06) * bk ** 1.5;         // calf peak
       p.z += bulk * 0.004 * bump(p.y, -0.68, 0.08) * fr ** 2;           // tibialis
-      p.z -= cheek(p.x + s * 0.1, p.y - 0.04) * blend(-0.1, 0.5, -Math.cos(a));  // gluteus maximus below the trunks' hem, down to the fold
+      p.z -= cheek(p.x + s * 0.1, p.y - 0.04) * blend(-0.1, 0.5, -Math.cos(a)) + bulk * 0.01 * bump(p.y, 0.01, 0.035) * bk ** 2;  // gluteus maximus below the trunks' hem, down to the fold (plus a fill at the thigh's back-top that bridges up to the trunks)
       p.x += s * medius(p.y - 0.04) * out ** 2;                         // gluteus medius / trochanter carries the hip line down
       const dm = dimple(p.x + s * 0.1, p.y - 0.04) * blend(0, 0.4, bk);  // gluteal dimple on the side of the seat
       p.x -= dm * Math.sin(a); p.z -= dm * Math.cos(a);
+      const hf = hipFill(p.y, a);
+      p.x += hf * Math.sin(a); p.z += hf * Math.cos(a);
       // Adductors: the inner thigh's mass sits front-inner, high, medial to the sartorius. Forward only, so the
       // inner edge stays at the midline (thighs already meet there).
       p.z += adductor(p.y, a);
@@ -741,6 +758,12 @@ export function makeHero(kind) {
         const g = bulk * 0.0035 * Math.sin(Math.PI * ti) ** 0.7 * bump(d, 0, 0.2);
         p.x -= g * Math.sin(a); p.z -= g * Math.cos(a);
       }
+      // Ankle bones (the ankle was a plain round post): the inner malleolus sits higher and a little forward,
+      // the outer one lower and further back, with the Achilles tendon standing off the back between hollows.
+      for (const [y0, a0, h] of [[-0.905, -s * 1.4, 0.006], [-0.917, s * 1.85, 0.005], [-0.885, s * 2.55, -0.004], [-0.885, -s * 2.55, -0.004]]) {
+        const g = h * bump(p.y, y0, h > 0 ? 0.011 : 0.025) * bump(Math.atan2(Math.sin(a - a0), Math.cos(a - a0)), 0, h > 0 ? 0.5 : 0.3);
+        p.x += g * Math.sin(a); p.z += g * Math.cos(a);
+      }
       // Boot cuff: a slight flared lip just below the boot top so the boot reads as a real boot, not paint.
       const cuff = 1 + 0.07 * bump(p.y, -0.612, 0.011);
       p.x *= cuff; p.z *= cuff;
@@ -750,6 +773,12 @@ export function makeHero(kind) {
       return p;
     }, 112, 40);
     legGeo.userData.limb = true;
+    const legW = p => {
+      // Front of the upper thigh shares weight with the hips so a raised knee folds the hip crease instead
+      // of pushing suit out through the front of the trunks.
+      const lower = 1 - blend(-0.52, -0.40, p.y), pelvis = Math.max(blend(-0.015, 0.10, p.y) * 0.7, 0.6 * blend(-0.34, -0.04, p.y) * (Math.max(0, p.z) / Math.hypot(p.x, p.z)) ** 3); // front only, gentle falloff: no groin pinch
+      return [[kn, lower], [th, (1 - lower) * (1 - pelvis)], [hips, (1 - lower) * pelvis]];
+    };
     // Hip-crease correctives: lifting the knee (front kicks, chambers, knees) or swinging it out (roundhouse)
     // rolled the bulked thigh's root up through the front / side of the trunks (blue suit up to 4 cm over the
     // red, as far up as the belt). Morph targets compress the thigh's root on the side that folds against the
@@ -768,18 +797,16 @@ export function makeHero(kind) {
       }
       // Seat: in a tuck / crouch the thigh's back-top (above the joint, hidden in the trunks while standing) swings
       // down under the seat and left a 4 cm step below the pelvis-riding glute (radius from the hip joint 11.4 ->
-      // 7.3 cm). With the thigh lifted SEAT.a1 forward, its back-top rounds out to the seat's radius, so
-      // the glute runs on smoothly into the hamstrings (driven with the trunks' seat morph).
-      const dS = new Float32Array(n * 3), cs = Math.cos(SEAT.a1), sn = Math.sin(SEAT.a1);
+      // 7.3 cm). With the thigh lifted SEAT.a1 forward its back-top, fading out down the hamstrings, is held where
+      // it hangs (seatHold, driven with the trunks' seat morph), its cheek trimmed off so the seat runs on in one line.
+      const dS = new Float32Array(n * 3), p = new THREE.Vector3();
       for (let i = 0; i < n; i++) {
-        const x = P0.getX(i), y = P0.getY(i), z = P0.getZ(i);
-        if (z > 0 || y < -0.16) continue;
-        const Y = y * cs + z * sn, Z = -y * sn + z * cs, r = Math.hypot(Y, Z), ang = Math.atan2(-Y, -Z);
-        const w = blend(0.6, 0.95, ang) * (1 - blend(1.3, 1.85, ang)) * blend(-0.14, -0.06, y) * blend(0, 0.03, Math.abs(s * 0.1 + x));
-        const rt = SEAT.r - SEAT.k * Math.max(0, Math.abs(s * 0.1 + x) - 0.06) ** 2, dr = Math.max(0, rt - r) * w / (r || 1);
-        if (!dr) continue;
-        const dY = Y * dr, dZ = Z * dr;
-        dS[i * 3 + 1] = dY * cs - dZ * sn; dS[i * 3 + 2] = dY * sn + dZ * cs;
+        p.fromBufferAttribute(P0, i);
+        const m = blend(-0.26, -0.1, p.y) * seatMask(p.x, p.z);
+        if (!m) continue;
+        const e = SEAT.k * cheek(p.x + s * 0.1, p.y - 0.04) * blend(-0.1, 0.5, -Math.cos(U.getX(i) * Math.PI * 2));
+        const [dy, dz] = seatHold(p.y, p.z + e, legW(p)[1][1], m);
+        dS[i * 3 + 1] = dy; dS[i * 3 + 2] = dz + m * e;
       }
       const nrm = d => { // normal deltas so the compressed crease shades as a fold
         const g = legGeo.clone(), p = g.attributes.position.array;
@@ -801,18 +828,25 @@ export function makeHero(kind) {
     const briefRing = Math.floor((-0.12 + 0.94) / 1.03 * 112);
     legGeo.addGroup(bootRing * 40 * 6, (briefRing - bootRing) * 40 * 6, 0);
     legGeo.addGroup(briefRing * 40 * 6, (112 - briefRing) * 40 * 6, 2);
-    skinSurface(th, legGeo, [suit, boot, B ? dark : red], p => {
-      // Front of the upper thigh shares weight with the hips so a raised knee folds the hip crease instead
-      // of pushing suit out through the front of the trunks.
-      const lower = 1 - blend(-0.52, -0.40, p.y), pelvis = Math.max(blend(-0.015, 0.10, p.y) * 0.7, 0.6 * blend(-0.34, -0.04, p.y) * (Math.max(0, p.z) / Math.hypot(p.x, p.z)) ** 3); // front only, gentle falloff: no groin pinch
-      return [[kn, lower], [th, (1 - lower) * (1 - pelvis)], [hips, (1 - lower) * pelvis]];
-    });
+    skinSurface(th, legGeo, [suit, boot, B ? dark : red], legW);
     // Boot foot: heel, high instep and a tapered toe on a flat sole, built along its length
     // ([length, halfWidth, halfHeight, -centreY]) and turned to point forward.
+    // Before the turn: p.y runs heel -> toe, the sole is p.z = 0.074 (up is -z), the inside is -s * x.
+    // A real (and comic-book) foot isn't a symmetric flat wedge: the inner sole arches up between heel and
+    // ball (the outer edge barely), the big toe leads on the inside so the toe line slants back to the little
+    // toe, and the ball of the foot swells out on the inside.
     const footGeo = surface([[-0.058, 0.001, 0.001, 0.04], [-0.05, 0.03, 0.03, 0.04], [-0.03, 0.038, 0.042, 0.03],
       [0.0, 0.04, 0.046, 0.026], [0.04, 0.042, 0.036, 0.04], [0.09, 0.041, 0.024, 0.052],
       [0.135, 0.033, 0.017, 0.058], [0.165, 0.019, 0.012, 0.061], [0.178, 0.001, 0.001, 0.063]],
-    p => { p.z = Math.min(p.z, 0.074); return p; }, 48, 32);
+    p => {
+      p.z = Math.min(p.z, 0.074);
+      const L = p.y, inn = blend(0, 0.035, -s * p.x), out = blend(0, 0.035, s * p.x), low = blend(0.035, 0.074, p.z);
+      p.z -= (0.013 * inn + 0.003 * out) * bump(L, 0.035, 0.042) * low;           // medial (high) / lateral (low) arches
+      p.x -= s * 0.004 * bump(L, 0.115, 0.03) * inn;                              // ball of the big toe
+      p.y -= 0.016 * blend(0.1, 0.178, L) * blend(-0.01, 0.03, s * p.x);           // toe line slants back to the little toe
+      p.x -= s * 0.009 * blend(0.07, 0.178, L);                                   // big toe leads on the inside
+      return p;
+    }, 48, 32);
     footGeo.rotateX(Math.PI / 2);
     footGeo.computeVertexNormals(); part(an, footGeo, boot);
     legs[side] = { th, kn, an, s, crease: [] };
@@ -1013,8 +1047,8 @@ export function applyPose(H, s, t, ground = 0) {
     const ang = Math.acos(Math.max(-1, Math.min(1, -_A.y))), lift = blend(CREASE.a0, CREASE.a1, ang), r = Math.hypot(_A.x, _A.z) || 1;
     const deep = blend(CREASE.a1, 2.4, ang), f = lift * (1 + CREASE.k * deep) * Math.max(0, _A.z) / r, o = lift * Math.max(0, l.s * _A.x) / r;
     const inn = lift * Math.max(deep * CREASE.ki, Math.max(0, -l.s * _A.x) / r);
-    const st = blend(SEAT.a0, SEAT.a1, ang) * Math.max(0, _A.z) / r; // seat: forward lift rounds the glute over the hip
-    for (const m of l.crease) { const w = m.morphTargetInfluences; w[0] = f; w[1] = o; w[2] = inn; w[3] = blend(SEAT.l0, SEAT.a1, ang) * Math.max(0, _A.z) / r; }
+    const st = blend(SEAT.a0, SEAT.a1, ang) * Math.max(0, _A.z) / r; // seat: forward lift holds the glute where it hangs
+    for (const m of l.crease) { const w = m.morphTargetInfluences; w[0] = f; w[1] = o; w[2] = inn; w[3] = st; }
     for (const m of H.seat) m.morphTargetInfluences[side === 'L' ? 0 : 1] = st;
   }
 }

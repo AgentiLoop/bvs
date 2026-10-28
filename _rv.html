@@ -1,0 +1,22 @@
+<!doctype html><html><body style="margin:0;background:#888">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+<script type="module">
+import * as THREE from 'three';
+import { makeHero, applyPose } from './src/heroes.js';
+import { POSES } from './src/timeline.js';
+const q = new URLSearchParams(location.search), H = q.get('h') || 'superman', pose = q.get('p') || 'crouch', yaw = +(q.get('yaw') || 90);
+const src = await (await fetch('./src/game.js')).text(); const i0 = src.indexOf('const MP = {'); let i = src.indexOf('{', i0), d = 0, j = i;
+for (; j < src.length; j++) { if (src[j] == '{') d++; if (src[j] == '}') { d--; if (!d) break; } }
+const P = POSES, G = POSES.guard; const MP = eval('(' + src.slice(i, j + 1) + ')');
+if (q.get('m')) globalThis.__M = JSON.parse(q.get('m'));
+const s0 = MP[pose] || P[pose];
+const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setSize(500, 500); document.body.appendChild(r.domElement);
+const sc = new THREE.Scene(); sc.background = new THREE.Color(0x888888);
+sc.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.5)); const dl = new THREE.DirectionalLight(0xffffff, 2); dl.position.set(2, 3, 2); sc.add(dl);
+const h = makeHero(H); sc.add(h.root);
+applyPose(h, { roll: 0, pitch: 0, gait: 0, lean: 0, lh: [0.2, 0, 0], rh: [-0.2, 0, 0], lf: [0.1, -0.92, 0], rf: [-0.1, -0.92, 0], ...G, ...s0, p: [0, s0.h ?? 1, 0], yaw: 0 }, 0, 0);
+h.root.updateMatrixWorld(true);
+const c = new THREE.PerspectiveCamera(30, 1, 0.1, 50); const hp = new THREE.Vector3(); h.hips.getWorldPosition(hp);
+const a = yaw * Math.PI / 180; const D = +(q.get("d") || 2.2); hp.y -= 0.12; c.position.set(hp.x + D * Math.sin(a), hp.y + 0.1, hp.z + D * Math.cos(a)); c.lookAt(hp);
+r.render(sc, c); document.title = 'done';
+</script></body></html>
