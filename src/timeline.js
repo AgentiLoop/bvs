@@ -91,9 +91,13 @@ export const BAT = buildTrack([
   { t: 8.3, pose: 'dodge', g: [-0.55, 0, 0], e: 'out' },
   { t: 8.6, pose: 'guard', g: [-0.38, 0, 0] },
   { t: 8.8, pose: 'guard', g: [-0.32, 0, 0] },
+  // Chamber and re-chamber: the kicking foot rises / drops in front of the knee instead of folding the thigh
+  // up onto the belly (it pushed the bulked thigh up to 3.9 cm through the trunks for ~5 frames each way).
+  { t: 8.92, g: [-0.01, 0, 0], h: 0.923, lean: -0.258, lo: 0.5, lh: [0.322, 0.265, -0.034], rh: [-0.204, 0.356, 0.222], lf: [0.133, -0.851, -0.036], rf: [-0.26, -0.35, 0.6], e: 'lin' },
   { t: 9.0, pose: 'kickR', g: [0.05, 0, 0], e: 'out' },
   { t: 9.35, pose: 'kickR', g: [0.0, 0, 0] },
-  { t: 9.7, pose: 'guard', g: [-0.3, 0, 0] },
+  { t: 9.45, g: [-0.06, 0, 0], h: 0.916, lean: -0.229, lo: 0.48, lh: [0.312, 0.276, -0.013], rh: [-0.2, 0.36, 0.228], lf: [0.136, -0.844, -0.021], rf: [-0.22, -0.5, 0.55], e: 'in' },
+  { t: 9.7, pose: 'guard', g: [-0.3, 0, 0], e: 'out' },
   { t: 10.3, pose: 'guard', g: [-0.35, 0, 0] },
   { t: 10.55, pose: 'hit', p: [-0.42, 1.0, 0], pitch: 0 },
   { t: 11.35, pose: 'hit', p: [-4.95, 3.45, -2.55], pitch: -1.4, yaw: BY + 0.5, e: 'out' },
