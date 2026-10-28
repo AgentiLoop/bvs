@@ -1170,7 +1170,7 @@ export function applyPose(H, s, t, ground = 0) {
 // maps straight down to straight forward, a horizontal forward leg to straight up, a high kick to up-and-back.
 // The sideways pull (knees over spread feet) fades as the foot rises toward hip height (KNEE_LAT: share of the
 // hip->foot line pointing down): a foot kicked out wide rolled the knee 55 deg out (front kick, sweep, knee lift).
-const KNEE_LAT = [0.3, 0.7];
+const KNEE_LAT = [0.3, 0.7], TW_PLANT = [-0.8, 0.45];
 function kneePole(H, l, tg) {
   l.th.getWorldPosition(_P); H.root.worldToLocal(_P);
   let vy = tg[1] - _P.y, vz = tg[2] - _P.z;
@@ -1618,8 +1618,16 @@ function posePass(H, s, t, ground, raise) {
       orientHand(a, _qb, w, gP, hw);
     }
   }
-  for (const [side, tg, lift, dz, p] of [['L', s.lf, Math.max(0, cw), sw, 0], ['R', s.rf, Math.max(0, -cw), -sw, 0.5]]) {
+  // Game strikes twist the whole body (s.tw is part of the root yaw), and the hip-relative feet swung round with
+  // it: a planted foot skated 20-38 cm through an arc into a cross, hook, hip toss or spinning elbow. With both
+  // feet on the ground in a stance (not a kick or sweep) they now keep their spot (up to TW_PLANT of twist) and the
+  // hips turn over them, the boots pivoting with the body. (Wind-ups turning the back to the foe stop at 0.45:
+  // further over a guard stance the thighs cross into each other.)
+  const plant = (f) => (1 - blend(0.12, 0.3, s.p[1] + f[1] - ground)) * (1 - blend(0.5, 0.65, Math.hypot(f[0], f[2])));
+  const q = s.tw ? -Math.max(TW_PLANT[0], Math.min(TW_PLANT[1], s.tw)) * plant(s.lf) * plant(s.rf) : 0;
+  for (const [side, tg0, lift, dz, p] of [['L', s.lf, Math.max(0, cw), sw, 0], ['R', s.rf, Math.max(0, -cw), -sw, 0.5]]) {
     const l = H.legs[side];
+    const tg = q ? [tg0[0] * Math.cos(q) + tg0[2] * Math.sin(q), tg0[1], tg0[2] * Math.cos(q) - tg0[0] * Math.sin(q)] : tg0;
     if (s.gph != null) {
       const [off, up] = gaitStep(s.gph / (Math.PI * 2) + p);
       _T.set(tg[0] + off * GAIT_A * g * gx, tg[1] + up * GAIT_LIFT * g, tg[2] + off * GAIT_A * g * gz);
