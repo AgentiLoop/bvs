@@ -66,6 +66,32 @@ Title-screen keys: `B` / `S` play as Batman / Superman · `P` pixel-art on/off �
 
 URL params: `?play=bat` or `?play=sup` (skip the title) · `?t=9.5&freeze=1` (seek and pause) · `?seed=42` · `?px=3` · `?pixel=0`
 
+## Build it by hand
+
+The game itself has no build step. `index.html` loads `src/main.js` as an ES module, and three.js is already in
+`vendor/` (the import map points `three` at `vendor/three.module.js`), so you don't need `npm install`. The only thing
+you need is a local web server, because browsers won't load ES modules from `file://`.
+
+1. Get the source: `git clone https://github.com/AgentiLoop/bvs.git && cd bvs`, or download and unzip the source
+   code from a [release](https://github.com/AgentiLoop/bvs/releases).
+2. Serve the folder: `./serve.sh`, or `python3 -m http.server 8123`, or any other static file server.
+3. Open http://localhost:8123 in a browser with WebGL 2 (Chrome, Edge, Firefox or Safari).
+
+To ship your own copy, upload the whole folder as-is to any static host.
+
+The desktop apps are built by hand like this. Each script writes its package to `release/` and takes the version
+from `package.json`.
+
+| App | Needs | Command |
+|---|---|---|
+| macOS | Xcode command-line tools (Swift), node, a Developer ID signing identity (or set `MAC_SIGN_ID`), and a `notarytool` keychain profile named "App Store Connect Profile" to notarize | `mac/build-web-thin.sh` (signed) or `mac/build-web-thin.sh notarize` |
+| Windows | bash, node and zip (runs on macOS or Linux, nothing is compiled) | `windows/build-web-thin.sh` |
+| Linux | bash, node and tar | `linux/build-web-thin.sh` |
+| Icons | rsvg-convert (`brew install librsvg`), iconutil and python3 with Pillow | `icon/build-icons.sh` |
+
+Set `BVS_WEB_URL` to point the Windows and Linux packages at your own copy of the game. The macOS app's default URL
+is `WEB_URL` in `mac/Sources/BvS/main.swift`; run it with `BVS_WEB_URL` set (or `--url URL`) to use another one.
+
 ## Deploy
 
 `deploy/publish.sh` publishes the repository root, as-is, to https://bvs.agentiloop.ai/ as a Cloudflare static-asset
