@@ -1175,11 +1175,54 @@ function gaitStep(p) {
   const u = (p - GAIT_D) / (1 - GAIT_D);
   return [-1 + 2 * u * u * (3 - 2 * u), Math.sin(Math.PI * u)];
 }
+// Standing on one leg (front / round / crouch kick, sweep: the other foot off the floor in a strike) the hips stayed
+// where the stance had them, between the feet, so the body's centre of mass hung 11-22 cm off the standing boot (the
+// crouch kick sat back 15-20 cm behind and beside its lead foot for 0.35 s). Weight shift (game, s.lock 2): with one
+// foot held on the floor and the other off it, the root eases (WS.k /s) over the standing boot, by last frame's centre
+// of mass against it (at most WS.max), and back once both feet are down. Held feet keep their targets; the kick goes along.
+const WS = { k: 14, max: 0.25, air: [0.02, 0.06] }, _wsP = new THREE.Vector3(), _wsQ = new THREE.Vector3(), _wsC = new THREE.Vector3();
+let _wsx = 0, _wsz = 0;
+const WS_M = [['head', 0.081], ['hips', 0.142], ['chest', 0.216]];
+function weightShift(H, s) {
+  const o = H.ws ||= { x: 0, z: 0 };
+  if (s.again) return;
+  let tx = 0, tz = 0;
+  // (wsk: a foot lifted by the strike itself, a kick, and still on its way back down: its return is a foot-lock step)
+  for (const side of ['L', 'R']) { const l = H.legs[side], k = l.lk; if (s.lock !== 2 || k && k.st < 0 && k.w >= 1) l.wsk = false; else if ((!k || k.w < 1) && l.gy > WS.air[0]) l.wsk = true; }
+  if (s.lock === 2 && s.dt) {
+    for (const side of ['L', 'R']) {
+      const l = H.legs[side], f = H.legs[side === 'L' ? 'R' : 'L'], k = l.lk;
+      if (!k || k.st >= 0 || k.w < 1 || f.lk && f.lk.w >= 1 && !(f.wsk && f.lk.st >= 0) || f.gk || f.gy == null) continue;
+      const w = blend(WS.air[0], WS.air[1], f.gy);
+      if (w <= 0) continue;
+      // last frame's centre of mass (segment masses as a share of the body) and the standing boot's middle
+      _wsC.set(0, 0, 0); let m = 0;
+      const add = (p, q) => { _wsC.addScaledVector(p, q); m += q; };
+      for (const [j, q] of WS_M) add(H[j].getWorldPosition(_wsP), q);
+      add(H.hips.getWorldPosition(_wsP).add(H.chest.getWorldPosition(_wsQ)).multiplyScalar(0.5), 0.139);
+      for (const sd of ['L', 'R']) {
+        const a = H.arms[sd], g = H.legs[sd];
+        add(a.sh.getWorldPosition(_wsP).add(a.el.getWorldPosition(_wsQ)).multiplyScalar(0.5), 0.028);
+        add(a.el.getWorldPosition(_wsP).add(a.hand.getWorldPosition(_wsQ)).multiplyScalar(0.5), 0.022);
+        add(g.th.getWorldPosition(_wsP).add(g.kn.getWorldPosition(_wsQ)).multiplyScalar(0.5), 0.1);
+        add(g.kn.getWorldPosition(_wsP).add(g.an.getWorldPosition(_wsQ)).multiplyScalar(0.5), 0.061);
+      }
+      _wsC.multiplyScalar(1 / m);
+      _wsP.copy(BALL); l.an.localToWorld(_wsP); _wsQ.copy(HEEL); l.an.localToWorld(_wsQ); _wsP.add(_wsQ).multiplyScalar(0.5);
+      tx = (o.x + _wsP.x - _wsC.x) * w; tz = (o.z + _wsP.z - _wsC.z) * w;
+      const n = Math.hypot(tx, tz); if (n > WS.max) { tx *= WS.max / n; tz *= WS.max / n; }
+      break;
+    }
+  }
+  const e = s.dt ? 1 - Math.exp(-s.dt * WS.k) : 1;
+  o.x += (tx - o.x) * e; o.z += (tz - o.z) * e;
+}
 export function applyPose(H, s, t, ground = 0) {
   // last frame's grip curls (relaxFingers eases from them once the grip lets go)
   // (s.again: the game re-poses a fighter in the same frame; keep this frame's starting curls)
   if (!s.again) for (const side of ['L', 'R']) { const g = H.arms[side].grip; if (g) { g.pk = g.wk ? g.wk.slice() : null; g.ph = g.hw; g.hw = 0; } }
   _limp = Math.max(0, Math.min(1, s.limp || 0)); _floor = ground;
+  if (s.lock != null) { weightShift(H, s); _wsx = H.ws.x; _wsz = H.ws.z; } else _wsx = _wsz = 0;
   posePass(H, s, t, ground, 0);
   // Knees, elbows and fists used to go up to 5 cm through the roof (Superman's landing kneel, Batman lying
   // down). Lift the body by the deepest contact deficit and re-solve with the feet held where they were.
@@ -1645,7 +1688,7 @@ function wrapFingers(a, O, o, hw) {
 }
 
 function posePass(H, s, t, ground, raise) {
-  H.root.position.set(s.p[0], s.p[1] + raise, s.p[2]);
+  H.root.position.set(s.p[0] + _wsx, s.p[1] + raise, s.p[2] + _wsz);
   H.root.rotation.set(s.pitch, s.yaw, s.roll, 'YXZ');
   // Athletic, coiled posture: the lean is spread through spine and chest at 1.35x (hunched shoulders,
   // chest driving forward) and the head counters most of it so the eyes stay on the opponent.
@@ -1837,7 +1880,7 @@ function posePass(H, s, t, ground, raise) {
       const [off, up] = gaitStep(s.gph / (Math.PI * 2) + p);
       _T.set(tg[0] + off * GAIT_A * g * gx, tg[1] + up * GAIT_LIFT * g, tg[2] + off * GAIT_A * g * gz);
     } else _T.set(tg[0], tg[1] + lift * 0.18 * g, tg[2] + dz * 0.32 * g);
-    H.root.localToWorld(_T);
+    H.root.localToWorld(_T); if (l.lk) { _T.x -= _wsx; _T.z -= _wsz; } // (weightShift moves the body, not the held feet: a kick goes with it)
     if (_T.y - raise - ground < SOLE + LOCK.up) clampBack(l, _T, _hbQ, _hbF); // a planted foot no further behind than the hip extends
     const fy = ground + SOLE + raise, gk0 = l.gk;
     if (s.gph != null && s.lock != null) gaitLock(l, _T, s.gph / (Math.PI * 2) + p, s.lock === 1 && !l.lk ? blend(GLOCK.g[0], GLOCK.g[1], g) : 0, raise || s.again, s.yaw - ex,
