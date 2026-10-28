@@ -1217,7 +1217,7 @@ const yawXZ = (v, a) => { const c = Math.cos(a), s = Math.sin(a), x = v.x; v.x =
 // l.lk = { x, z (world), y (step lift), st (step progress, -1 planted), fx, fz, len (step start / length), bx, bz (ball
 // of the foot, world: a planted foot up on its toes pivots on it as the body turns, instead of on the ankle), ax, az
 // (where the ankle really ended up last frame: a step starts from there), w (1 held .. 0 let go) }.
-const LOCK = { d: 0.15, rest: 0.015, max: 0.35, t: 0.16, h: 0.07, up: 0.12, ease: 0.08 };
+const LOCK = { d: 0.15, rest: 0.015, max: 0.35, t: 0.16, h: 0.07, up: 0.12, ease: 0.08, air: 0.03 };
 const _LK = new THREE.Vector3(), BALL = new THREE.Vector3(0, -0.074, 0.15), HEEL = new THREE.Vector3(0, -0.074, -0.058);
 function footLock(l, o, T, up, r, mode, dt, far) {
   const k = l.lk, planted = up < LOCK.up && r < 0.575;
@@ -1225,7 +1225,10 @@ function footLock(l, o, T, up, r, mode, dt, far) {
   if (!k) { if (mode === 2 && planted) l.lk = { x: T.x, z: T.z, y: 0, st: -1, fx: 0, fz: 0, len: 0, bx: null, bz: 0, ax: T.x, az: T.z, w: 1 }; return; }
   // lifting off (a kick) or reaching out (sweep): the foot lets go of its spot over LOCK.ease s, then the lock ends
   if (k.w < 1 || !planted) { k.w = Math.max(0, k.w - dt / LOCK.ease); k.y *= k.w; if (k.w <= 0) l.lk = null; return; }
-  const d = Math.hypot(T.x - k.x, T.z - k.z), busy = o.lk && o.lk.st >= 0;
+  // (busy: the other foot is mid-step, swinging in the gait, off the floor in a strike or off the floor at all (o.gy:
+  // its sole's height last pose): a kick's standing foot stepping after the lunge, or a walker's rear foot stepping
+  // while the front one swung, left both feet 3-9 cm up)
+  const d = Math.hypot(T.x - k.x, T.z - k.z), busy = (o.lk ? o.lk.st >= 0 || o.lk.w < 1 : mode === 2) || !!o.gk && o.gk.sw || o.gy > LOCK.air;
   if (k.st < 0) {
     if (mode === 1 && d < LOCK.rest) { l.lk = null; return; }
     if ((d > (mode === 2 ? LOCK.d : LOCK.rest) || far && d > 0.03) && !busy) { k.fx = k.x = k.ax; k.fz = k.z = k.az; k.len = Math.hypot(T.x - k.x, T.z - k.z); k.st = 0; k.bx = null; }
@@ -1888,6 +1891,7 @@ function posePass(H, s, t, ground, raise) {
       }
     }
     if (k && !s.again) { l.an.getWorldPosition(_P); k.ax = _P.x; k.az = _P.z; }
+    if (!s.again) { _P.copy(BALL); l.an.localToWorld(_P); _LK.copy(HEEL); l.an.localToWorld(_LK); l.gy = Math.min(_P.y, _LK.y) - ground; } // (footLock: busy)
     if (!s.again) l.an.getWorldPosition(l.ga ||= new THREE.Vector3()); // (gait lock: where a newly held foot starts)
   }
 }
