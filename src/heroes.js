@@ -150,6 +150,12 @@ function contour(rows, y) {
 }
 const bump = (x, center, width) => Math.exp(-(((x - center) / width) ** 2));
 const blend = (a, b, x) => THREE.MathUtils.smoothstep(x, a, b);
+// Hip-crease corrective: how deep (d) the thigh's root compresses around thigh-local height y (width w), fading in
+// as the thigh swings a0..a1 rad away from hanging straight down in the hips' frame.
+const CREASE = { d: 0.045, y: -0.17, w: 0.11, a0: 1.0, a1: 1.6, k: 1, ki: 1.6 };
+// Seat corrective: the trunks' backside rounds out to radius r (minus k * (|x| - 6 cm)^2 toward the hip's side)
+// from the hip joint line as the thigh lifts forward a0..a1 rad.
+const SEAT = { r: 0.13, k: 2, a0: 0.3, a1: 1.5, l0: 1.0 }; // l0: the thigh's seat fill fades in from l0 rad (later, so the guard keeps its shape)
 
 function surface(rows, sculpt = (p) => p, rings = 64, sides = 48) {
   const positions = [], uv = [], indices = [];
@@ -250,10 +256,49 @@ export function makeHero(kind) {
   // Trunks are skinned: the leg openings follow the thighs (weights fade in below the belt), so a
   // lifted thigh carries the trunks with it instead of punching suit-coloured patches through them.
   const arms = {}, legs = {};
+  // Superman is drawn as a powerhouse (full weight), Batman as a leaner athlete (80%) — legs and hips.
+  const bulk = B ? 0.8 : 1;
+  // Neo-hero hips: legs this strong need the glutes that drive them. The trunks were a flat tube (glutes 1 cm
+  // behind the lower back), so the backside now carries two gluteus maximus cheeks (~4 cm proud, split by a
+  // shallow cleft) rising out of the lumbar hollow and tucking under at the gluteal fold, and the gluteus
+  // medius widens the hip so the outer thigh sweep grows out of the pelvis instead of out of a narrow brief.
+  // Hips-space height; the thigh mesh shares the shape below the trunks' hem.
+  const glute = y => bulk * 0.04 * bump(y, -0.045, 0.05), medius = y => bulk * 0.014 * bump(y, -0.03, 0.045);
   const trunkRows = [[-0.095, 0.05, 0.05], [-0.06, 0.175, 0.106], [0.015, 0.168, 0.114], [0.085, 0.15, 0.106]];
-  skinSurface(hips, surface(trunkRows, p => p, 32),
+  const trunkGeo = surface(trunkRows, (p, a) => {
+    p.z -= glute(p.y) * Math.max(0, -Math.cos(a)) ** 1.2 * (1 - 0.55 * bump(p.x, 0, 0.018));
+    p.x += Math.sign(p.x) * medius(p.y) * Math.sin(a) ** 2;
+    return p;
+  }, 32);
+  // Glutes in deep hip flexion: the back of the trunks followed the thigh, so a tuck / crouch / guard dragged
+  // the cheeks down under the seat and left the backside flat (radius from the hip joint 13 -> 9 cm). The
+  // glutes now stay on the pelvis, and per-side seat correctives (driven by forward thigh lift in applyPose)
+  // round the trunks down over the seat, the way the gluteus maximus stretches over a flexed hip.
+  const seatBack = p => blend(0.1, 0.7, -p.z / Math.hypot(p.x, p.z)); // how much of the trunks rides the pelvis, not the thigh
+  {
+    const P0 = trunkGeo.attributes.position, n = P0.count, dL = new Float32Array(n * 3), dR = new Float32Array(n * 3), p = new THREE.Vector3();
+    for (let i = 0; i < n; i++) {
+      const x = P0.getX(i), y = P0.getY(i) + 0.04, z = P0.getZ(i), r = Math.hypot(y, z); // around the hip joint line
+      const ang = Math.atan2(-y, -z), w = blend(0.05, 0.3, ang) * (1 - blend(1.3, 1.85, ang)) * blend(0.0, 0.03, Math.abs(x)) * seatBack(p.fromBufferAttribute(P0, i));
+      const rt = SEAT.r - SEAT.k * Math.max(0, Math.abs(x) - 0.06) ** 2, dr = Math.max(0, rt - r) * w;
+      if (!dr || z > 0.02) continue;
+      const D = x > 0 ? dL : dR, k = dr / (r || 1);
+      D[i * 3 + 1] = y * k; D[i * 3 + 2] = z * k;
+    }
+    const nrm = d => { // normal deltas so the stretched seat shades round
+      const g = trunkGeo.clone(), p = g.attributes.position.array, N0 = trunkGeo.attributes.normal.array;
+      for (let k = 0; k < p.length; k++) p[k] += d[k];
+      g.computeVertexNormals();
+      return new THREE.Float32BufferAttribute(g.attributes.normal.array.map((x, k) => x - N0[k]), 3);
+    };
+    trunkGeo.morphAttributes.normal = [dL, dR].map(nrm);
+    trunkGeo.morphAttributes.position = [dL, dR].map(d => new THREE.Float32BufferAttribute(d, 3));
+    trunkGeo.morphTargetsRelative = true;
+    trunkGeo.userData.seat = true;
+  }
+  skinSurface(hips, trunkGeo,
     B ? dark : red, p => {
-      const lower = (1 - blend(-0.075, 0.05, p.y)) * 1.0, l = blend(-0.06, 0.06, p.x);
+      const lower = (1 - blend(-0.075, 0.05, p.y)) * (1 - seatBack(p)), l = blend(-0.06, 0.06, p.x);
       return [[hips, 1 - lower], [legs.L.th, lower * l], [legs.R.th, lower * (1 - l)]];
     });
   part(hips, surface([[0.063, 0.153, 0.108], [0.071, 0.158, 0.113], [0.103, 0.153, 0.11], [0.11, 0.148, 0.105]], p => p, 12), yellow);
@@ -584,9 +629,8 @@ export function makeHero(kind) {
     // Athletic leg: thick thigh tapering hard into a narrow knee, a high calf peak set to the back,
     // and a slim ankle. The [y, rx, rz, zOffset] offset pushes the calf behind the shin.
     // Hero legs: the mid-thigh and calf get extra mass on top of the athletic base. Superman is
-    // drawn as a powerhouse (full weight), Batman as a leaner athlete (60%). The hip line (trunks)
+    // drawn as a powerhouse (full weight), Batman as a leaner athlete (80%). The hip line (trunks)
     // and the knee / ankle stay as they were so the joints keep reading narrow.
-    const bulk = B ? 0.6 : 1;
     const legRows = [[-0.94, 0.033, 0.036, 0.004], [-0.87, 0.036, 0.04, 0.0], [-0.78, 0.05, 0.056, -0.01],
       [-0.68, 0.063, 0.068, -0.016], [-0.59, 0.06, 0.06, -0.01], [-0.5, 0.05, 0.05, 0.002],
       [-0.44, 0.054, 0.056, 0.006], [-0.34, 0.074, 0.078, 0.006], [-0.2, 0.092, 0.094, 0.002],
@@ -594,6 +638,10 @@ export function makeHero(kind) {
       const thigh = 0.012 * bump(y, -0.27, 0.1), calf = 0.008 * bump(y, -0.68, 0.06);
       return [y, rx + bulk * (thigh + calf), rz + bulk * (thigh + calf * 1.2), o - bulk * calf * 0.6];
     });
+    const adductor = (y, a) => bulk * 0.009 * bump(y, -0.19, 0.08) * bump(Math.atan2(Math.sin(a + s * 0.8), Math.cos(a + s * 0.8)), 0, 0.5) * Math.max(0, Math.cos(a));
+    // Tensor fasciae latae: the hip flexor's knot on the front-outer hip, between the sartorius' start and the top
+    // of the IT band, that rounds the corner from the hip line into the quads (normal displacement, metres).
+    const tfl = (y, a) => bulk * 0.005 * bump(y, -0.13, 0.05) * bump(Math.atan2(Math.sin(a - s * 1.15), Math.cos(a - s * 1.15)), 0, 0.35);
     const legGeo = surface(legRows, (p, a) => {
       p.x += s * 0.008 * bump(p.y, -0.2, 0.15);
       // The outer upper thigh flared 5 cm wider than the hips (legs looked bolted on). Slim it so the
@@ -609,6 +657,42 @@ export function makeHero(kind) {
       const back = Math.max(0, -Math.cos(a)) ** 1.5;
       p.z -= bulk * 0.006 * back * (bump(p.y, -0.66, 0.05) * Math.max(0, -s * Math.sin(a)) + bump(p.y, -0.63, 0.04) * Math.max(0, s * Math.sin(a)));
       p.z += 0.005 * bump(p.y, -0.49, 0.02) * Math.max(0, Math.cos(a)) ** 4; // kneecap
+      // Neo-hero legs carry the upper body: thighs ~1.25x and calves ~0.9x the biceps' girth (were 1.0x / 0.75x,
+      // "skipped leg day"). The inner thighs already meet at the midline, so the mass goes where real legs carry
+      // it: the vastus lateralis sweeps out past the hip line, the quads push forward, the hamstrings round out
+      // the back, and both gastrocnemius heads flare out of the boot.
+      const out = Math.max(0, s * Math.sin(a)), inn = Math.max(0, -s * Math.sin(a)), fr = Math.max(0, Math.cos(a)), bk = Math.max(0, -Math.cos(a));
+      p.x += s * bulk * 0.036 * bump(p.y, -0.27, 0.085) * out ** 1.2;     // outer quad sweep
+      p.z += bulk * 0.032 * bump(p.y, -0.25, 0.09) * fr ** 1.5;         // quads
+      p.z -= bulk * 0.028 * bump(p.y, -0.28, 0.09) * bk ** 1.5;         // hamstrings
+      p.x -= s * bulk * 0.007 * bump(p.y, -0.34, 0.04) * inn ** 1.5;    // adductors / vastus medialis, where the thighs part
+      p.x += s * bulk * 0.017 * bump(p.y, -0.67, 0.06) * out ** 1.5;    // outer calf head
+      p.x -= s * bulk * 0.018 * bump(p.y, -0.7, 0.06) * inn ** 1.5;     // inner calf head, lower and fuller
+      p.z -= bulk * 0.018 * bump(p.y, -0.68, 0.06) * bk ** 1.5;         // calf peak
+      p.z += bulk * 0.004 * bump(p.y, -0.68, 0.08) * fr ** 2;           // tibialis
+      p.z -= glute(p.y - 0.04) * bk ** 1.2;                             // gluteus maximus below the trunks' hem, up to the fold
+      p.x += s * medius(p.y - 0.04) * out ** 2;                         // gluteus medius / trochanter carries the hip line down
+      // Adductors: the inner thigh's mass sits front-inner, high, medial to the sartorius. Forward only, so the
+      // inner edge stays at the midline (thighs already meet there).
+      p.z += adductor(p.y, a);
+      const tf = tfl(p.y, a);
+      p.x += tf * Math.sin(a); p.z += tf * Math.cos(a);
+      // Sartorius: the long strap from the front of the hip bone to the inside of the knee. Its edge is the
+      // diagonal line that splits the quads from the inner thigh (the comic-book "teardrop" frame).
+      const t = (-0.08 - p.y) / 0.36;
+      if (t > 0 && t < 1) {
+        const as = s * (0.6 - 2.2 * t), d = Math.atan2(Math.sin(a - as), Math.cos(a - as));
+        const g = bulk * 0.004 * Math.sin(Math.PI * t) ** 0.7 * bump(d, 0, 0.2);
+        p.x -= g * Math.sin(a); p.z -= g * Math.cos(a);
+      }
+      // Iliotibial band: the flat strip down the outside of the thigh, from the trochanter to just behind the
+      // outer knee, splits the vastus lateralis sweep from the hamstrings (frames the quads from the outside).
+      const ti = (-0.12 - p.y) / 0.34;
+      if (ti > 0 && ti < 1) {
+        const as = s * (1.7 + 0.25 * ti), d = Math.atan2(Math.sin(a - as), Math.cos(a - as));
+        const g = bulk * 0.0035 * Math.sin(Math.PI * ti) ** 0.7 * bump(d, 0, 0.2);
+        p.x -= g * Math.sin(a); p.z -= g * Math.cos(a);
+      }
       // Boot cuff: a slight flared lip just below the boot top so the boot reads as a real boot, not paint.
       const cuff = 1 + 0.07 * bump(p.y, -0.612, 0.011);
       p.x *= cuff; p.z *= cuff;
@@ -618,6 +702,49 @@ export function makeHero(kind) {
       return p;
     }, 112, 40);
     legGeo.userData.limb = true;
+    // Hip-crease correctives: lifting the knee (front kicks, chambers, knees) or swinging it out (roundhouse)
+    // rolled the bulked thigh's root up through the front / side of the trunks (blue suit up to 4 cm over the
+    // red, as far up as the belt). Morph targets compress the thigh's root on the side that folds against the
+    // body (front, outer, inner), the way the quads bunch into the crease; applyPose drives them from the
+    // thigh's angle to the hips (0 while the leg hangs or walks, so the standing sculpt is unchanged).
+    {
+      const P0 = legGeo.attributes.position, U = legGeo.attributes.uv, n = P0.count;
+      const dF = new Float32Array(n * 3), dO = new Float32Array(n * 3), dI = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const a = U.getX(i) * Math.PI * 2, c = CREASE.d * bump(P0.getY(i), CREASE.y, CREASE.w);
+        dF[i * 3 + 2] = -c * Math.max(0, Math.cos(a)) - adductor(P0.getY(i), a); // the whole front half folds (cos^2 left the front-inner / outer quadrants poking through in the roundhouse); the adductors flatten into the fold
+        dO[i * 3] = -s * c * Math.max(0, s * Math.sin(a)) ** 2;
+        const tf = tfl(P0.getY(i), a); // the TFL folds into the crease too: its front part with the front fold, all of it with the outer one
+        dF[i * 3 + 2] -= tf * Math.cos(a); dO[i * 3] -= tf * Math.sin(a); dO[i * 3 + 2] -= tf * Math.cos(a);
+        dI[i * 3] = s * c * Math.max(0, -s * Math.sin(a)) ** 2;
+      }
+      // Seat: in a tuck / crouch the thigh's back-top (above the joint, hidden in the trunks while standing) swings
+      // down under the seat and left a 4 cm step below the pelvis-riding glute (radius from the hip joint 11.4 ->
+      // 7.3 cm). With the thigh lifted SEAT.a1 forward, its back-top rounds out to the seat's radius, so
+      // the glute runs on smoothly into the hamstrings (driven with the trunks' seat morph).
+      const dS = new Float32Array(n * 3), cs = Math.cos(SEAT.a1), sn = Math.sin(SEAT.a1);
+      for (let i = 0; i < n; i++) {
+        const x = P0.getX(i), y = P0.getY(i), z = P0.getZ(i);
+        if (z > 0 || y < -0.16) continue;
+        const Y = y * cs + z * sn, Z = -y * sn + z * cs, r = Math.hypot(Y, Z), ang = Math.atan2(-Y, -Z);
+        const w = blend(0.6, 0.95, ang) * (1 - blend(1.3, 1.85, ang)) * blend(-0.14, -0.06, y) * blend(0, 0.03, Math.abs(s * 0.1 + x));
+        const rt = SEAT.r - SEAT.k * Math.max(0, Math.abs(s * 0.1 + x) - 0.06) ** 2, dr = Math.max(0, rt - r) * w / (r || 1);
+        if (!dr) continue;
+        const dY = Y * dr, dZ = Z * dr;
+        dS[i * 3 + 1] = dY * cs - dZ * sn; dS[i * 3 + 2] = dY * sn + dZ * cs;
+      }
+      const nrm = d => { // normal deltas so the compressed crease shades as a fold
+        const g = legGeo.clone(), p = g.attributes.position.array;
+        for (let k = 0; k < p.length; k++) p[k] += d[k];
+        g.computeVertexNormals();
+        const N0 = legGeo.attributes.normal.array;
+        return new THREE.Float32BufferAttribute(g.attributes.normal.array.map((x, k) => x - N0[k]), 3);
+      };
+      legGeo.morphAttributes.position = [dF, dO, dI, dS].map(d => new THREE.Float32BufferAttribute(d, 3));
+      legGeo.morphAttributes.normal = [dF, dO, dI, dS].map(nrm);
+      legGeo.morphTargetsRelative = true;
+      legGeo.userData.leg = side;
+    }
     legGeo.clearGroups();
     const bootRing = Math.floor((-0.6 + 0.94) / 1.03 * 112);
     legGeo.addGroup(0, bootRing * 40 * 6, 1);
@@ -640,12 +767,13 @@ export function makeHero(kind) {
     p => { p.z = Math.min(p.z, 0.074); return p; }, 48, 32);
     footGeo.rotateX(Math.PI / 2);
     footGeo.computeVertexNormals(); part(an, footGeo, boot);
-    legs[side] = { th, kn, an, s };
+    legs[side] = { th, kn, an, s, crease: [] };
   }
   root.updateMatrixWorld(true);
   const bones = [];
   root.traverse(o => { if (o.isBone) bones.push(o); });
   const skeleton = new THREE.Skeleton(bones);
+  const seat = []; // trunks + their outline: seat correctives [L, R]
   for (const { parent, geometry, material, weights } of skins) {
     const indices = [], values = [], pos = geometry.attributes.position;
     for (let i = 0; i < pos.count; i++) {
@@ -659,6 +787,8 @@ export function makeHero(kind) {
     mesh.castShadow = mesh.receiveShadow = true;
     mesh.frustumCulled = false;
     root.add(mesh); mesh.bind(skeleton);
+    if (geometry.userData.leg) legs[geometry.userData.leg].crease.push(mesh);
+    if (geometry.userData.seat) seat.push(mesh);
   }
   // Comic-book ink outline: an inverted hull pushed out along the (skinned) normal, so it bends with
   // the body. Tiny details (eyes, mouth, brows) are skipped so they don't turn into black blobs.
@@ -695,13 +825,15 @@ export function makeHero(kind) {
       const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
       if (y < -0.2 || y > 0.8) continue;
       const [rx, rz] = y < 0.06 ? contour(trunkRows, y) : contour(torsoRows, y);
-      w[i] = blend(1.02, 1.22, Math.hypot(x / rx, z / rz));
+      w[i] = blend(1.02, 1.22, Math.hypot(x / rx, z / (y < 0.06 && z < 0 ? rz + glute(y) : rz))); // trunks include the glutes
     }
     og.setAttribute('inkW', new THREE.BufferAttribute(w, 1));
     const o = m.isSkinnedMesh ? new THREE.SkinnedMesh(og, ink) : new THREE.Mesh(og, ink);
     o.frustumCulled = false;
     if (m.isSkinnedMesh) { root.add(o); o.bind(m.skeleton, m.bindMatrix); }
     else { o.position.copy(m.position); o.quaternion.copy(m.quaternion); o.scale.copy(m.scale); m.parent.add(o); }
+    if (g.userData.leg) legs[g.userData.leg].crease.push(o); // the outline follows the crease too
+    if (g.userData.seat) seat.push(o);
   }
   // Torso cross-section [halfWidth, halfDepth] at a hips-space height, for cloth collision.
   const torsoSection = (y) => contour(torsoRows, y);
@@ -711,7 +843,7 @@ export function makeHero(kind) {
   root.traverse(o => { if (o.isMesh && !o.morphTargetInfluences) { o.morphTargetInfluences = undefined; o.morphTargetDictionary = undefined; } });
   const patched = new Set();
   root.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) if (m.isMeshStandardMaterial && !patched.has(m)) { patched.add(m); battleDamage(m, dmg); } });
-  return { kind, root, hips, spine, chest, head, arms, legs, eyes, face: faceRig, torsoSection, chestDepth, dmg };
+  return { kind, root, hips, spine, chest, head, arms, legs, seat, eyes, face: faceRig, torsoSection, chestDepth, dmg };
 }
 
 // ---------- IK ----------
@@ -824,6 +956,19 @@ export function applyPose(H, s, t, ground = 0) {
     if (_P.y > ground - 0.6) deficit = Math.max(deficit, ground + r - _P.y);
   }
   if (deficit > 0.002) posePass(H, s, t, ground, deficit);
+  // Hip-crease correctives, from each thigh's direction in the hips' frame: lifted forward -> front (deeper past
+  // 90 deg, where the thigh folds onto the belly, which also folds the inner side), out -> outer, across -> inner.
+  H.hips.getWorldQuaternion(_qa).invert();
+  for (const side of ['L', 'R']) {
+    const l = H.legs[side];
+    l.kn.getWorldPosition(_A); l.th.getWorldPosition(_B); _A.sub(_B).applyQuaternion(_qa).normalize();
+    const ang = Math.acos(Math.max(-1, Math.min(1, -_A.y))), lift = blend(CREASE.a0, CREASE.a1, ang), r = Math.hypot(_A.x, _A.z) || 1;
+    const deep = blend(CREASE.a1, 2.4, ang), f = lift * (1 + CREASE.k * deep) * Math.max(0, _A.z) / r, o = lift * Math.max(0, l.s * _A.x) / r;
+    const inn = lift * Math.max(deep * CREASE.ki, Math.max(0, -l.s * _A.x) / r);
+    const st = blend(SEAT.a0, SEAT.a1, ang) * Math.max(0, _A.z) / r; // seat: forward lift rounds the glute over the hip
+    for (const m of l.crease) { const w = m.morphTargetInfluences; w[0] = f; w[1] = o; w[2] = inn; w[3] = blend(SEAT.l0, SEAT.a1, ang) * Math.max(0, _A.z) / r; }
+    for (const m of H.seat) m.morphTargetInfluences[side === 'L' ? 0 : 1] = st;
+  }
 }
 // Knee pole into _P (world), from the root-local hip->foot direction in the sagittal plane: (vy, vz) -> (vz, -vy)
 // maps straight down to straight forward, a horizontal forward leg to straight up, a high kick to up-and-back.
