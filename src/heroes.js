@@ -975,7 +975,11 @@ function updateBones(b) {
   for (const c of b.children) if (c.isBone) updateBones(c);
 }
 
-function solveIK(upper, lower, L1, L2, target, pole) {
+// hinge: roll the upper bone about its own axis so its local +z (the arm's biceps side) faces the inside of the
+// bend. setFromUnitVectors alone takes the shortest arc from hanging, so with the arm raised and the forearm
+// coming forward (uppercut, overhead fist) the biceps ended up on the back of the arm and the triceps in front.
+const _qh = new THREE.Quaternion(), _Y = new THREE.Vector3(0, 1, 0);
+function solveIK(upper, lower, L1, L2, target, pole, hinge) {
   upper.getWorldPosition(_A);
   _D.subVectors(target, _A);
   let d = _D.length();
@@ -988,6 +992,12 @@ function solveIK(upper, lower, L1, L2, target, pole) {
   _B.normalize();
   _E.copy(_A).addScaledVector(_D, L1 * cosA).addScaledVector(_B, L1 * sinA);
   setBoneDir(upper, _F.subVectors(_E, _A));
+  if (hinge) {
+    upper.getWorldQuaternion(_qh).invert();
+    _F.copy(_B).negate().applyQuaternion(_qh); // inside of the bend in the bone's frame (its axis is local y)
+    upper.quaternion.multiply(_qh.setFromAxisAngle(_Y, Math.atan2(_F.x, _F.z)));
+    updateBones(upper);
+  }
   _G.copy(_A).addScaledVector(_D, d);
   setBoneDir(lower, _F.subVectors(_G, _E));
 }
@@ -1402,7 +1412,8 @@ function posePass(H, s, t, ground, raise) {
     _T.set(tg[0], tg[1], tg[2] + dz); H.root.localToWorld(_T);
     if (_T.y > ground - 0.6) _T.y = Math.max(_T.y, ground + 0.07); // fists rest on the roof, not in it
     pushOutOfTorso(H, _T, 0.065); // fists stay in front of / beside the chest, not sunk inside it
-    _P.set(a.s * 0.5, 0.2, -0.6); H.root.localToWorld(_P);
+    const up = blend(0.6, 1.0, tg[1]); // fist raised above the shoulder: the elbow drops under it instead of flaring up and back
+    _P.set(a.s * (0.5 + 0.1 * up), 0.2 - 0.7 * up, -0.6 + 0.7 * up); H.root.localToWorld(_P);
     // s.hold = the opponent held in this hand (s.holdW 0..1 eases the grip in and out): reach for his body,
     // palm centre onto the nearest surface point, palm turned onto it.
     // A body out of reach (Superman's overhead lift, the slam) is let go rather than stretched for.
@@ -1421,18 +1432,18 @@ function posePass(H, s, t, ground, raise) {
       _T.copy(_gS).addScaledVector(_gN, 0.04);
       shapeHand(a, open);
       for (let it = 0; it < 3; it++) {
-        solveIK(a.sh, a.el, 0.32, 0.30, _T, _P); orientHand(a, _qb, 0, _gP, 1);
+        solveIK(a.sh, a.el, 0.32, 0.30, _T, _P, true); orientHand(a, _qb, 0, _gP, 1);
         _C.copy(PALM_C); a.hand.localToWorld(_C);
         _T.add(_F.copy(_gS).addScaledVector(_gN, PALM_GAP).sub(_C));
       }
       _T.lerp(_gT, 1 - hw);
     }
-    solveIK(a.sh, a.el, 0.32, 0.30, _T, _P);
+    solveIK(a.sh, a.el, 0.32, 0.30, _T, _P, true);
     // Elbows tucked across the body used to sink into the ribs: swing the elbow out past the torso.
     a.el.getWorldPosition(_C);
     if (pushOutOfTorso(H, _C, 0.06)) {
       a.sh.getWorldPosition(_A);
-      solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A)); // pole through the pushed elbow
+      solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A), true); // pole through the pushed elbow
     }
     // Upper arm hugging the lats used to sink up to 4 cm into the side of the back (the arm looked thin and
     // glued into the torso): swing the elbow out until the middle of the upper arm clears the body.
@@ -1440,7 +1451,7 @@ function posePass(H, s, t, ground, raise) {
       a.sh.getWorldPosition(_A); a.el.getWorldPosition(_C); _C.lerp(_A, 0.5); _F.copy(_C);
       if (!pushOutOfTorso(H, _C, UPPER_R)) break;
       a.el.getWorldPosition(_E); _E.add(_C.sub(_F).multiplyScalar(2));
-      solveIK(a.sh, a.el, 0.32, 0.30, _T, _E.sub(_A).multiplyScalar(4).add(_A));
+      solveIK(a.sh, a.el, 0.32, 0.30, _T, _E.sub(_A).multiplyScalar(4).add(_A), true);
     }
     // Forearm resting across the chest: if its middle is inside the torso, move the fist out by the same amount.
     for (let it = 0; it < 2; it++) for (const u of [0.35, 0.7]) {
@@ -1448,7 +1459,7 @@ function posePass(H, s, t, ground, raise) {
     if (pushOutOfTorso(H, _C, 0.07 /* forearm radius + gap */)) {
       _T.add(_C.sub(_F).multiplyScalar(1 / u));
       a.el.getWorldPosition(_C); a.sh.getWorldPosition(_A);
-      solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A));
+      solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A), true);
     }
     }
     const w = side === 'L' ? s.lw : s.rw, gp = a.grip;
@@ -1476,7 +1487,7 @@ function posePass(H, s, t, ground, raise) {
       }
       if (!moved) break;
       a.el.getWorldPosition(_C); a.sh.getWorldPosition(_A);
-      solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A));
+      solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A), true);
       orientHand(a, _qb, w, gP, hw);
     }
     if (gp) gp.wk = gP ? gp.wk || [] : null; // per-finger eased grip curls (wrapFingers)
@@ -1485,7 +1496,7 @@ function posePass(H, s, t, ground, raise) {
     for (let it = 0, d; gP && it < 3 && (d = wrapFingers(a, O, Math.max(0, Math.min(1, open || 0)), hw)) > 0.002; it++) {
       _T.addScaledVector(_gN, d + 0.002);
       a.el.getWorldPosition(_C); a.sh.getWorldPosition(_A);
-      solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A));
+      solveIK(a.sh, a.el, 0.32, 0.30, _T, _C.sub(_A).multiplyScalar(4).add(_A), true);
       orientHand(a, _qb, w, gP, hw);
     }
   }
