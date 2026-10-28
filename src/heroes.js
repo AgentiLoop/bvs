@@ -1085,14 +1085,17 @@ function pushOutOfTorso(H, w, margin) {
   if (y < 0.1 || y > 0.72) return false;
   const [rx, rz] = H.torsoSection(y), e = (_C2.x / (rx + margin)) ** 2 + (_C2.z / (rz + margin)) ** 2;
   // The front has sculpted pecs/abs up to 6 cm proud of the ellipse; forearms in a guard sank into them.
-  const front = _C2.z > 0 && Math.abs(_C2.x) < rx ? H.chestDepth(_C2.x, y) + margin : 0;
+  // Inside the ellipse the pecs' pull fades in over the 4 cm behind the side line (fw): a point just in front of it
+  // was thrown onto the chest while one just behind went out sideways, a 10-20 cm swing for a fist crossing it.
+  const fw = Math.abs(_C2.x) < rx ? (e < 1 ? blend(-0.04, 0, _C2.z) : +(_C2.z > 0)) : 0;
+  const front = fw > 0 ? H.chestDepth(_C2.x, y) + margin : 0;
   if (e >= 1 && !(front && _C2.z < front)) return false;
   if (e < 1) { if (e < 1e-6) _C2.z = rz + margin; else { const k = 1 / Math.sqrt(e); _C2.x *= k; _C2.z *= k; } }
-  if (front) _C2.z = Math.max(_C2.z, front);
+  if (front) _C2.z += fw * Math.max(0, front - _C2.z);
   w.copy(H.chest.localToWorld(_C2));
   return true;
 }
-const _C2 = new THREE.Vector3();
+const _C2 = new THREE.Vector3(), _fs = new THREE.Vector3(), _fv = new THREE.Vector3(), _fq = new THREE.Quaternion(), FOLD_R = 0.24;
 // Same for the head (an ellipsoid round the skull in the head's frame; the elbow strike folded the fist 3 cm into the face).
 const HEAD_C = new THREE.Vector3(0, 0.12, 0), HEAD_R = [0.085, 0.125, 0.08];
 function pushOutOfHead(H, w, margin) {
@@ -1521,6 +1524,11 @@ function posePass(H, s, t, ground, raise) {
     _T.set(tg[0], tg[1] + Math.min(0, dz), tg[2] + dz); H.root.localToWorld(_T);
     if (_T.y > ground - 0.6) _T.y = Math.max(_T.y, ground + 0.07); // fists rest on the roof, not in it
     pushOutOfTorso(H, _T, 0.065); // fists stay in front of / beside the chest, not sunk inside it
+    // A fist pulled in onto its own shoulder (spinning elbow, drive impact's rear hand, the rush on a deep lean) left
+    // the shoulder->fist direction undefined: a few cm of travel swung it round and the elbow jumped 20-29 cm in one
+    // frame. Inside FOLD_R the target is eased out along a fixed forward-down-inward line, where a folded fist sits.
+    a.sh.getWorldPosition(_fs); const fd = _fs.distanceTo(_T);
+    if (fd < FOLD_R) _T.addScaledVector(_fv.set(-0.5 * a.s, -0.2, 0.9).normalize().applyQuaternion(H.chest.getWorldQuaternion(_fq)), FOLD_R - fd);
     const up = blend(0.6, 1.0, tg[1]); // fist raised above the shoulder: the elbow drops under it instead of flaring up and back
     _P.set(a.s * (0.5 + 0.1 * up), 0.2 - 0.7 * up, -0.6 + 0.7 * up); H.root.localToWorld(_P);
     swivelPole(H, a, _T, _P, 0.32, 0.30);
