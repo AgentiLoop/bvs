@@ -1890,7 +1890,11 @@ function posePass(H, s, t, ground, raise) {
     // bodies, 35-50 cm a frame (144 fps), and left it inside the own chest with the elbow behind the back. There the
     // foe's push fades out (kf) and only the own body holds the fist.)
     const X = !s.hold && s.foe, kf = X ? blend(FOE_NEAR[0], FOE_NEAR[1], H.chest.getWorldPosition(_C4).distanceTo(X.chest.getWorldPosition(_C5))) : 0;
-    const foe = (p, r) => { _fp.copy(p); if (!(pushOutOfTorso(X, p, r, a.sh.getWorldPosition(_C4).lerp(H.chest.getWorldPosition(_C5), 0.5)) || pushOutOfHead(X, p, r))) return false; p.lerp(_fp, 1 - kf); return true; };
+    // (m: where this fist was last frame, so a fist sunk into the foe leaves him on the side it came in from. From the
+    // arm's shoulder (the first frame) a guard fist that had come down onto the upper back of a foe ducking under it
+    // (crouched uppercut start, chest pitched forward 0.5-0.8 rad) was pushed out through his whole tilted chest instead:
+    // 25-37 cm down to belly height on a straight arm, every other frame, while walking in.)
+    const foe = (p, r) => { _fp.copy(p); if (!(pushOutOfTorso(X, p, r, a.fz || a.sh.getWorldPosition(_C4).lerp(H.chest.getWorldPosition(_C5), 0.5)) || pushOutOfHead(X, p, r))) return false; p.lerp(_fp, 1 - kf); return true; };
     const out = (p, r) => pushOutOfTorso(H, p, r) || pushOutOfHead(H, p, r) || kf > 0.01 && foe(p, r);
     for (let it = 0; it < 3; it++) {
       let moved = false;
@@ -1912,6 +1916,7 @@ function posePass(H, s, t, ground, raise) {
       solveIK(a.sh, a.el, 0.32, 0.30, _T, _C, true);
       orientHand(a, _qb, w, gP, hw);
     }
+    if (!raise && !s.again) a.fz = X ? a.hand.localToWorld((a.fz ||= new THREE.Vector3()).set(0, -0.055, 0.015)) : null;
     if (gp) gp.wk = gP ? gp.wk || [] : null; // per-finger eased grip curls (wrapFingers)
     if (gp && !gP && gp.pk) relaxFingers(a, Math.max(0, Math.min(1, open || 0)));
     // fingers wrap the held body; backed off it while a finger, the thumb or the palm still cannot clear it
