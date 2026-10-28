@@ -155,6 +155,10 @@ const FLYKICK = { over: true, dmg: 16, kb: 6, up: 3, stun: 0.7, heavy: true, at:
 // Throws (punch+kick together, or U, at close range): unblockable, beaten only by a tech (throw back while held).
 // Batman hip-tosses the foe over his shoulder behind him; Superman lifts the foe overhead and slams him down.
 const THROW = { reach: 1.15, grab: 0.1, rel: 0.5, dur: 0.75, tech: 0.28 };
+// Superman's hoist (throw lift + Orbital Slam): the victim is held HOIST.d m in front, boots HOIST.y m up. At 0.55 / 0.9
+// his torso sat 0.9 m from the lifter's shoulders (arm 0.62 m), so the hands gave up the grip and hung 11-12 cm off it.
+// slamD / slamY: where the Orbital Slam dive carries him (out in front, level with the lifter).
+const HOIST = { d: 0.5, y: 0.6, slamD: 0.8, slamY: 0 };
 const TOSS = {
   bat: { dmg: 12, kb: 5, up: 6.5, stun: 0.8, heavy: true, at: 'rh', blast: 1, back: true, keys: [[0, 'grab'], [0.22, 'hipToss']] },
   sup: { dmg: 13, kb: 3, up: -5, stun: 0.8, heavy: true, at: 'rh', blast: 1.2, lift: true, keys: [[0, 'grab'], [0.18, 'lift'], [0.44, 'slam']] },
@@ -1013,8 +1017,13 @@ export class Game {
       fx.decals.add(o.x, o.z, 1.3); fx.impact(o.x, 0, o.z, 0.8);
       this.hurt(o, f, S.finish, this.contact(f, o, S.finish));
     }
-    // carried overhead 0.55 m out like the throw's lift, so his hands keep their grip on the torso
-    if (!a.done) { const u = a.t < S.grab ? 0 : clamp((a.t - S.grab) / 0.2, 0, 1); pin(0.8 - 0.25 * u, f.y + 0.9 * u); }
+    // carried overhead like the throw's lift (HOIST), so his hands keep their grip on the torso; in the dive he is
+    // pushed out in front, level with the lifter (still overhead, Superman's lean put his hands 40 cm off him and the
+    // victim's legs into his chest)
+    if (!a.done) {
+      const u = a.t < S.grab ? 0 : clamp((a.t - S.grab) / 0.2, 0, 1), v = a.t < up ? 0 : clamp((a.t - up) / 0.12, 0, 1);
+      pin(0.8 - (0.8 - HOIST.d) * u + (HOIST.slamD - HOIST.d) * v, f.y + HOIST.y * u + (HOIST.slamY - HOIST.y) * v);
+    }
     return a.t < dn + 0.6;
   }
   canBreak(f) {
@@ -1669,9 +1678,9 @@ export class Game {
         }
         if (a.grab && !a.done && o.heldBy === f) {
           // victim pinned in the thrower's hands (Superman hoists him overhead)
-          const lift = S.lift ? clamp((a.t - 0.2) / 0.2, 0, 1) * 0.9 : 0;
+          const lift = S.lift ? clamp((a.t - 0.2) / 0.2, 0, 1) * HOIST.y : 0;
           // (hoisted in closer, within the lifter's reach: his hands grip the body, heroes.js s.hold)
-          const hd = 0.8 - (S.lift ? clamp((a.t - 0.15) / 0.1, 0, 1) : 0) * 0.25;
+          const hd = 0.8 - (S.lift ? clamp((a.t - 0.15) / 0.1, 0, 1) : 0) * (0.8 - HOIST.d);
           o.x = f.x + Math.sin(f.yaw) * hd; o.z = f.z + Math.cos(f.yaw) * hd; o.y = lift; o.vy = 0; o.kx = o.kz = 0;
           o.stun = Math.max(o.stun, 0.3); o.launched = false;
           if (a.t >= THROW.rel) { a.done = true; o.heldBy = null; this.toss(f, o, S); }
