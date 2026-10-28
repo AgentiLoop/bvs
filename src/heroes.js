@@ -1185,7 +1185,7 @@ const yawXZ = (v, a) => { const c = Math.cos(a), s = Math.sin(a), x = v.x; v.x =
 // (where the ankle really ended up last frame: a step starts from there), w (1 held .. 0 let go) }.
 const LOCK = { d: 0.15, rest: 0.015, max: 0.35, t: 0.16, h: 0.07, up: 0.12, ease: 0.08 };
 const _LK = new THREE.Vector3(), BALL = new THREE.Vector3(0, -0.074, 0.15), HEEL = new THREE.Vector3(0, -0.074, -0.058);
-function footLock(l, o, T, up, r, mode, dt) {
+function footLock(l, o, T, up, r, mode, dt, far) {
   const k = l.lk, planted = up < LOCK.up && r < 0.575;
   if (!mode) { l.lk = null; return; }
   if (!k) { if (mode === 2 && planted) l.lk = { x: T.x, z: T.z, y: 0, st: -1, fx: 0, fz: 0, len: 0, bx: null, bz: 0, ax: T.x, az: T.z, w: 1 }; return; }
@@ -1194,7 +1194,7 @@ function footLock(l, o, T, up, r, mode, dt) {
   const d = Math.hypot(T.x - k.x, T.z - k.z), busy = o.lk && o.lk.st >= 0;
   if (k.st < 0) {
     if (mode === 1 && d < LOCK.rest) { l.lk = null; return; }
-    if (d > (mode === 2 ? LOCK.d : LOCK.rest) && !busy) { k.fx = k.x = k.ax; k.fz = k.z = k.az; k.len = Math.hypot(T.x - k.x, T.z - k.z); k.st = 0; k.bx = null; }
+    if ((d > (mode === 2 ? LOCK.d : LOCK.rest) || far && d > 0.03) && !busy) { k.fx = k.x = k.ax; k.fz = k.z = k.az; k.len = Math.hypot(T.x - k.x, T.z - k.z); k.st = 0; k.bx = null; }
     else if (d > LOCK.max) {
       const m = (d - LOCK.max) / d, dx = (T.x - k.x) * m, dz = (T.z - k.z) * m;
       k.x += dx; k.z += dz; if (k.bx != null) { k.bx += dx; k.bz += dz; }
@@ -1225,7 +1225,24 @@ const toStep = (l, k) => {
   if (k && !l.lk) l.lk = { x: k.x, z: k.z, y: 0, st: -1, fx: 0, fz: 0, len: 0, bx: null, bz: 0, ax: l.ga ? l.ga.x : k.x, az: l.ga ? l.ga.z : k.z, w: 1 };
   l.gk = null;
 };
-function gaitLock(l, T, p, w, keep, yaw) {
+// A 90 s CPU fight held a planted foot 60-75 cm behind the hips on a straight knee: the thigh 40-62 deg behind the
+// pelvis (a real hip extends ~20-30) in hit reactions (the jolt leans the body further back than the pose, tipping
+// the pelvis) and at the end of long walking strides. thighBack: the thigh's angle behind the pelvis for an ankle at
+// T (hip->ankle line, less the knee's share when bent: it bends forward of that line). A planted foot's target is
+// pulled forward under the body to HIP_BACK[0]; a held foot (foot lock / gait lock) past HIP_BACK[1] steps, and one
+// that can't step yet (the other foot is mid-step) slides forward rather than past HIP_BACK[2].
+const HIP_BACK = [0.47, 0.52, 0.56], _hbv = new THREE.Vector3(), _hbH = new THREE.Vector3(), _hbQ = new THREE.Quaternion(), _hbF = new THREE.Vector3();
+function thighBack(l, x, y, z, qh) {
+  l.th.getWorldPosition(_hbH); _hbv.set(x - _hbH.x, y - _hbH.y, z - _hbH.z).applyQuaternion(qh);
+  return Math.atan2(-_hbv.z, -_hbv.y) - Math.acos(Math.min(1, _hbv.length() / 0.92));
+}
+function clampBack(l, T, qh, fwd, lim = HIP_BACK[0]) {
+  if (thighBack(l, T.x, T.y, T.z, qh) <= lim) return;
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 12; i++) { const m = (lo + hi) / 2; if (thighBack(l, T.x + fwd.x * m, T.y, T.z + fwd.z * m, qh) > lim) lo = m; else hi = m; }
+  T.x += fwd.x * hi; T.z += fwd.z * hi;
+}
+function gaitLock(l, T, p, w, keep, yaw, far) {
   let k = l.gk;
   if (!keep) {
     // walk over (gait faded): the foot is handed to the foot lock, which steps it back under the stance
@@ -1244,7 +1261,7 @@ function gaitLock(l, T, p, w, keep, yaw) {
     } else {
       k.sw = false; // (touches down where the swing's last frame left it)
       const d = Math.hypot(T.x - k.x, T.z - k.z);
-      if (d > GLOCK.max) { toStep(l, k); return; } // left far behind (the walker turned or reversed): a real step
+      if (d > GLOCK.max || far && d > 0.03) { toStep(l, k); return; } // left far behind (the walker turned or reversed, or past the hip's reach): a real step
       const a = wrapA(k.y - yaw);
       if (Math.abs(a) > GLOCK.yaw) k.y = yaw + Math.sign(a) * GLOCK.yaw;
     }
@@ -1731,6 +1748,7 @@ function posePass(H, s, t, ground, raise) {
   // Knees and boots aim from the pelvis (root turned back by ex), not the root: from the root they twisted the
   // thighs ex in the hip sockets.
   const q = -tq, qp = q + ex, qP = ex ? _qs1.copy(_qb).multiply(_qs2.setFromAxisAngle(_Y, -ex)) : _qb;
+  H.hips.getWorldQuaternion(_hbQ); _hbF.set(0, 0, 1).applyQuaternion(_hbQ).setY(0).normalize(); _hbQ.invert(); // (HIP_BACK)
   for (const [side, tg0, lift, dz, p] of [['L', s.lf, Math.max(0, cw), sw, 0], ['R', s.rf, Math.max(0, -cw), -sw, 0.5]]) {
     const l = H.legs[side];
     let tg = q ? [tg0[0] * Math.cos(q) + tg0[2] * Math.sin(q), tg0[1], tg0[2] * Math.cos(q) - tg0[0] * Math.sin(q)] : tg0;
@@ -1740,15 +1758,25 @@ function posePass(H, s, t, ground, raise) {
       _T.set(tg[0] + off * GAIT_A * g * gx, tg[1] + up * GAIT_LIFT * g, tg[2] + off * GAIT_A * g * gz);
     } else _T.set(tg[0], tg[1] + lift * 0.18 * g, tg[2] + dz * 0.32 * g);
     H.root.localToWorld(_T);
-    if (s.gph != null && s.lock != null) gaitLock(l, _T, s.gph / (Math.PI * 2) + p, s.lock === 1 && !l.lk ? blend(GLOCK.g[0], GLOCK.g[1], g) : 0, raise || s.again, s.yaw - ex);
+    if (_T.y - raise - ground < SOLE + LOCK.up) clampBack(l, _T, _hbQ, _hbF); // a planted foot no further behind than the hip extends
+    const fy = ground + SOLE + raise, gk0 = l.gk;
+    if (s.gph != null && s.lock != null) gaitLock(l, _T, s.gph / (Math.PI * 2) + p, s.lock === 1 && !l.lk ? blend(GLOCK.g[0], GLOCK.g[1], g) : 0, raise || s.again, s.yaw - ex,
+      gk0 && !gk0.sw && thighBack(l, gk0.x, fy, gk0.z, _hbQ) > HIP_BACK[1]);
+    if (l.gk && l.gk.sw) clampBack(l, _T, _hbQ, _hbF, HIP_BACK[1]); // (a foot swinging off from behind trailed further back as the body went on)
     const gk = s.lock != null && l.gk, qF = gk && gk.dy ? _qs3.setFromAxisAngle(_Y, gk.dy).multiply(qP) : qP;
     // foot lock (see LOCK): the planted foot stays on its floor spot, easing out of it as the foot rises; a step
     // lifts the whole boot (sl: the boot-corner pass below keeps it that far off the roof, toes included)
     let sl = gk ? gk.oy : 0, lw = 0;
     if (s.lock != null) {
       const up = Math.max(0, _T.y - raise - ground - SOLE);
-      if (!raise && !s.again) footLock(l, H.legs[side === 'L' ? 'R' : 'L'], _T, up, Math.hypot(tg0[0], tg0[2]), s.lock, s.dt || 0);
+      if (!raise && !s.again) footLock(l, H.legs[side === 'L' ? 'R' : 'L'], _T, up, Math.hypot(tg0[0], tg0[2]), s.lock, s.dt || 0,
+        !!l.lk && l.lk.st < 0 && thighBack(l, l.lk.ax, fy, l.lk.az, _hbQ) > HIP_BACK[1]);
       const k = l.lk;
+      if (k && k.st < 0 && k.w >= 1 && !raise && !s.again) {
+        _LK.set(k.ax, fy, k.az); clampBack(l, _LK, _hbQ, _hbF, HIP_BACK[2]); // (from where the ankle is: up on the ball it sits behind k)
+        const dx = _LK.x - k.ax, dz = _LK.z - k.az;
+        if (dx || dz) { k.x += dx; k.z += dz; if (k.bx != null) { k.bx += dx; k.bz += dz; } }
+      }
       if (k) {
         const w = k.w;
         _T.x += (k.x - _T.x) * w; _T.z += (k.z - _T.z) * w; sl = k.y * w; lw = w;
