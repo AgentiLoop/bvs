@@ -474,23 +474,34 @@ export function makeHero(kind) {
     line(fistG, [[s * 0.044, -0.045, 0.03], [s * 0.04, -0.072, 0.058], [s * 0.016, -0.084, 0.07],
       [-s * 0.008, -0.086, 0.068]], 0.0105, handMat);                         // thumb across the fingers
     oval(fistG, handMat, [-s * 0.008, -0.086, 0.068], [0.0105, 0.0105, 0.0105]); // rounded thumb tip
+    // Superman's bare hands get fingernails (Batman's are gloved): thin, slightly glossy plates proud of the skin by ~1 mm.
+    const nail = B ? null : mat(0xe9c2ab, 0.42);
+    if (nail) part(fistG, sphere, nail, [-s * 0.001, -0.0889, 0.0781], [0.0075, 0.0068, 0.0017], [0.357, 0, 0]); // thumbnail, facing out of the fist
     // Open hand for palm strikes, grips, claps and limp KO hands: a flat, boxy palm (thicker at the heel,
     // knuckle line slanting up to the pinky) with four three-jointed fingers and a three-segment thumb.
     const palmRows = [[-0.093, 0.001, 0.001, 0], [-0.089, 0.03, 0.011, 0], [-0.08, 0.042, 0.015, 0], [-0.045, 0.043, 0.017, 0.001],
       [-0.012, 0.04, 0.019, 0.002], [0.008, 0.033, 0.016, 0], [0.016, 0.001, 0.001, 0]];
+    // index (thumb side) .. pinky: x, knuckle height, length scale, radius
+    const FINGERS = [[0.0315, -0.084, 0.93, 0.0098], [0.0105, -0.087, 1, 0.0098], [-0.0105, -0.084, 0.96, 0.0092], [-0.0315, -0.077, 0.78, 0.0082]];
     const palmGeo = surface(palmRows, (p, a) => {
       const [rx, rz, off] = contour(palmRows, p.y), sq = (v) => Math.sign(v) * Math.abs(v) ** 0.6;
       p.x = rx * sq(Math.sin(a)); p.z = off + rz * sq(Math.cos(a));
       p.y += 0.008 * blend(0.0, 0.04, -s * p.x) * blend(-0.05, -0.08, p.y);  // pinky side of the knuckle line sits higher
+      // Knuckles: the four metacarpal heads stand out on the back of the hand just above each finger, along the
+      // slanted knuckle line; the smooth back of the open hand read as a mitten.
+      const kn = FINGERS.reduce((v, [x, y]) => v + bump(p.x, s * x, 0.0062) * bump(p.y, y + 0.007, 0.009), 0);
+      p.z -= 0.005 * kn * Math.max(0, -Math.cos(a));
       p.z += 0.004 * bump(p.y, -0.02, 0.02) * Math.max(0, Math.cos(a)) * (1 - blend(-0.01, 0.03, s * p.x)); // hypothenar heel
       return p;
-    }, 32, 32);
+    }, 48, 64);
     part(openG, palmGeo, handMat);
     oval(openG, handMat, [s * 0.028, -0.03, 0.012], [0.017, 0.03, 0.014]); // thenar pad
     const seg = (r, L) => new THREE.CapsuleGeometry(r, L, 4, 10).translate(0, -L / 2, 0);
+    // nails on the backs of the fingertips and the thumb: over the distal half of the last segment
+    const addNail = (parent, r, L, n) => nail && part(parent, sphere, nail, [n.x * r * 0.93, -L * 0.6, n.z * r * 0.93],
+      [r * 0.72, L * 0.42, 0.0017], [0, Math.atan2(n.x, n.z), 0]);
     const fingers = [];
-    // index (thumb side) .. pinky: x, knuckle height, length scale, radius
-    for (const [fx, fy, fl, fr] of [[0.0315, -0.084, 0.93, 0.0098], [0.0105, -0.087, 1, 0.0098], [-0.0105, -0.084, 0.96, 0.0092], [-0.0315, -0.077, 0.78, 0.0082]]) {
+    for (const [fx, fy, fl, fr] of FINGERS) {
       const L = [0.042, 0.027, 0.02].map(v => v * fl);
       const mcp = new THREE.Group(); mcp.position.set(s * fx, fy, 0); openG.add(mcp);
       part(mcp, seg(fr, L[0]), handMat);
@@ -498,10 +509,12 @@ export function makeHero(kind) {
       part(pip, seg(fr * 0.93, L[1]), handMat);
       const dip = new THREE.Group(); dip.position.y = -L[1]; pip.add(dip);
       part(dip, seg(fr * 0.86, L[2]), handMat);
+      addNail(dip, fr * 0.86, L[2], { x: 0, z: -1 });                      // back of the hand is -z
       const tip = new THREE.Object3D(); tip.position.y = -L[2]; dip.add(tip);
       fingers.push({ mcp, pip, dip, tip, spread: s * fx * 3.2 });
     }
     const thumbL = [0.036, 0.032, 0.026], thumb = [0.0118, 0.0106, 0.0096].map((r, k) => part(openG, seg(r, thumbL[k]), handMat));
+    addNail(thumb[2], 0.0096, thumbL[2], { x: s * 0.6, z: -0.8 });        // thumbnail faces out to the side and back
     const thumbTip = new THREE.Object3D(); openG.add(thumbTip);
     arms[side] = { sh, el, hand, s, grip: { fistG, openG, fingers, thumb, thumbL, thumbTip, tips: [thumbTip, ...fingers.map(f => f.tip)], o: -1 } };
 
