@@ -462,6 +462,10 @@ export function makeHero(kind) {
       p.z -= 0.007 * bump(p.y, -0.062, 0.005) * Math.max(0, cs) ** 2;            // fingertips tucked into the palm
       const ridge = knuckleX.reduce((v, b) => v + bump(p.x, b, 0.008), 0);
       p.z -= 0.006 * ridge * bump(p.y, -0.1, 0.011) * Math.max(0, -cs);          // knuckles on the back edge
+      // Second knuckle row: the middle-finger joints (PIP) bulge at the corner where the flat punch face turns
+      // into the palm side, one rounded knob per finger between the grooves.
+      const pip = knuckleX.reduce((v, b) => v + bump(p.x, b, 0.0075), 0) * bump(p.y, -0.107, 0.008) * Math.max(0, cs) ** 2;
+      p.z += 0.0025 * pip; p.y -= 0.0025 * pip;
       p.y += 0.006 * blend(0.0, 0.045, -s * p.x) * fingers;                      // pinky side shorter than the index side
       return p;
     }, 48, 48);
