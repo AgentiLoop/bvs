@@ -8,6 +8,9 @@ import { groundAt } from './world.js';
 
 const NUM = ['h', 'lean', 'roll', 'pitch', 'gait', 'tw', 'lo', 'ro', 'lw', 'rw']; // lo/ro hand open 0 fist..1 flat, lw/rw wrist (heroes.js)
 const ARR = ['lh', 'rh', 'lf', 'rf'];
+// Hand open / close speed cap (per s): the pose spring's first frame moved openness by up to 0.35, so a hand
+// snapped from flat to a hooked grip in one frame (fingertips 9 cm); now flat -> fist takes ~0.08 s.
+const HAND_RATE = 12;
 const ARENA = { x0: -6.5, x1: 6.5, z0: -2.2, z1: 3.0 };
 const BLOCK = { lean: 0.3, lh: [0.1, 0.66, 0.28], rh: [-0.1, 0.64, 0.26] };
 const ENTER_END = 3.4, GRAV = 14;
@@ -1915,8 +1918,11 @@ export class Game {
     for (const f of this.gripOf(this.F.bat, this.F.sup) ? [this.F.sup, this.F.bat] : [this.F.bat, this.F.sup]) {
       const o = f === this.F.bat ? this.F.sup : this.F.bat;
       const k = dt ? 1 - Math.exp(-dt * (f.act || f.stun > 0 ? 26 : 16)) : 1;
-      const tg = this.target(f), c = f.cur;
-      for (const n of NUM) c[n] += (tg[n] - c[n]) * k;
+      const tg = this.target(f), c = f.cur, gr = this.gripOf(f, o);
+      for (const n of NUM) {
+        const d = (tg[n] - c[n]) * k;
+        c[n] += dt && !gr && (n === 'lo' || n === 'ro') ? clamp(d, -HAND_RATE * dt, HAND_RATE * dt) : d; // (a gripping hand's fingers follow the body: heroes.js wrapFingers)
+      }
       for (const n of ARR) c[n] = c[n].map((v, j) => v + (tg[n][j] - v) * k);
       // eyes on the opponent: the head turns against body twist and looks up at airborne foes
       let hy = 0, hx = 0;
@@ -1947,7 +1953,6 @@ export class Game {
       const base = tg.base ?? f.y;
       // grip: the hands close on the held opponent (heroes.js s.hold), easing in and out: his torso in throws,
       // the back of his head in Batman's fatal-blow clinch, his throat (left hand) in Superman's
-      const gr = this.gripOf(f, o);
       if (gr) f.holdAt = gr;
       f.holdW = (f.holdW || 0) + ((gr ? 1 : 0) - (f.holdW || 0)) * (dt ? 1 - Math.exp(-dt * 30) : 1);
       if (f.holdW > 0.01) { s.hold = o.H; s.holdW = f.holdW; s.holdAt = f.holdAt.at; s.holdSide = f.holdAt.side; }

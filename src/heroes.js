@@ -735,6 +735,8 @@ function gaitStep(p) {
   return [-1 + 2 * u * u * (3 - 2 * u), Math.sin(Math.PI * u)];
 }
 export function applyPose(H, s, t, ground = 0) {
+  // last frame's grip curls (relaxFingers eases from them once the grip lets go)
+  for (const side of ['L', 'R']) { const g = H.arms[side].grip; if (g) g.pk = g.wk ? g.wk.slice() : null; }
   posePass(H, s, t, ground, 0);
   // Knees, elbows and fists used to go up to 5 cm through the roof (Superman's landing kneel, Batman lying
   // down). Lift the body by the deepest contact deficit and re-solve with the feet held where they were.
@@ -901,6 +903,23 @@ function fingerPoint(g, f, j, out) {
   if (j > 1) _gm.multiply(f.pip.updateMatrix() ?? f.pip.matrix);
   if (j > 2) _gm.multiply(f.dip.updateMatrix() ?? f.dip.matrix);
   return out.copy(j === 1 ? f.pip.position : j === 2 ? f.dip.position : f.tip.position).applyMatrix4(_gm);
+}
+// Grip let go: the fingers used to snap from their wrapped curl straight back to the pose's in one frame.
+// They return at RELAX per frame instead (g.wk stays set until they get there).
+const RELAX = 0.1;
+function relaxFingers(a, o) {
+  const g = a.grip; if (!g.openG.visible) return;
+  const c = 1 - o, wk = [], go = (pk, k) => pk + Math.max(-RELAX, Math.min(RELAX, k - pk));
+  let left = false;
+  g.fingers.forEach((f, i) => {
+    const k0 = Math.min(1, c + CASCADE[i] * c * (1 - c)), k = go(g.pk[i] ?? k0, k0);
+    if (Math.abs(k - k0) > 1e-3) left = true;
+    wk[i] = k; bendFinger(f, k, o);
+  });
+  wk[4] = go(g.pk[4] ?? c, c); if (Math.abs(wk[4] - c) > 1e-3) left = true;
+  bendThumb(a, wk[4]);
+  g.wk = left ? wk : null;
+  g.o = -1;
 }
 function wrapFingers(a, O, o, hw) {
   const g = a.grip; if (!g || !g.openG.visible) return 0;
@@ -1075,6 +1094,7 @@ function posePass(H, s, t, ground, raise) {
       orientHand(a, _qb, w, gP, hw);
     }
     if (gp) gp.wk = gP ? gp.wk || [] : null; // per-finger eased grip curls (wrapFingers)
+    if (gp && !gP && gp.pk) relaxFingers(a, Math.max(0, Math.min(1, open || 0)));
     // fingers wrap the held body; backed off it while a finger, the thumb or the palm still cannot clear it
     for (let it = 0, d; gP && it < 3 && (d = wrapFingers(a, O, Math.max(0, Math.min(1, open || 0)), hw)) > 0.002; it++) {
       _T.addScaledVector(_gN, d + 0.002);
