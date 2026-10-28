@@ -299,13 +299,30 @@ export function makeHero(kind) {
   torsoGeo.addGroup(0, neckRing * 96 * 6, 0);
   torsoGeo.addGroup(neckRing * 96 * 6, (96 - neckRing) * 96 * 6, 1);
   skinSurface(hips, torsoGeo, [suit, B ? dark : skin], torsoWeights);
-  const emblemGeo = new THREE.PlaneGeometry(B ? 0.29 : 0.4, B ? 0.145 : 0.3, 32, 24); // Superman: big chest-spanning shield
-  const ep = emblemGeo.attributes.position;
-  for (let i = 0; i < ep.count; i++) {
-    const x = ep.getX(i), y = ep.getY(i) + (B ? 0.565 : 0.545);
-    ep.setXYZ(i, x, y, chestDepth(x, y) + 0.0025);
+  // Chest emblem (Superman: big chest-spanning shield). It is a copy of the torso's own front triangles lifted 2.5 mm, not a
+  // separate grid sampling chestDepth: a finer grid's chords dipped under the torso's coarser ones across the sternum
+  // groove, so the suit cut a vertical scar down the middle of both insignias.
+  const [ew, eh, ey] = B ? [0.29, 0.145, 0.565] : [0.4, 0.3, 0.545];
+  const tp = torsoGeo.attributes.position, tn = torsoGeo.attributes.normal, ti = torsoGeo.index.array;
+  const inRect = (i) => tp.getZ(i) > 0 && Math.abs(tp.getX(i)) < ew / 2 + 0.03 && Math.abs(tp.getY(i) - ey) < eh / 2 + 0.03;
+  const remap = new Map(), epos = [], enor = [], euv = [], eidx = [];
+  for (let k = 0; k < ti.length; k += 3) {
+    if (!inRect(ti[k]) || !inRect(ti[k + 1]) || !inRect(ti[k + 2])) continue;
+    for (let j = 0; j < 3; j++) {
+      const i = ti[k + j];
+      if (!remap.has(i)) {
+        remap.set(i, epos.length / 3);
+        epos.push(tp.getX(i), tp.getY(i), tp.getZ(i) + 0.0025); enor.push(tn.getX(i), tn.getY(i), tn.getZ(i));
+        euv.push(tp.getX(i) / ew + 0.5, (tp.getY(i) - ey) / eh + 0.5); // outside 0..1 clamps to the canvas's empty border
+      }
+      eidx.push(remap.get(i));
+    }
   }
-  emblemGeo.computeVertexNormals();
+  const emblemGeo = new THREE.BufferGeometry();
+  emblemGeo.setAttribute('position', new THREE.Float32BufferAttribute(epos, 3));
+  emblemGeo.setAttribute('normal', new THREE.Float32BufferAttribute(enor, 3));
+  emblemGeo.setAttribute('uv', new THREE.Float32BufferAttribute(euv, 2));
+  emblemGeo.setIndex(eidx); emblemGeo.userData.decal = true;
   skinSurface(hips, emblemGeo, new THREE.MeshStandardMaterial({ map: emblemTexture(B ? 'bat' : 's'), alphaTest: 0.3, roughness: 0.75 }), torsoWeights);
 
   // Trunks are skinned: the leg openings follow the thighs (weights fade in below the belt), so a
@@ -897,7 +914,7 @@ export function makeHero(kind) {
   for (const m of inked) {
     const g = m.geometry;
     if (!g.boundingSphere) g.computeBoundingSphere();
-    if (!g.attributes.normal || g.type === 'PlaneGeometry' || g.boundingSphere.radius * Math.max(...m.scale.toArray()) < 0.05) continue;
+    if (!g.attributes.normal || g.type === 'PlaneGeometry' || g.userData.decal || g.boundingSphere.radius * Math.max(...m.scale.toArray()) < 0.05) continue;
     // Average normals over coincident vertices (UV seams, poles) so the pushed-out hull stays closed
     // instead of tearing open into cracks along seams.
     const og = g.clone(), P = og.attributes.position, N = og.attributes.normal, acc = new Map();
