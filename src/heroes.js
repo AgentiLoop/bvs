@@ -1518,7 +1518,7 @@ function posePass(H, s, t, ground, raise) {
   H.root.getWorldQuaternion(_qb);
   for (const [side, tg, , , dz] of limbs) {
     const a = H.arms[side];
-    _T.set(tg[0], tg[1], tg[2] + dz); H.root.localToWorld(_T);
+    _T.set(tg[0], tg[1] + Math.min(0, dz), tg[2] + dz); H.root.localToWorld(_T);
     if (_T.y > ground - 0.6) _T.y = Math.max(_T.y, ground + 0.07); // fists rest on the roof, not in it
     pushOutOfTorso(H, _T, 0.065); // fists stay in front of / beside the chest, not sunk inside it
     const up = blend(0.6, 1.0, tg[1]); // fist raised above the shoulder: the elbow drops under it instead of flaring up and back
