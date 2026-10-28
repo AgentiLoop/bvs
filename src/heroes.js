@@ -150,6 +150,9 @@ function contour(rows, y) {
 }
 const bump = (x, center, width) => Math.exp(-(((x - center) / width) ** 2));
 const blend = (a, b, x) => THREE.MathUtils.smoothstep(x, a, b);
+// Hip-crease corrective: how deep (d) the thigh's root compresses around thigh-local height y (width w), fading in
+// as the thigh swings a0..a1 rad away from hanging straight down in the hips' frame.
+const CREASE = { d: 0.045, y: -0.17, w: 0.11, a0: 1.0, a1: 1.6, k: 1, ki: 0.8 };
 
 function surface(rows, sculpt = (p) => p, rings = 64, sides = 48) {
   const positions = [], uv = [], indices = [];
@@ -584,6 +587,32 @@ export function makeHero(kind) {
       return p;
     }, 112, 40);
     legGeo.userData.limb = true;
+    // Hip-crease correctives: lifting the knee (front kicks, chambers, knees) or swinging it out (roundhouse)
+    // rolled the bulked thigh's root up through the front / side of the trunks (blue suit up to 4 cm over the
+    // red, as far up as the belt). Morph targets compress the thigh's root on the side that folds against the
+    // body (front, outer, inner), the way the quads bunch into the crease; applyPose drives them from the
+    // thigh's angle to the hips (0 while the leg hangs or walks, so the standing sculpt is unchanged).
+    {
+      const P0 = legGeo.attributes.position, U = legGeo.attributes.uv, n = P0.count;
+      const dF = new Float32Array(n * 3), dO = new Float32Array(n * 3), dI = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const a = U.getX(i) * Math.PI * 2, c = CREASE.d * bump(P0.getY(i), CREASE.y, CREASE.w);
+        dF[i * 3 + 2] = -c * Math.max(0, Math.cos(a)) ** 2;
+        dO[i * 3] = -s * c * Math.max(0, s * Math.sin(a)) ** 2;
+        dI[i * 3] = s * c * Math.max(0, -s * Math.sin(a)) ** 2;
+      }
+      const nrm = d => { // normal deltas so the compressed crease shades as a fold
+        const g = legGeo.clone(), p = g.attributes.position.array;
+        for (let k = 0; k < p.length; k++) p[k] += d[k];
+        g.computeVertexNormals();
+        const N0 = legGeo.attributes.normal.array;
+        return new THREE.Float32BufferAttribute(g.attributes.normal.array.map((x, k) => x - N0[k]), 3);
+      };
+      legGeo.morphAttributes.position = [dF, dO, dI].map(d => new THREE.Float32BufferAttribute(d, 3));
+      legGeo.morphAttributes.normal = [dF, dO, dI].map(nrm);
+      legGeo.morphTargetsRelative = true;
+      legGeo.userData.leg = side;
+    }
     legGeo.clearGroups();
     const bootRing = Math.floor((-0.6 + 0.94) / 1.03 * 112);
     legGeo.addGroup(0, bootRing * 40 * 6, 1);
@@ -606,7 +635,7 @@ export function makeHero(kind) {
     p => { p.z = Math.min(p.z, 0.074); return p; }, 48, 32);
     footGeo.rotateX(Math.PI / 2);
     footGeo.computeVertexNormals(); part(an, footGeo, boot);
-    legs[side] = { th, kn, an, s };
+    legs[side] = { th, kn, an, s, crease: [] };
   }
   root.updateMatrixWorld(true);
   const bones = [];
@@ -625,6 +654,7 @@ export function makeHero(kind) {
     mesh.castShadow = mesh.receiveShadow = true;
     mesh.frustumCulled = false;
     root.add(mesh); mesh.bind(skeleton);
+    if (geometry.userData.leg) legs[geometry.userData.leg].crease.push(mesh);
   }
   // Comic-book ink outline: an inverted hull pushed out along the (skinned) normal, so it bends with
   // the body. Tiny details (eyes, mouth, brows) are skipped so they don't turn into black blobs.
@@ -668,6 +698,7 @@ export function makeHero(kind) {
     o.frustumCulled = false;
     if (m.isSkinnedMesh) { root.add(o); o.bind(m.skeleton, m.bindMatrix); }
     else { o.position.copy(m.position); o.quaternion.copy(m.quaternion); o.scale.copy(m.scale); m.parent.add(o); }
+    if (g.userData.leg) legs[g.userData.leg].crease.push(o); // the outline follows the crease too
   }
   // Torso cross-section [halfWidth, halfDepth] at a hips-space height, for cloth collision.
   const torsoSection = (y) => contour(torsoRows, y);
@@ -785,6 +816,17 @@ export function applyPose(H, s, t, ground = 0) {
     if (_P.y > ground - 0.6) deficit = Math.max(deficit, ground + r - _P.y);
   }
   if (deficit > 0.002) posePass(H, s, t, ground, deficit);
+  // Hip-crease correctives, from each thigh's direction in the hips' frame: lifted forward -> front (deeper past
+  // 90 deg, where the thigh folds onto the belly, which also folds the inner side), out -> outer, across -> inner.
+  H.hips.getWorldQuaternion(_qa).invert();
+  for (const side of ['L', 'R']) {
+    const l = H.legs[side];
+    l.kn.getWorldPosition(_A); l.th.getWorldPosition(_B); _A.sub(_B).applyQuaternion(_qa).normalize();
+    const ang = Math.acos(Math.max(-1, Math.min(1, -_A.y))), lift = blend(CREASE.a0, CREASE.a1, ang), r = Math.hypot(_A.x, _A.z) || 1;
+    const deep = blend(CREASE.a1, 2.4, ang), f = lift * (1 + CREASE.k * deep) * Math.max(0, _A.z) / r, o = lift * Math.max(0, l.s * _A.x) / r;
+    const inn = lift * Math.max(deep * CREASE.ki, Math.max(0, -l.s * _A.x) / r);
+    for (const m of l.crease) { const w = m.morphTargetInfluences; w[0] = f; w[1] = o; w[2] = inn; }
+  }
 }
 // Knee pole into _P (world), from the root-local hip->foot direction in the sagittal plane: (vy, vz) -> (vz, -vy)
 // maps straight down to straight forward, a horizontal forward leg to straight up, a high kick to up-and-back.
