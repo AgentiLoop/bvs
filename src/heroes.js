@@ -232,9 +232,26 @@ export function makeHero(kind) {
     const clavicle = 0.011 * bump(y, 0.663 - Math.abs(x) * 0.10, 0.013) * bump(Math.abs(x), 0.12, 0.10);
     return base + pec + abs + sternum + clavicle + lineaAlba;
   };
+  // Back: the back was a plain ellipse behind a scapula bulge (deepest at the midline at every height). A hero's
+  // back reads as two erector spinae columns either side of a sunken spine groove, rising out of the belt and
+  // fading up between the shoulder blades; the lats thicken the back's outer corners from the armpit down and
+  // in toward the lumbar; the mid / lower trapezius is a low diamond over the upper spine.
+  const backDepth = (x, y, a) => {
+    const ax = Math.abs(x), c = -Math.cos(a);
+    const scap = 0.017 * bump(ax, 0.11, 0.06) * bump(y, 0.56, 0.12) * c;
+    const erector = 0.012 * bump(ax, 0.034 + 0.03 * blend(0.2, 0.5, y), 0.021) * blend(0.08, 0.18, y) * (1 - blend(0.28, 0.52, y));
+    // lumbar curve: the small of the back sinks in above the belt, so the columns stand in a hollow and the glutes
+    // still swell out below it in profile (the columns alone filled the curve in by 1 cm)
+    const lumbar = -0.011 * bump(y, 0.21, 0.08) * c;
+    const groove = -0.005 * bump(ax, 0, 0.011) * blend(0.05, 0.12, y) * (1 - blend(0.62, 0.7, y));
+    const trap = 0.005 * bump(ax, 0, 0.05 + 0.06 * blend(0.45, 0.62, y)) * bump(y, 0.56, 0.08);
+    const xl = 0.08 + 0.13 * blend(0.1, 0.5, y); // the lat's outer edge sweeps out from the waist to the armpit
+    const lat = 0.012 * bump(ax, xl - 0.035, 0.045) * bump(y, 0.38, 0.13) * blend(0.2, 0.6, c);
+    return scap + lumbar + (erector + groove + trap) * blend(0.6, 0.9, c) + lat;
+  };
   const torsoGeo = surface(torsoRows, (p, a) => {
     if (Math.cos(a) > 0) p.z = chestDepth(p.x, p.y);
-    else p.z -= 0.017 * bump(Math.abs(p.x), 0.11, 0.06) * bump(p.y, 0.56, 0.12) * -Math.cos(a);
+    else p.z -= backDepth(p.x, p.y, a);
     return p;
   }, 96);
   const torsoWeights = (p) => {
