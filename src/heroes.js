@@ -1190,7 +1190,23 @@ function gaitStep(p) {
 // of mass against it (at most WS.max), and back once both feet are down. Held feet keep their targets; the kick goes along.
 const WS = { k: 14, max: 0.25, air: [0.02, 0.06] }, _wsP = new THREE.Vector3(), _wsQ = new THREE.Vector3(), _wsC = new THREE.Vector3();
 let _wsx = 0, _wsz = 0;
+const _cmP = new THREE.Vector3();
 const WS_M = [['head', 0.081], ['hips', 0.142], ['chest', 0.216]];
+// whole-body centre of mass (segment masses as a share of the body) into c, from the bones as last posed
+function comOf(H, c) {
+  c.set(0, 0, 0); let m = 0;
+  const add = (p, q) => { c.addScaledVector(p, q); m += q; };
+  for (const [j, q] of WS_M) add(H[j].getWorldPosition(_wsP), q);
+  add(H.hips.getWorldPosition(_wsP).add(H.chest.getWorldPosition(_wsQ)).multiplyScalar(0.5), 0.139);
+  for (const sd of ['L', 'R']) {
+    const a = H.arms[sd], g = H.legs[sd];
+    add(a.sh.getWorldPosition(_wsP).add(a.el.getWorldPosition(_wsQ)).multiplyScalar(0.5), 0.028);
+    add(a.el.getWorldPosition(_wsP).add(a.hand.getWorldPosition(_wsQ)).multiplyScalar(0.5), 0.022);
+    add(g.th.getWorldPosition(_wsP).add(g.kn.getWorldPosition(_wsQ)).multiplyScalar(0.5), 0.1);
+    add(g.kn.getWorldPosition(_wsP).add(g.an.getWorldPosition(_wsQ)).multiplyScalar(0.5), 0.061);
+  }
+  return c.multiplyScalar(1 / m);
+}
 function weightShift(H, s) {
   const o = H.ws ||= { x: 0, z: 0 };
   if (s.again) return;
@@ -1203,19 +1219,8 @@ function weightShift(H, s) {
       if (!k || k.st >= 0 || k.w < 1 || f.lk && f.lk.w >= 1 && !(f.wsk && f.lk.st >= 0) || f.gk || f.gy == null) continue;
       const w = blend(WS.air[0], WS.air[1], f.gy);
       if (w <= 0) continue;
-      // last frame's centre of mass (segment masses as a share of the body) and the standing boot's middle
-      _wsC.set(0, 0, 0); let m = 0;
-      const add = (p, q) => { _wsC.addScaledVector(p, q); m += q; };
-      for (const [j, q] of WS_M) add(H[j].getWorldPosition(_wsP), q);
-      add(H.hips.getWorldPosition(_wsP).add(H.chest.getWorldPosition(_wsQ)).multiplyScalar(0.5), 0.139);
-      for (const sd of ['L', 'R']) {
-        const a = H.arms[sd], g = H.legs[sd];
-        add(a.sh.getWorldPosition(_wsP).add(a.el.getWorldPosition(_wsQ)).multiplyScalar(0.5), 0.028);
-        add(a.el.getWorldPosition(_wsP).add(a.hand.getWorldPosition(_wsQ)).multiplyScalar(0.5), 0.022);
-        add(g.th.getWorldPosition(_wsP).add(g.kn.getWorldPosition(_wsQ)).multiplyScalar(0.5), 0.1);
-        add(g.kn.getWorldPosition(_wsP).add(g.an.getWorldPosition(_wsQ)).multiplyScalar(0.5), 0.061);
-      }
-      _wsC.multiplyScalar(1 / m);
+      // last frame's centre of mass and the standing boot's middle
+      comOf(H, _wsC);
       _wsP.copy(BALL); l.an.localToWorld(_wsP); _wsQ.copy(HEEL); l.an.localToWorld(_wsQ); _wsP.add(_wsQ).multiplyScalar(0.5);
       tx = (o.x + _wsP.x - _wsC.x) * w; tz = (o.z + _wsP.z - _wsC.z) * w;
       const n = Math.hypot(tx, tz); if (n > WS.max) { tx *= WS.max / n; tz *= WS.max / n; }
@@ -1230,6 +1235,8 @@ export function applyPose(H, s, t, ground = 0) {
   // (s.again: the game re-poses a fighter in the same frame; keep this frame's starting curls)
   if (!s.again) for (const side of ['L', 'R']) { const g = H.arms[side].grip; if (g) { g.pk = g.wk ? g.wk.slice() : null; g.ph = g.hw; g.hw = 0; } }
   _limp = Math.max(0, Math.min(1, s.limp || 0)); _floor = ground;
+  // (last frame's centre of mass against the root, for footLock: H.cm)
+  if (s.lock === 2 && !s.again && H.ws) { comOf(H, _cmP); (H.cm ||= { x: 0, z: 0 }).x = _cmP.x - H.root.position.x; H.cm.z = _cmP.z - H.root.position.z; } else if (!s.again) H.cm = null;
   if (s.lock != null) { weightShift(H, s); _wsx = H.ws.x; _wsz = H.ws.z; } else _wsx = _wsz = 0;
   posePass(H, s, t, ground, 0);
   // Knees, elbows and fists used to go up to 5 cm through the roof (Superman's landing kneel, Batman lying
@@ -1271,9 +1278,9 @@ const yawXZ = (v, a) => { const c = Math.cos(a), s = Math.sin(a), x = v.x; v.x =
 // l.lk = { x, z (world), y (step lift), st (step progress, -1 planted), fx, fz, len (step start / length), bx, bz (ball
 // of the foot, world: a planted foot up on its toes pivots on it as the body turns, instead of on the ankle), ax, az
 // (where the ankle really ended up last frame: a step starts from there), w (1 held .. 0 let go) }.
-const LOCK = { d: 0.15, rest: 0.015, max: 0.35, t: 0.16, tq: 0.08, h: 0.07, up: 0.12, ease: 0.08, air: 0.03 };
+const LOCK = { d: 0.15, rest: 0.015, max: 0.35, t: 0.16, tq: 0.08, h: 0.07, up: 0.12, ease: 0.08, air: 0.03, bal: 0.3, toe: 0.15 };
 const _LK = new THREE.Vector3(), BALL = new THREE.Vector3(0, -0.074, 0.15), HEEL = new THREE.Vector3(0, -0.074, -0.058);
-function footLock(l, o, T, up, r, mode, dt, far) {
+function footLock(l, o, T, up, r, mode, dt, far, c) {
   const k = l.lk, planted = up < LOCK.up && r < 0.575;
   if (!mode) { l.lk = null; return; }
   if (!k) { if (mode === 2 && planted) l.lk = { x: T.x, z: T.z, y: 0, st: -1, fx: 0, fz: 0, len: 0, bx: null, bz: 0, ax: T.x, az: T.z, w: 1 }; return; }
@@ -1286,9 +1293,19 @@ function footLock(l, o, T, up, r, mode, dt, far) {
   // most LOCK.t long and no shorter than LOCK.tq: a step started late in the other's stance left both feet up 3-9 cm.
   const og = o.gk && !o.gk.sw && o.gk.pr > 0 ? (GAIT_D - o.gk.p) / o.gk.pr * dt : Infinity;
   const d = Math.hypot(T.x - k.x, T.z - k.z), busy = (o.lk ? o.lk.st >= 0 || o.lk.w < 1 : mode === 2) || !!o.gk && o.gk.sw || o.gy > LOCK.air || og < LOCK.tq;
+  // (loaded: in a strike the body's weight is over this foot and the other planted one is more than LOCK.bal from the
+  // centre of mass. The cross / hook / uppercut lunge carried the body over the lead foot, which then stepped on
+  // ahead and left the fighter on his rear toes with the centre of mass 50-58 cm in front of them for 0.1 s. The
+  // unloaded rear foot steps up instead, and the lead foot only once the weight is between the feet. A body already
+  // falling past this foot (COM beyond its toes, LOCK.toe: a stun pushback) still takes the catch step.)
+  let loaded = false;
+  if (mode === 2 && c && o.lk && o.lk.st < 0 && o.lk.w >= 1) {
+    const ux = k.ax - o.lk.ax, uz = k.az - o.lk.az, L = Math.hypot(ux, uz) || 1, cx = c.x - o.lk.ax, cz = c.z - o.lk.az;
+    loaded = Math.hypot(cx, cz) > LOCK.bal && Math.hypot(c.x - k.ax, c.z - k.az) < Math.hypot(cx, cz) && (cx * ux + cz * uz) / L < L + LOCK.toe;
+  }
   if (k.st < 0) {
     if (mode === 1 && d < LOCK.rest) { l.lk = null; return; }
-    if ((d > (mode === 2 ? LOCK.d : LOCK.rest) || far && d > 0.03) && !busy) { k.fx = k.x = k.ax; k.fz = k.z = k.az; k.len = Math.hypot(T.x - k.x, T.z - k.z); k.st = 0; k.bx = null; k.dur = Math.min(LOCK.t, og); }
+    if ((d > (mode === 2 ? LOCK.d : LOCK.rest) || far && d > 0.03) && !busy && !loaded) { k.fx = k.x = k.ax; k.fz = k.z = k.az; k.len = Math.hypot(T.x - k.x, T.z - k.z); k.st = 0; k.bx = null; k.dur = Math.min(LOCK.t, og); }
     else if (d > LOCK.max) {
       const m = (d - LOCK.max) / d, dx = (T.x - k.x) * m, dz = (T.z - k.z) * m;
       k.x += dx; k.z += dz; if (k.bx != null) { k.bx += dx; k.bz += dz; }
@@ -1923,7 +1940,7 @@ function posePass(H, s, t, ground, raise) {
     if (s.lock != null) {
       const up = Math.max(0, _T.y - raise - ground - SOLE);
       if (!raise && !s.again) footLock(l, H.legs[side === 'L' ? 'R' : 'L'], _T, up, Math.hypot(tg0[0], tg0[2]), s.lock, s.dt || 0,
-        !!l.lk && l.lk.st < 0 && thighBack(l, l.lk.ax, fy, l.lk.az, _hbQ) > HIP_BACK[1]);
+        !!l.lk && l.lk.st < 0 && thighBack(l, l.lk.ax, fy, l.lk.az, _hbQ) > HIP_BACK[1], H.cm && _cmP.set(H.root.position.x + H.cm.x, 0, H.root.position.z + H.cm.z));
       const k = l.lk;
       if (k && k.st < 0 && k.w >= 1 && !raise && !s.again) {
         _LK.set(k.ax, fy, k.az); clampBack(l, _LK, _hbQ, _hbF, HIP_BACK[2]); // (from where the ankle is: up on the ball it sits behind k)
