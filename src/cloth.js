@@ -10,8 +10,8 @@ const COLLIDERS = [
 ];
 // Capsules (joint -> joint) keep the cloth out of the legs and upper arms.
 const CAPSULES = [
-  ['legs', 'L', 'th', 'kn', 0.12], ['legs', 'L', 'kn', 'an', 0.09],
-  ['legs', 'R', 'th', 'kn', 0.12], ['legs', 'R', 'kn', 'an', 0.09],
+  ['legs', 'L', 'th', 'kn', 0.13], ['legs', 'L', 'kn', 'an', 0.1],
+  ['legs', 'R', 'th', 'kn', 0.13], ['legs', 'R', 'kn', 'an', 0.1],
   ['arms', 'L', 'sh', 'el', 0.1], ['arms', 'R', 'sh', 'el', 0.1],
 ];
 const _a = new THREE.Vector3(), _b = new THREE.Vector3();
@@ -243,7 +243,7 @@ export class Cape {
     // The same for the limbs (torso push-out runs last so it wins near the shoulders): between sim points the surface could dip up to ~4 cm into a thigh or shin.
     for (const c of this.capsules) {
       c.a.getWorldPosition(c.p); c.b.getWorldPosition(c.q); _b.subVectors(c.q, c.p);
-      const L2 = _b.lengthSq() || 1e-9, r = c.r * 0.85;
+      const L2 = _b.lengthSq() || 1e-9, r = c.r;
       for (let o = RC * 3; o < R.length; o += 3) {
         _v.set(R[o], R[o + 1], R[o + 2]);
         const u = Math.min(1, Math.max(0, _a.subVectors(_v, c.p).dot(_b) / L2));

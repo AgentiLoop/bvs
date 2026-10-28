@@ -524,9 +524,9 @@ export function makeHero(kind) {
     // Athletic leg: thick thigh tapering hard into a narrow knee, a high calf peak set to the back,
     // and a slim ankle. The [y, rx, rz, zOffset] offset pushes the calf behind the shin.
     // Hero legs: the mid-thigh and calf get extra mass on top of the athletic base. Superman is
-    // drawn as a powerhouse (full weight), Batman as a leaner athlete (60%). The hip line (trunks)
+    // drawn as a powerhouse (full weight), Batman as a leaner athlete (80%). The hip line (trunks)
     // and the knee / ankle stay as they were so the joints keep reading narrow.
-    const bulk = B ? 0.6 : 1;
+    const bulk = B ? 0.8 : 1;
     const legRows = [[-0.94, 0.033, 0.036, 0.004], [-0.87, 0.036, 0.04, 0.0], [-0.78, 0.05, 0.056, -0.01],
       [-0.68, 0.063, 0.068, -0.016], [-0.59, 0.06, 0.06, -0.01], [-0.5, 0.05, 0.05, 0.002],
       [-0.44, 0.054, 0.056, 0.006], [-0.34, 0.074, 0.078, 0.006], [-0.2, 0.092, 0.094, 0.002],
@@ -549,6 +549,19 @@ export function makeHero(kind) {
       const back = Math.max(0, -Math.cos(a)) ** 1.5;
       p.z -= bulk * 0.006 * back * (bump(p.y, -0.66, 0.05) * Math.max(0, -s * Math.sin(a)) + bump(p.y, -0.63, 0.04) * Math.max(0, s * Math.sin(a)));
       p.z += 0.005 * bump(p.y, -0.49, 0.02) * Math.max(0, Math.cos(a)) ** 4; // kneecap
+      // Neo-hero legs carry the upper body: thighs ~1.25x and calves ~0.9x the biceps' girth (were 1.0x / 0.75x,
+      // "skipped leg day"). The inner thighs already meet at the midline, so the mass goes where real legs carry
+      // it: the vastus lateralis sweeps out past the hip line, the quads push forward, the hamstrings round out
+      // the back, and both gastrocnemius heads flare out of the boot.
+      const out = Math.max(0, s * Math.sin(a)), inn = Math.max(0, -s * Math.sin(a)), fr = Math.max(0, Math.cos(a)), bk = Math.max(0, -Math.cos(a));
+      p.x += s * bulk * 0.036 * bump(p.y, -0.27, 0.085) * out ** 1.2;     // outer quad sweep
+      p.z += bulk * 0.032 * bump(p.y, -0.25, 0.09) * fr ** 1.5;         // quads
+      p.z -= bulk * 0.028 * bump(p.y, -0.28, 0.09) * bk ** 1.5;         // hamstrings
+      p.x -= s * bulk * 0.007 * bump(p.y, -0.34, 0.04) * inn ** 1.5;    // adductors / vastus medialis, where the thighs part
+      p.x += s * bulk * 0.017 * bump(p.y, -0.67, 0.06) * out ** 1.5;    // outer calf head
+      p.x -= s * bulk * 0.018 * bump(p.y, -0.7, 0.06) * inn ** 1.5;     // inner calf head, lower and fuller
+      p.z -= bulk * 0.018 * bump(p.y, -0.68, 0.06) * bk ** 1.5;         // calf peak
+      p.z += bulk * 0.004 * bump(p.y, -0.68, 0.08) * fr ** 2;           // tibialis
       // Boot cuff: a slight flared lip just below the boot top so the boot reads as a real boot, not paint.
       const cuff = 1 + 0.07 * bump(p.y, -0.612, 0.011);
       p.x *= cuff; p.z *= cuff;
