@@ -1316,8 +1316,10 @@ function footLock(l, o, T, up, r, mode, dt, far) {
 const _ruQ = new THREE.Quaternion(), _ruV = new THREE.Vector3();
 const GLOCK = { g: [0.01, 0.05], max: 0.3, h: 0.06, yaw: 0.6 };
 const wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+// (from the spot the gait last put the foot (ox / oz), not its held spot: with the gait fading out those differ and
+// the foot snapped back 10-15 cm when the walk stopped)
 const toStep = (l, k) => {
-  if (k && !l.lk) l.lk = { x: k.x, z: k.z, y: 0, st: -1, fx: 0, fz: 0, len: 0, bx: null, bz: 0, ax: l.ga ? l.ga.x : k.x, az: l.ga ? l.ga.z : k.z, w: 1 };
+  if (k && !l.lk) l.lk = { x: k.ox, z: k.oz, y: 0, st: -1, fx: 0, fz: 0, len: 0, bx: null, bz: 0, ax: l.ga ? l.ga.x : k.ox, az: l.ga ? l.ga.z : k.oz, w: 1 };
   l.gk = null;
 };
 // A 90 s CPU fight held a planted foot 60-75 cm behind the hips on a straight knee: the thigh 40-62 deg behind the
@@ -1751,7 +1753,10 @@ function posePass(H, s, t, ground, raise) {
   // each foot stays planted while the body passes over it, then lifts and swings ahead in the direction of
   // travel, so walking backwards or sideways no longer moonwalks. Film keyframes keep the timed sine gait.
   const g = s.gait || 0, ph = s.gph ?? t * Math.PI * 2 * 1.7, sw = Math.sin(ph), cw = Math.cos(ph);
-  const gn = Math.hypot(s.gdx || 0, s.gdz ?? 1) || 1, gx = (s.gdx || 0) / gn * GAIT_SIDE, gz = (s.gdz ?? 1) / gn;
+  // (gdx/gdz is an eased average of the travel direction and is not renormalised: through a reversal it shrinks to
+  // nothing and grows again the other way, so the feet come in under the hips and out the other side over the turn.
+  // Renormalised, it flipped in one frame and threw every foot's target 2 x its stride offset: up to 23 cm a frame.)
+  const gn = Math.max(1, Math.hypot(s.gdx || 0, s.gdz ?? 1)), gx = (s.gdx || 0) / gn * GAIT_SIDE, gz = (s.gdz ?? 1) / gn;
   const limbs = [
     ['L', s.lh, 0, 0, -sw * 0.22 * g],
     ['R', s.rh, 0, 0, sw * 0.22 * g],
