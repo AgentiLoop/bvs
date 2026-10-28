@@ -1936,6 +1936,7 @@ export class Game {
   pose(dt) {
     const hk = dt ? 1 - Math.exp(-dt * 9) : 1;
     // a held fighter is posed first, so the thrower's hands grip where his body is this frame
+    let first = null;
     for (const f of this.gripOf(this.F.bat, this.F.sup) ? [this.F.sup, this.F.bat] : [this.F.bat, this.F.sup]) {
       const o = f === this.F.bat ? this.F.sup : this.F.bat;
       const k = dt ? 1 - Math.exp(-dt * (f.act || f.stun > 0 ? 26 : 16)) : 1;
@@ -1978,9 +1979,17 @@ export class Game {
       f.holdW = (f.holdW || 0) + ((gr ? 1 : 0) - (f.holdW || 0)) * (dt ? 1 - Math.exp(-dt * 30) : 1);
       if (f.holdW > 0.01) { s.hold = o.H; s.holdW = f.holdW; s.holdAt = f.holdAt.at; s.holdSide = f.holdAt.side; }
       s.foe = o.H; // his torso / head: free hands stay out of him (heroes.js)
-      applyPose(f.H, { ...s, p: [f.x, base + s.h, f.z], yaw: f.yaw + c.tw }, this.t, groundAt(f.x, f.z));
+      const P = { ...s, p: [f.x, base + s.h, f.z], yaw: f.yaw + c.tw }, gnd = groundAt(f.x, f.z);
+      applyPose(f.H, P, this.t, gnd);
       if (this.active) setFace(f.H, this.expr(f, dt));
+      if (!first) first = { f, o, P, gnd };
     }
+    // The fighter posed first kept his free hands out of where the other one stood LAST frame, so on hit frames
+    // (the other recoiling into him) a fist sat up to 17 cm inside him for a frame: pose him again against this
+    // frame's body when they are close (s.again: same frame, so the hand / finger easing isn't stepped twice).
+    const { f: f1, o: o1, P: P1, gnd: g1 } = first;
+    if (f1.holdW <= 0.01 && Math.hypot(o1.x - f1.x, o1.z - f1.z, o1.y - f1.y) < 1.6) applyPose(f1.H, { ...P1, again: 1 }, this.t, g1);
+
   }
 
   // Heavy hit: the camera lurches toward the impact and tilts with the blow, then settles (s = strength).

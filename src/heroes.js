@@ -812,7 +812,8 @@ function gaitStep(p) {
 }
 export function applyPose(H, s, t, ground = 0) {
   // last frame's grip curls (relaxFingers eases from them once the grip lets go)
-  for (const side of ['L', 'R']) { const g = H.arms[side].grip; if (g) { g.pk = g.wk ? g.wk.slice() : null; g.ph = g.hw; g.hw = 0; } }
+  // (s.again: the game re-poses a fighter in the same frame; keep this frame's starting curls)
+  if (!s.again) for (const side of ['L', 'R']) { const g = H.arms[side].grip; if (g) { g.pk = g.wk ? g.wk.slice() : null; g.ph = g.hw; g.hw = 0; } }
   _limp = Math.max(0, Math.min(1, s.limp || 0)); _floor = ground;
   posePass(H, s, t, ground, 0);
   // Knees, elbows and fists used to go up to 5 cm through the roof (Superman's landing kneel, Batman lying
@@ -1208,10 +1209,12 @@ function posePass(H, s, t, ground, raise) {
     const X = !s.hold && s.foe, out = (p, r) => pushOutOfTorso(H, p, r) || pushOutOfHead(H, p, r) || !!X && (pushOutOfTorso(X, p, r) || pushOutOfHead(X, p, r));
     for (let it = 0; it < 3; it++) {
       let moved = false;
+      _gW.set(0, 0, 0);
       for (const [x, y, z, r] of X ? FOE_PTS : FIST_PTS) {
         _C.set(a.s * x, y, z); a.hand.localToWorld(_C); _F.copy(_C);
-        if (out(_C, r)) { _T.add(_C.sub(_F)); moved = true; break; }
+        if (out(_C, r) && _C.sub(_F).lengthSq() > _gW.lengthSq()) { _gW.copy(_C); moved = true; }
       }
+      if (moved) _T.add(_gW);
       if (!moved && gp && gp.openG.visible) for (const tip of gp.tips) {
         tip.getWorldPosition(_C); _F.copy(_C);
         if (out(_C, 0.012)) { _T.add(_C.sub(_F)); moved = true; break; }
