@@ -579,6 +579,9 @@ export function makeHero(kind) {
       return [y, rx + bulk * (thigh + calf), rz + bulk * (thigh + calf * 1.2), o - bulk * calf * 0.6];
     });
     const adductor = (y, a) => bulk * 0.009 * bump(y, -0.19, 0.08) * bump(Math.atan2(Math.sin(a + s * 0.8), Math.cos(a + s * 0.8)), 0, 0.5) * Math.max(0, Math.cos(a));
+    // Tensor fasciae latae: the hip flexor's knot on the front-outer hip, between the sartorius' start and the top
+    // of the IT band, that rounds the corner from the hip line into the quads (normal displacement, metres).
+    const tfl = (y, a) => bulk * 0.005 * bump(y, -0.13, 0.05) * bump(Math.atan2(Math.sin(a - s * 1.15), Math.cos(a - s * 1.15)), 0, 0.35);
     const legGeo = surface(legRows, (p, a) => {
       p.x += s * 0.008 * bump(p.y, -0.2, 0.15);
       // The outer upper thigh flared 5 cm wider than the hips (legs looked bolted on). Slim it so the
@@ -612,6 +615,8 @@ export function makeHero(kind) {
       // Adductors: the inner thigh's mass sits front-inner, high, medial to the sartorius. Forward only, so the
       // inner edge stays at the midline (thighs already meet there).
       p.z += adductor(p.y, a);
+      const tf = tfl(p.y, a);
+      p.x += tf * Math.sin(a); p.z += tf * Math.cos(a);
       // Sartorius: the long strap from the front of the hip bone to the inside of the knee. Its edge is the
       // diagonal line that splits the quads from the inner thigh (the comic-book "teardrop" frame).
       const t = (-0.08 - p.y) / 0.36;
@@ -649,6 +654,8 @@ export function makeHero(kind) {
         const a = U.getX(i) * Math.PI * 2, c = CREASE.d * bump(P0.getY(i), CREASE.y, CREASE.w);
         dF[i * 3 + 2] = -c * Math.max(0, Math.cos(a)) - adductor(P0.getY(i), a); // the whole front half folds (cos^2 left the front-inner / outer quadrants poking through in the roundhouse); the adductors flatten into the fold
         dO[i * 3] = -s * c * Math.max(0, s * Math.sin(a)) ** 2;
+        const tf = tfl(P0.getY(i), a); // the TFL folds into the crease too: its front part with the front fold, all of it with the outer one
+        dF[i * 3 + 2] -= tf * Math.cos(a); dO[i * 3] -= tf * Math.sin(a); dO[i * 3 + 2] -= tf * Math.cos(a);
         dI[i * 3] = s * c * Math.max(0, -s * Math.sin(a)) ** 2;
       }
       const nrm = d => { // normal deltas so the compressed crease shades as a fold
