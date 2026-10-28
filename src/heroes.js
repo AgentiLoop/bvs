@@ -466,9 +466,13 @@ export function makeHero(kind) {
       // into the palm side, one rounded knob per finger between the grooves.
       const pip = knuckleX.reduce((v, b) => v + bump(p.x, b, 0.0075), 0) * bump(p.y, -0.107, 0.008) * Math.max(0, cs) ** 2;
       p.z += 0.0025 * pip; p.y -= 0.0025 * pip;
+      // Clenched extensor tendons fanning from the wrist to each back knuckle (pinky's the faintest).
+      const ten = knuckleX.reduce((v, b) => { const u = THREE.MathUtils.clamp(p.y / -0.088, 0, 1);
+        return v + (s * b < -0.03 ? 0.7 : 1) * bump(p.x, b * (0.35 + 0.65 * u), 0.0042) * bump(u, 0.6, 0.32); }, 0);
+      p.z -= 0.0016 * ten * Math.max(0, -cs) ** 2;
       p.y += 0.006 * blend(0.0, 0.045, -s * p.x) * fingers;                      // pinky side shorter than the index side
       return p;
-    }, 48, 48);
+    }, 48, 72);
     // The sculpted fist and an articulated open hand share the hand bone; shapeHand shows one or the other.
     const fistG = new THREE.Group(), openG = new THREE.Group();
     hand.add(fistG, openG); openG.visible = false;
@@ -495,9 +499,15 @@ export function makeHero(kind) {
       // slanted knuckle line; the smooth back of the open hand read as a mitten.
       const kn = FINGERS.reduce((v, [x, y]) => v + bump(p.x, s * x, 0.0062) * bump(p.y, y + 0.007, 0.009), 0);
       p.z -= 0.005 * kn * Math.max(0, -Math.cos(a));
+      // Extensor tendons: four cords fan out from the middle of the wrist to the knuckles across the back of the
+      // hand (pinky's the faintest), fading in above the wrist and merging into each knuckle.
+      const ten = FINGERS.reduce((v, [x, y], k) => { const u = THREE.MathUtils.clamp(p.y / (y + 0.012), 0, 1);
+        return v + (k === 3 ? 0.7 : 1) * bump(p.x, s * x * (0.35 + 0.65 * u), 0.0042) * bump(u, 0.6, 0.32); }, 0);
+      p.z -= 0.0013 * ten * Math.max(0, -Math.cos(a)) ** 2;
       p.z += 0.004 * bump(p.y, -0.02, 0.02) * Math.max(0, Math.cos(a)) * (1 - blend(-0.01, 0.03, s * p.x)); // hypothenar heel
+      p.z -= 0.002 * bump(p.y, -0.05, 0.016) * bump(p.x, 0, 0.014) * Math.max(0, Math.cos(a)) ** 2; // palm hollow between the pads
       return p;
-    }, 48, 64);
+    }, 64, 72);
     part(openG, palmGeo, handMat);
     oval(openG, handMat, [s * 0.028, -0.03, 0.012], [0.017, 0.03, 0.014]); // thenar pad
     // Finger segments were plain capsules (sausages). Each phalanx now has a slimmer shaft, a knuckle on the back
