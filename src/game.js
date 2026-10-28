@@ -157,8 +157,10 @@ const FLYKICK = { over: true, dmg: 16, kb: 6, up: 3, stun: 0.7, heavy: true, at:
 const THROW = { reach: 1.15, grab: 0.1, rel: 0.5, dur: 0.75, tech: 0.28 };
 // Superman's hoist (throw lift + Orbital Slam): the victim is held HOIST.d m in front, boots HOIST.y m up. At 0.55 / 0.9
 // his torso sat 0.9 m from the lifter's shoulders (arm 0.62 m), so the hands gave up the grip and hung 11-12 cm off it.
-// slamD / slamY: where the Orbital Slam dive carries him (out in front, level with the lifter).
-const HOIST = { d: 0.5, y: 0.6, slamD: 0.8, slamY: 0 };
+// slamD / slamY: where the Orbital Slam dive carries him (out in front, level with the lifter). The throw's slam drives
+// him down in the hands to `floor` m and `out` m further out before letting go (released 0.47 m up, he snapped back
+// out of the hands: palms 15-17 cm, his legs inside the lifter's chest).
+const HOIST = { d: 0.5, y: 0.6, slamD: 0.8, slamY: 0, floor: 0.08, out: 0.2 };
 const TOSS = {
   bat: { dmg: 12, kb: 5, up: 6.5, stun: 0.8, heavy: true, at: 'rh', blast: 1, back: true, keys: [[0, 'grab'], [0.22, 'hipToss']] },
   sup: { dmg: 13, kb: 3, up: -5, stun: 0.8, heavy: true, at: 'rh', blast: 1.2, lift: true, keys: [[0, 'grab'], [0.18, 'lift'], [0.44, 'slam']] },
@@ -533,7 +535,9 @@ export class Game {
   toss(f, o, S) {
     const { fx } = this.ctx;
     f.hits = 0;
+    const lean = o.cur.lean;
     this.hurt(o, f, S, this.contact(f, o, S));
+    if (S.lift) o.cur.lean = lean; // slammed straight down: no snap back out of the lifter's hands (legs into his chest)
     if (S.back) { o.kx = -Math.sin(f.yaw) * S.kb; o.kz = -Math.cos(f.yaw) * S.kb; }
     else { fx.waves.spawn(o.x, 0.05, o.z, 3, 0xfff2d0, 0.7); fx.dustBurst(o.x, 0, o.z, 60, 3); fx.decals.add(o.x, o.z, 0.7); }
     this.showCombo(f.key === 'bat' ? 'HIP TOSS' : 'POWER SLAM', f.key);
@@ -1678,9 +1682,11 @@ export class Game {
         }
         if (a.grab && !a.done && o.heldBy === f) {
           // victim pinned in the thrower's hands (Superman hoists him overhead)
-          const lift = S.lift ? clamp((a.t - 0.2) / 0.2, 0, 1) * HOIST.y : 0;
+          // (and the slam drives him down in those hands to just off the floor before letting go)
+          const sl = S.lift ? clamp((a.t - S.keys[2][0]) / (THROW.rel - S.keys[2][0]), 0, 1) : 0;
+          const lift = S.lift ? clamp((a.t - 0.2) / 0.2, 0, 1) * (HOIST.y - (HOIST.y - HOIST.floor) * sl * sl) : 0;
           // (hoisted in closer, within the lifter's reach: his hands grip the body, heroes.js s.hold)
-          const hd = 0.8 - (S.lift ? clamp((a.t - 0.15) / 0.1, 0, 1) : 0) * (0.8 - HOIST.d);
+          const hd = 0.8 - (S.lift ? clamp((a.t - 0.15) / 0.1, 0, 1) : 0) * (0.8 - HOIST.d) + HOIST.out * sl;
           o.x = f.x + Math.sin(f.yaw) * hd; o.z = f.z + Math.cos(f.yaw) * hd; o.y = lift; o.vy = 0; o.kx = o.kz = 0;
           o.stun = Math.max(o.stun, 0.3); o.launched = false;
           if (a.t >= THROW.rel) { a.done = true; o.heldBy = null; this.toss(f, o, S); }
