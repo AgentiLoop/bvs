@@ -1796,9 +1796,14 @@ function posePass(H, s, t, ground, raise) {
   // distance): walking into him at 0.55 m the swing carried the guard fist in and out of his torso every step, and the
   // push-out threw it between the chin and the belly, 45-48 cm in one 30 fps frame.
   const sk = s.foe && !s.hold ? blend(ARM_SWING_FOE[0], ARM_SWING_FOE[1], H.chest.getWorldPosition(_C4).distanceTo(s.foe.chest.getWorldPosition(_C5))) : 1;
+  // Game gait (gaitStep): a foot is furthest forward at phase 0 and back at ~0.6, i.e. it follows cos, not sin, and in
+  // the travel direction (gz). The swing was -sin: a quarter cycle out of step with the legs (each fist furthest
+  // forward while its own foot swung through), the same way walking backwards, and pumping in a sidestep. Now each
+  // arm swings against its own leg along the forward travel only (film: the timed sine gait, sw).
+  const as = s.gph != null ? cw * gz : sw;
   const limbs = [
-    ['L', s.lh, 0, 0, -sw * 0.22 * g * sk],
-    ['R', s.rh, 0, 0, sw * 0.22 * g * sk],
+    ['L', s.lh, 0, 0, -as * 0.22 * g * sk],
+    ['R', s.rh, 0, 0, as * 0.22 * g * sk],
   ];
   H.root.getWorldQuaternion(_qb);
   for (const [side, tg, , , dz] of limbs) {
