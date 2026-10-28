@@ -367,6 +367,7 @@ export class Game {
   keydown(e) {
     const k = e.key.toLowerCase();
     this.keys.add(k);
+    if (this.demo) return; // auto-pilot: no fight keys (ESC still quits, main.js)
     if (this.matchOver && this.overT > 1.5 && (k === ' ' || k === 'enter' || k === 'r')) { this.ctx.restart(this.choice); return; }
     if (e.repeat) return;
     if (k === 'j') this.press(this.me, 'J', this.blockHeld());
@@ -410,6 +411,7 @@ export class Game {
     this.readPad();
     if (!this.pad) return true;
     if (this.padHit(8)) { this.ctx.quit(); return false; }
+    if (this.demo) return true; // auto-pilot: Back still quits, the rest is ignored
     if (this.matchOver && this.overT > 1.5 && (this.padHit(9) || this.padHit(0))) { this.ctx.restart(this.choice); return true; }
     if (this.padHit(9) && !this.matchOver) { this.ctx.pause(); return false; }
     if (this.padHit(2)) this.press(this.me, 'J', this.blockHeld());
@@ -1310,7 +1312,7 @@ export class Game {
   updateTags() {
     for (const k of ['bat', 'sup']) {
       const pips = '●'.repeat(this.wins[k]) + '○'.repeat(WINS - this.wins[k]);
-      const who = `${k === 'bat' ? 'BATMAN' : 'SUPERMAN'} · ${this.choice === k ? 'YOU' : 'CPU'}`;
+      const who = `${k === 'bat' ? 'BATMAN' : 'SUPERMAN'} · ${this.choice === k && !this.demo ? 'YOU' : 'CPU'}`;
       this.ui.tags[k].innerHTML = k === 'bat' ? `${who} <span class="pips">${pips}</span>` : `<span class="pips">${pips}</span> ${who}`;
     }
   }
@@ -1380,7 +1382,7 @@ export class Game {
       else if (this.state === 'over' && this.matchOver && this.overT > 1.5 && !this.shownWin) {
         this.shownWin = true;
         const w = this.winner.key === 'bat' ? 'BATMAN' : 'SUPERMAN';
-        this.say(`${w} WINS`, this.winner === this.me ? 'YOU WIN · ENTER / START REMATCH · ESC / BACK MENU' : 'YOU LOSE · ENTER / START REMATCH · ESC / BACK MENU');
+        this.say(`${w} WINS`, this.demo ? 'AUTO-PILOT DEMO · ESC / BACK MENU' : this.winner === this.me ? 'YOU WIN · ENTER / START REMATCH · ESC / BACK MENU' : 'YOU LOSE · ENTER / START REMATCH · ESC / BACK MENU');
       }
     }
     this.ui.timer.textContent = Math.ceil(this.clock);
@@ -1415,13 +1417,18 @@ export class Game {
       fx.rubble(sup.x, 0, sup.z, 60, 6, 0.06, 0.26, 5); fx.dustBurst(sup.x, 0, sup.z, 110, 3.5); fx.sparkBurst(sup.x, 0.1, sup.z, 40, 5);
       fx.waves.spawn(sup.x, 0.05, sup.z, 5, 0xfff2d0, 0.8); fx.decals.add(sup.x, sup.z, 0.9); fx.impact(sup.x, 0, sup.z, 0.5); fx.flash(0.35);
     }
-    this.help(t > 0.4 && t < ENTER_END); // controls panel (SPACE / ENTER / START pauses on it)
-    if (t > 0.4 && t < 2.6) this.say(this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN');
+    this.help(!this.demo && t > 0.4 && t < ENTER_END); // controls panel (SPACE / ENTER / START pauses on it)
+    if (t > 0.4 && t < 2.6) this.say(this.demo ? 'AUTO-PILOT' : this.choice === 'bat' ? 'YOU ARE BATMAN' : 'YOU ARE SUPERMAN', this.demo ? 'CPU V CPU DEMO · ESC / BACK MENU' : '');
     else if (t >= 2.6) this.say('FIGHT!');
     if (t >= ENTER_END) { this.state = 'fight'; this.fightT = 0; }
   }
 
   player(dt) {
+    if (this.demo) { // ?demo=1 auto-pilot: the CPU brain drives your fighter too (ai() with the two sides swapped)
+      const me = this.me; this.me = this.cpu; this.cpu = me;
+      try { this.ai(dt); } finally { this.cpu = this.me; this.me = me; }
+      return;
+    }
     const f = this.me, K = this.keys, p = this.pad, b = this.padNow;
     if (f.dazed || f.dizzy > 0) { f.block = f.crouch = false; f.moving = 0; return; }
     let ix = (K.has('d') || K.has('arrowright') || b[15] ? 1 : 0) - (K.has('a') || K.has('arrowleft') || b[14] ? 1 : 0);

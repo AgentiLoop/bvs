@@ -30,6 +30,7 @@ function soundPrompt() {
 
 const qs = new URLSearchParams(location.search);
 const SEED = +(qs.get('seed') || 1337);
+const DEMO = qs.get('demo') === '1'; // ?demo=1 attract mode: the title film, then a CPU v CPU auto-pilot match, then the film again
 const DT = 1 / 60;
 const LOOP_END = 21.5; // real seconds
 let pixelMode = qs.get('pixel') === '1', comicMode = !qs.has('pixel') || qs.get('pixel') === '2'; // comic by default; ?pixel=0 normal. P cycles: normal → pixel-art → comic → normal
@@ -473,6 +474,7 @@ function step() {
   let sdt, t;
   if (game.active) {
     sdt = game.step(DT); t = game.t; realT += DT; stepCount++;
+    if (game.demo && game.matchOver && game.overT > 6) { quitGame(); return; } // auto-pilot match over: back to the film
   } else {
     const pick = playUI.style.display !== 'none' && game.menuPad(); // gamepad on the title loop: X Batman, B Superman
     if (pick) { if (sound.on) sound.start(); startGame(pick); return; }
@@ -493,7 +495,7 @@ function step() {
   chestPos(bat, _v); chestPos(sup, _w);
   world.update(t, sdt, _v.lerp(_w, 0.5).setY(0.5));
   soundCues(sdt);
-  if (!game.active && realT >= LOOP_END) reset();
+  if (!game.active && realT >= LOOP_END) { if (DEMO) startGame(Math.random() < 0.5 ? 'bat' : 'sup', true); else reset(); }
 }
 
 // ---------- camera ----------
@@ -623,7 +625,7 @@ function render() {
 // ---------- input ----------
 const playUI = document.getElementById('play');
 if (qs.has('freeze') || qs.has('t') || qs.has('cam')) playUI.style.display = 'none'; // clean frames for stills
-function startGame(choice) { reset(); game.start(choice); playUI.style.display = 'none'; paused = false; }
+function startGame(choice, demo = false) { reset(); game.demo = demo; game.start(choice); playUI.style.display = 'none'; paused = false; }
 function quitGame() { game.stop(); reset(); playUI.style.display = 'flex'; if (paused) { paused = false; sound.pause(false); } }
 // In a match: SPACE / ENTER / Start (Menu) pauses (and resumes); the controls panel stays up while paused.
 function togglePause() { paused = !paused; sound.pause(paused); game.help(paused || game.state === 'enter', paused); }
@@ -657,7 +659,7 @@ reset();
 const seekT = +(qs.get('t') || 0);
 while (simT < seekT) step();
 if (qs.get('freeze')) paused = true;
-if (qs.get('play') === 'bat' || qs.get('play') === 'sup') startGame(qs.get('play')); // ?play=bat|sup skips the title loop
+if (qs.get('play') === 'bat' || qs.get('play') === 'sup') startGame(qs.get('play'), DEMO); // ?play=bat|sup skips the title loop (with &demo=1: straight into auto-pilot)
 window.__game = game; window.__sound = sound;
 let last = performance.now();
 function loop(now) {

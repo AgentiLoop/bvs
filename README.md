@@ -64,7 +64,7 @@ open http://localhost:8123
 
 Title-screen keys: `B` / `S` play as Batman / Superman · `P` pixel-art on/off · `[` `]` pixel size · `C` free orbit camera · `Space` pause · `R` restart · `M` sound on/off
 
-URL params: `?play=bat` or `?play=sup` (skip the title) · `?t=9.5&freeze=1` (seek and pause) · `?seed=42` · `?px=3` · `?pixel=0`
+URL params: `?play=bat` or `?play=sup` (skip the title) · `?demo=1` (auto-pilot attract mode: the film, then a CPU v CPU match; add `&play=bat` to start the match right away) · `?t=9.5&freeze=1` (seek and pause) · `?seed=42` · `?px=3` · `?pixel=0`
 
 ## Build it by hand
 
