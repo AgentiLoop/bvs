@@ -812,7 +812,7 @@ function gaitStep(p) {
 }
 export function applyPose(H, s, t, ground = 0) {
   // last frame's grip curls (relaxFingers eases from them once the grip lets go)
-  for (const side of ['L', 'R']) { const g = H.arms[side].grip; if (g) g.pk = g.wk ? g.wk.slice() : null; }
+  for (const side of ['L', 'R']) { const g = H.arms[side].grip; if (g) { g.pk = g.wk ? g.wk.slice() : null; g.ph = g.hw; g.hw = 0; } }
   posePass(H, s, t, ground, 0);
   // Knees, elbows and fists used to go up to 5 cm through the roof (Superman's landing kneel, Batman lying
   // down). Lift the body by the deepest contact deficit and re-solve with the feet held where they were.
@@ -946,7 +946,7 @@ function bendThumb(a, c) {
 // surface, and every finger curls on its own until it wraps the body: a flat palm on the chest, fingers hooked
 // round the flank or over the shoulder. The palm lands no higher than GRIP_Y[1] so the fingers above it still lie
 // on the chest (below GRIP_TOP); PALM_PTS' last point is the heel, which the wrist bend presses toward the body.
-const GRIP_Y = [0.28, 0.6], GRIP_TOP = 0.66, PALM_C = new THREE.Vector3(0, -0.05, 0.018), PALM_GAP = 0.01, FINGER_GAP = 0.016, THUMB_GAP = 0.018, HYPER = -0.2, GRIP_REACH = [0.68, 0.85], GRIP_EASE = 0.35,
+const GRIP_Y = [0.28, 0.6], GRIP_TOP = 0.66, PALM_C = new THREE.Vector3(0, -0.05, 0.018), PALM_GAP = 0.01, FINGER_GAP = 0.016, THUMB_GAP = 0.018, HYPER = -0.2, GRIP_REACH = [0.68, 0.85], GRIP_EASE = 0.35, GRIP_LIGHT = 0.35,
   PALM_PTS = [[0.04, -0.082, 0.018], [-0.04, -0.075, 0.018], [0, -0.085, 0.02], [0.03, -0.01, 0.014], [-0.03, -0.01, 0.014], [0, -0.01, 0.03]].map(p => new THREE.Vector3(...p));
 // s.holdAt picks the grip surface: torso (throws), 'neck' (Superman's throat hold: the throat band under the jaw) or
 // 'head' (Batman's clinch: both palms clasp the back of the skull behind the ears, the fingers wrapping it).
@@ -1022,7 +1022,11 @@ function wrapFingers(a, O, o, hw) {
     }
     return false;
   };
-  const c = 1 - o;
+  // Letting go (the grip weight falling: released, thrown, pulled out of reach) or only just reaching in (below
+  // GRIP_LIGHT) the hand isn't holding on: its fingers change curl at the relax rate instead of jumping to
+  // wherever the moving body leaves room (8-15 cm fingertip pops in one frame).
+  const c = 1 - o, rel = hw < (g.ph ?? 0) - 1e-3 || hw < GRIP_LIGHT;
+  g.hw = hw;
   g.fingers.forEach((f, i) => {
     const k0 = Math.min(1, c + CASCADE[i] * c * (1 - c));
     // curl until the finger meets the body (stepping up from flat: a half-curled finger points into the body
@@ -1037,9 +1041,10 @@ function wrapFingers(a, O, o, hw) {
     }
     if (hw < 1 && !hit(f, k0 + (k - k0) * hw)) k = k0 + (k - k0) * hw; // easing in, but never into the body
     // the contact search flips between neighbouring solutions as the bodies move (curled under / laid flat):
-    // ease each finger toward its new curl unless that would push it into the body
-    const pk = g.wk[i] ?? k0, ek = pk + (k - pk) * GRIP_EASE;
+    // ease each finger toward its new curl (from last frame's) unless that would push it into the body
+    const pk = g.pk?.[i] ?? k0, ek = pk + (k - pk) * GRIP_EASE;
     if (!hit(f, ek)) k = ek;
+    if (rel) k = pk + Math.max(-RELAX, Math.min(RELAX, k - pk));
     g.wk[i] = k;
     bendFinger(f, k, o);
   });
@@ -1060,8 +1065,9 @@ function wrapFingers(a, O, o, hw) {
     tc = lo;
   }
   if (hw < 1 && !thit(c + (tc - c) * hw)) tc = c + (tc - c) * hw;
-  const pt = g.wk[4] ?? c, et = pt + (tc - pt) * GRIP_EASE;
+  const pt = g.pk?.[4] ?? c, et = pt + (tc - pt) * GRIP_EASE;
   if (!thit(et)) tc = et;
+  if (rel) tc = pt + Math.max(-RELAX, Math.min(RELAX, tc - pt));
   g.wk[4] = tc;
   bendThumb(a, tc);
   g.o = -1; // shapeHand must re-apply its own curl next frame
