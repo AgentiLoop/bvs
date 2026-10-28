@@ -1977,6 +1977,7 @@ export class Game {
       if (gr) f.holdAt = gr;
       f.holdW = (f.holdW || 0) + ((gr ? 1 : 0) - (f.holdW || 0)) * (dt ? 1 - Math.exp(-dt * 30) : 1);
       if (f.holdW > 0.01) { s.hold = o.H; s.holdW = f.holdW; s.holdAt = f.holdAt.at; s.holdSide = f.holdAt.side; }
+      s.foe = o.H; // his torso / head: free hands stay out of him (heroes.js)
       applyPose(f.H, { ...s, p: [f.x, base + s.h, f.z], yaw: f.yaw + c.tw }, this.t, groundAt(f.x, f.z));
       if (this.active) setFace(f.H, this.expr(f, dt));
     }

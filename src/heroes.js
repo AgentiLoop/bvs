@@ -873,6 +873,8 @@ const _hx = new THREE.Vector3(), _hy = new THREE.Vector3(), _hz = new THREE.Vect
 // the middle of the fist, the thumb across its palm side, then the corners of the fist.
 const FIST_PTS = [[0, -0.055, 0.015, 0.05], [0.03, -0.07, 0.06, 0.012], [-0.008, -0.086, 0.068, 0.012]];
 for (const x of [-0.035, 0.035]) for (const y of [-0.015, -0.1]) for (const z of [-0.03, 0.04]) FIST_PTS.push([x, y, z, 0.012]);
+// against the opponent (s.foe) the knuckle face counts too: it's what lands on him
+const FOE_PTS = [...FIST_PTS, [0.028, -0.1, 0.015, 0.028], [-0.028, -0.1, 0.015, 0.028]];
 // w = wrist extension 0..1 (palm strikes): the hand bends back up to 66 deg so the heel of the palm leads
 // and the fingers point up (a palm-down extended arm turns into a palm-forward strike).
 const WRIST_EXT = 1.15, GRIP_WRIST = [0.9, 1.1], _XH = new THREE.Vector3(1, 0, 0);
@@ -1200,15 +1202,19 @@ function posePass(H, s, t, ground, raise) {
     // The torso checks above only see the wrist; the fist reaches 14 cm past it, and with the palm turned in
     // toward the body (guard, tucked jumps) its palm side and thumb sank up to 5 cm into the chest.
     // An open hand also checks its fingertips and thumb tip.
+    // s.foe = the opponent (game): standing close (0.75 m) the guard fists sank up to 18 cm into his chest and
+    // punches went through him, so a hand that isn't gripping also stays out of his torso and head (the fist's
+    // knuckle face too, FOE_PTS).
+    const X = !s.hold && s.foe, out = (p, r) => pushOutOfTorso(H, p, r) || pushOutOfHead(H, p, r) || !!X && (pushOutOfTorso(X, p, r) || pushOutOfHead(X, p, r));
     for (let it = 0; it < 3; it++) {
       let moved = false;
-      for (const [x, y, z, r] of FIST_PTS) {
+      for (const [x, y, z, r] of X ? FOE_PTS : FIST_PTS) {
         _C.set(a.s * x, y, z); a.hand.localToWorld(_C); _F.copy(_C);
-        if (pushOutOfTorso(H, _C, r) || pushOutOfHead(H, _C, r)) { _T.add(_C.sub(_F)); moved = true; break; }
+        if (out(_C, r)) { _T.add(_C.sub(_F)); moved = true; break; }
       }
       if (!moved && gp && gp.openG.visible) for (const tip of gp.tips) {
         tip.getWorldPosition(_C); _F.copy(_C);
-        if (pushOutOfTorso(H, _C, 0.012) || pushOutOfHead(H, _C, 0.012)) { _T.add(_C.sub(_F)); moved = true; break; }
+        if (out(_C, 0.012)) { _T.add(_C.sub(_F)); moved = true; break; }
       }
       if (!moved) break;
       a.el.getWorldPosition(_C); a.sh.getWorldPosition(_A);
