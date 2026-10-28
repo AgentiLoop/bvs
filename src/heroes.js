@@ -470,6 +470,10 @@ export function makeHero(kind) {
       const ten = knuckleX.reduce((v, b) => { const u = THREE.MathUtils.clamp(p.y / -0.088, 0, 1);
         return v + (s * b < -0.03 ? 0.7 : 1) * bump(p.x, b * (0.35 + 0.65 * u), 0.0042) * bump(u, 0.6, 0.32); }, 0);
       p.z -= 0.0016 * ten * Math.max(0, -cs) ** 2;
+      // First dorsal interosseous: the web muscle between the thumb and index metacarpals bunches into a mound
+      // on the back / thumb-side corner of a clenched fist.
+      const fdi = bump(p.y, -0.048, 0.016) * Math.max(0, s * sn) ** 2 * (1 - blend(-0.3, 0.4, cs));
+      p.x += s * 0.0035 * fdi; p.z -= 0.001 * fdi;
       p.y += 0.006 * blend(0.0, 0.045, -s * p.x) * fingers;                      // pinky side shorter than the index side
       return p;
     }, 48, 72);
@@ -481,6 +485,7 @@ export function makeHero(kind) {
     oval(fistG, handMat, [s * 0.036, -0.045, 0.026], [0.015, 0.026, 0.02]);    // thenar pad at the thumb base
     line(fistG, [[s * 0.044, -0.045, 0.03], [s * 0.04, -0.072, 0.058], [s * 0.016, -0.084, 0.07],
       [-s * 0.008, -0.086, 0.068]], 0.0105, handMat);                         // thumb across the fingers
+    oval(fistG, handMat, [s * 0.0433, -0.072, 0.0603], [0.009, 0.009, 0.009]); // thumb MCP knuckle (~3 mm proud, out of the fist)
     oval(fistG, handMat, [-s * 0.008, -0.086, 0.068], [0.0105, 0.0105, 0.0105]); // rounded thumb tip
     // Superman's bare hands get fingernails (Batman's are gloved): thin, slightly glossy plates proud of the skin by ~1 mm.
     const nail = B ? null : mat(0xe9c2ab, 0.42);
@@ -504,6 +509,8 @@ export function makeHero(kind) {
       const ten = FINGERS.reduce((v, [x, y], k) => { const u = THREE.MathUtils.clamp(p.y / (y + 0.012), 0, 1);
         return v + (k === 3 ? 0.7 : 1) * bump(p.x, s * x * (0.35 + 0.65 * u), 0.0042) * bump(u, 0.6, 0.32); }, 0);
       p.z -= 0.0013 * ten * Math.max(0, -Math.cos(a)) ** 2;
+      const fdi = bump(p.y, -0.045, 0.016) * Math.max(0, s * Math.sin(a)) ** 2 * (1 - blend(-0.3, 0.4, Math.cos(a)));
+      p.x += s * 0.003 * fdi; p.z -= 0.0008 * fdi;                          // first dorsal interosseous (thumb web)
       p.z += 0.004 * bump(p.y, -0.02, 0.02) * Math.max(0, Math.cos(a)) * (1 - blend(-0.01, 0.03, s * p.x)); // hypothenar heel
       p.z -= 0.002 * bump(p.y, -0.05, 0.016) * bump(p.x, 0, 0.014) * Math.max(0, Math.cos(a)) ** 2; // palm hollow between the pads
       return p;
