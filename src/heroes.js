@@ -496,7 +496,31 @@ export function makeHero(kind) {
     }, 48, 64);
     part(openG, palmGeo, handMat);
     oval(openG, handMat, [s * 0.028, -0.03, 0.012], [0.017, 0.03, 0.014]); // thenar pad
-    const seg = (r, L) => new THREE.CapsuleGeometry(r, L, 4, 10).translate(0, -L / 2, 0);
+    // Finger segments were plain capsules (sausages). Each phalanx now has a slimmer shaft, a knuckle on the back
+    // of its head (kn: the PIP / DIP joints stand proud when the finger bends), a little sideways flare at the
+    // joint condyles, and a fleshy pad on the palm side (pad; the fingertip pulp is the fullest). n = back dir.
+    const seg = (r, L, kn = 0, pad = 0.08, n = { x: 0, z: -1 }) => {
+      const pts = [], q = 6;
+      for (let k = 0; k <= q; k++) { const t = (k / q - 1) * Math.PI / 2; pts.push(new THREE.Vector2(r * Math.cos(t), -L + r * Math.sin(t))); }
+      for (let k = 1; k < 6; k++) pts.push(new THREE.Vector2(r, -L + k / 6 * L));
+      for (let k = 0; k <= q; k++) { const t = k / q * Math.PI / 2; pts.push(new THREE.Vector2(Math.max(1e-5, r * Math.cos(t)), r * Math.sin(t))); }
+      const geo = new THREE.LatheGeometry(pts, 14), P = geo.attributes.position, v = new THREE.Vector3();
+      for (let i = 0; i < P.count; i++) {
+        v.fromBufferAttribute(P, i);
+        const rad = Math.hypot(v.x, v.z); if (rad < 1e-6) continue;
+        const palm = -(v.x * n.x + v.z * n.z) / rad, head = bump(v.y, -L, 0.5 * r); // +1 palm side, -1 back
+        const sc = 1 - 0.06 * bump(v.y, -L / 2, 0.3 * L) * (kn > 0) + 0.05 * head * (kn > 0) * (1 - palm * palm)
+          + kn * head * Math.max(0, -palm) ** 1.5 + pad * bump(v.y, -L * (kn > 0 ? 0.5 : 0.55), 0.4 * L) * Math.max(0, palm) ** 2;
+        P.setXYZ(i, v.x * sc, v.y, v.z * sc);
+      }
+      geo.computeVertexNormals();
+      const N = geo.attributes.normal, m = pts.length, a = new THREE.Vector3(), b = new THREE.Vector3();
+      for (let j = 0; j < m; j++) {                                            // weld the lathe seam's normals
+        a.fromBufferAttribute(N, j).add(b.fromBufferAttribute(N, 14 * m + j)).normalize();
+        N.setXYZ(j, a.x, a.y, a.z); N.setXYZ(14 * m + j, a.x, a.y, a.z);
+      }
+      return geo;
+    };
     // nails on the backs of the fingertips and the thumb: over the distal half of the last segment
     const addNail = (parent, r, L, n) => nail && part(parent, sphere, nail, [n.x * r * 0.93, -L * 0.6, n.z * r * 0.93],
       [r * 0.72, L * 0.42, 0.0017], [0, Math.atan2(n.x, n.z), 0]);
@@ -504,16 +528,17 @@ export function makeHero(kind) {
     for (const [fx, fy, fl, fr] of FINGERS) {
       const L = [0.042, 0.027, 0.02].map(v => v * fl);
       const mcp = new THREE.Group(); mcp.position.set(s * fx, fy, 0); openG.add(mcp);
-      part(mcp, seg(fr, L[0]), handMat);
+      part(mcp, seg(fr, L[0], 0.14), handMat);
       const pip = new THREE.Group(); pip.position.y = -L[0]; mcp.add(pip);
-      part(pip, seg(fr * 0.93, L[1]), handMat);
+      part(pip, seg(fr * 0.93, L[1], 0.1), handMat);
       const dip = new THREE.Group(); dip.position.y = -L[1]; pip.add(dip);
-      part(dip, seg(fr * 0.86, L[2]), handMat);
+      part(dip, seg(fr * 0.86, L[2], 0, 0.14), handMat);
       addNail(dip, fr * 0.86, L[2], { x: 0, z: -1 });                      // back of the hand is -z
       const tip = new THREE.Object3D(); tip.position.y = -L[2]; dip.add(tip);
       fingers.push({ mcp, pip, dip, tip, spread: s * fx * 3.2 });
     }
-    const thumbL = [0.036, 0.032, 0.026], thumb = [0.0118, 0.0106, 0.0096].map((r, k) => part(openG, seg(r, thumbL[k]), handMat));
+    const thumbL = [0.036, 0.032, 0.026], thumb = [0.0118, 0.0106, 0.0096].map((r, k) =>
+      part(openG, seg(r, thumbL[k], 0, k === 2 ? 0.12 : 0.05, { x: s * 0.6, z: -0.8 }), handMat));
     addNail(thumb[2], 0.0096, thumbL[2], { x: s * 0.6, z: -0.8 });        // thumbnail faces out to the side and back
     const thumbTip = new THREE.Object3D(); openG.add(thumbTip);
     arms[side] = { sh, el, hand, s, grip: { fistG, openG, fingers, thumb, thumbL, thumbTip, tips: [thumbTip, ...fingers.map(f => f.tip)], o: -1 } };
