@@ -1163,13 +1163,16 @@ export function setFace(H, e) {
   }
 }
 // Distance-driven gait: stride half-amplitude (m), swing lift (m), sideways strides shortened so the feet never cross.
-export const GAIT_A = 0.3, GAIT_LIFT = 0.15, GAIT_SIDE = 0.55;
-// One foot's cycle (p in cycles): first half planted, sliding back under the hips at constant speed (no skating
-// against the ground), second half lifted on an arc and swung forward with an ease-in-out. -> [offset -1..1, lift 0..1]
+// GAIT_D: the part of the cycle a foot is planted. At 0.5 one foot lifted the instant the other landed (no double
+// support, as in a run), so a walker's rear foot was still dragging behind when the front foot swung; a walk has
+// both feet down for a moment at each step (0.6: 10% of the cycle twice).
+export const GAIT_A = 0.3, GAIT_LIFT = 0.15, GAIT_SIDE = 0.55, GAIT_D = 0.6;
+// One foot's cycle (p in cycles): planted for GAIT_D, sliding back under the hips at constant speed (no skating
+// against the ground), then lifted on an arc and swung forward with an ease-in-out. -> [offset -1..1, lift 0..1]
 function gaitStep(p) {
   p -= Math.floor(p);
-  if (p < 0.5) return [1 - 4 * p, 0];
-  const u = (p - 0.5) * 2;
+  if (p < GAIT_D) return [1 - 2 * p / GAIT_D, 0];
+  const u = (p - GAIT_D) / (1 - GAIT_D);
   return [-1 + 2 * u * u * (3 - 2 * u), Math.sin(Math.PI * u)];
 }
 export function applyPose(H, s, t, ground = 0) {
@@ -1217,7 +1220,7 @@ const yawXZ = (v, a) => { const c = Math.cos(a), s = Math.sin(a), x = v.x; v.x =
 // l.lk = { x, z (world), y (step lift), st (step progress, -1 planted), fx, fz, len (step start / length), bx, bz (ball
 // of the foot, world: a planted foot up on its toes pivots on it as the body turns, instead of on the ankle), ax, az
 // (where the ankle really ended up last frame: a step starts from there), w (1 held .. 0 let go) }.
-const LOCK = { d: 0.15, rest: 0.015, max: 0.35, t: 0.16, h: 0.07, up: 0.12, ease: 0.08, air: 0.03 };
+const LOCK = { d: 0.15, rest: 0.015, max: 0.35, t: 0.16, tq: 0.08, h: 0.07, up: 0.12, ease: 0.08, air: 0.03 };
 const _LK = new THREE.Vector3(), BALL = new THREE.Vector3(0, -0.074, 0.15), HEEL = new THREE.Vector3(0, -0.074, -0.058);
 function footLock(l, o, T, up, r, mode, dt, far) {
   const k = l.lk, planted = up < LOCK.up && r < 0.575;
@@ -1228,17 +1231,20 @@ function footLock(l, o, T, up, r, mode, dt, far) {
   // (busy: the other foot is mid-step, swinging in the gait, off the floor in a strike or off the floor at all (o.gy:
   // its sole's height last pose): a kick's standing foot stepping after the lunge, or a walker's rear foot stepping
   // while the front one swung, left both feet 3-9 cm up)
-  const d = Math.hypot(T.x - k.x, T.z - k.z), busy = (o.lk ? o.lk.st >= 0 || o.lk.w < 1 : mode === 2) || !!o.gk && o.gk.sw || o.gy > LOCK.air;
+  // A step taken while the other foot is planted in the walk ends before the gait lifts that one (og: seconds left), at
+  // most LOCK.t long and no shorter than LOCK.tq: a step started late in the other's stance left both feet up 3-9 cm.
+  const og = o.gk && !o.gk.sw && o.gk.pr > 0 ? (GAIT_D - o.gk.p) / o.gk.pr * dt : Infinity;
+  const d = Math.hypot(T.x - k.x, T.z - k.z), busy = (o.lk ? o.lk.st >= 0 || o.lk.w < 1 : mode === 2) || !!o.gk && o.gk.sw || o.gy > LOCK.air || og < LOCK.tq;
   if (k.st < 0) {
     if (mode === 1 && d < LOCK.rest) { l.lk = null; return; }
-    if ((d > (mode === 2 ? LOCK.d : LOCK.rest) || far && d > 0.03) && !busy) { k.fx = k.x = k.ax; k.fz = k.z = k.az; k.len = Math.hypot(T.x - k.x, T.z - k.z); k.st = 0; k.bx = null; }
+    if ((d > (mode === 2 ? LOCK.d : LOCK.rest) || far && d > 0.03) && !busy) { k.fx = k.x = k.ax; k.fz = k.z = k.az; k.len = Math.hypot(T.x - k.x, T.z - k.z); k.st = 0; k.bx = null; k.dur = Math.min(LOCK.t, og); }
     else if (d > LOCK.max) {
       const m = (d - LOCK.max) / d, dx = (T.x - k.x) * m, dz = (T.z - k.z) * m;
       k.x += dx; k.z += dz; if (k.bx != null) { k.bx += dx; k.bz += dz; }
     }
   }
   if (k.st >= 0) {
-    k.st = Math.min(1, k.st + dt / LOCK.t);
+    k.st = Math.min(1, k.st + dt / (k.dur || LOCK.t));
     const e = k.st * k.st * (3 - 2 * k.st);
     k.x = k.fx + (T.x - k.fx) * e; k.z = k.fz + (T.z - k.fz) * e;
     k.y = Math.min(LOCK.h, k.len * 0.4) * Math.sin(Math.PI * k.st);
@@ -1256,6 +1262,7 @@ function footLock(l, o, T, up, r, mode, dt, far) {
 // toe and heel swept the floor as the fighter turned to face the foe) until it swings, turning to the body's on the way.
 // l.gk = { x, z (held spot), sw (swinging), sx, sz (lift-off spot), y, sy (held / lift-off heading), len (swing), bx, bz (ball),
 // ox, oz, oy, dy (this frame's output: spot, boot lift, heading offset), w }.
+const _ruQ = new THREE.Quaternion(), _ruV = new THREE.Vector3();
 const GLOCK = { g: [0.01, 0.05], max: 0.3, h: 0.06, yaw: 0.6 };
 const wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const toStep = (l, k) => {
@@ -1279,26 +1286,32 @@ function clampBack(l, T, qh, fwd, lim = HIP_BACK[0]) {
   for (let i = 0; i < 12; i++) { const m = (lo + hi) / 2; if (thighBack(l, T.x + fwd.x * m, T.y, T.z + fwd.z * m, qh) > lim) lo = m; else hi = m; }
   T.x += fwd.x * hi; T.z += fwd.z * hi;
 }
-function gaitLock(l, T, p, w, keep, yaw, far) {
+function gaitLock(l, T, p, w, keep, yaw, far, o) {
   let k = l.gk;
   if (!keep) {
     // walk over (gait faded): the foot is handed to the foot lock, which steps it back under the stance
     if (w <= 0) { toStep(l, k); return; }
     p -= Math.floor(p);
-    const sw = p >= 0.5;
-    if (!k) { const x = l.ga ? l.ga.x : T.x, z = l.ga ? l.ga.z : T.z; k = l.gk = { x, z, sw, sx: x, sz: z, y: yaw, sy: yaw, len: 0, bx: null, bz: 0, ox: x, oz: z, oy: 0, dy: 0, w }; }
-    k.w = w; k.oy = 0;
+    // (a swing waits while the other foot is mid-step in the foot lock, then runs over the rest of the swing phase
+    // (u0): a walk starting as an idle foot stepped lifted the other foot at once, both 5-12 cm up)
+    const sw = p >= GAIT_D && !(!(k && k.sw) && o.lk && o.lk.st >= 0);
+    if (k) { k.pr = p - k.p; k.pr -= Math.floor(k.pr); } // (phase advance last frame: when the planted foot lifts, footLock)
+    if (!k) { const x = l.ga ? l.ga.x : T.x, z = l.ga ? l.ga.z : T.z; k = l.gk = { x, z, sw: false, sx: x, sz: z, y: yaw, sy: yaw, len: 0, bx: null, bz: 0, ox: x, oz: z, oy: 0, dy: 0, w }; }
+    k.w = w; k.oy = 0; k.p = p;
     if (sw) {
       // (lifting off from the ankle: a foot rolled onto its ball has moved off the held spot)
-      if (!k.sw) { k.sx = l.ga ? l.ga.x : k.x; k.sz = l.ga ? l.ga.z : k.z; k.sy = k.y; k.len = 0; k.sw = true; k.bx = null; }
-      const u = (p - 0.5) * 2, e = u * u * (3 - 2 * u);
+      const u1 = (p - GAIT_D) / (1 - GAIT_D);
+      if (!k.sw) { k.sx = l.ga ? l.ga.x : k.x; k.sz = l.ga ? l.ga.z : k.z; k.sy = k.y; k.len = 0; k.sw = true; k.bx = null; k.u0 = Math.min(u1, 0.9); }
+      const u = k.u = Math.max(0, (u1 - k.u0) / (1 - k.u0)), e = u * u * (3 - 2 * u);
       k.x = k.sx + (T.x - k.sx) * e; k.z = k.sz + (T.z - k.sz) * e; k.y = k.sy + wrapA(yaw - k.sy) * e;
       k.len = Math.max(k.len, Math.hypot(T.x - k.sx, T.z - k.sz));
       k.oy = Math.min(GLOCK.h, k.len * 0.4) * Math.sin(Math.PI * u);
     } else {
       k.sw = false; // (touches down where the swing's last frame left it)
       const d = Math.hypot(T.x - k.x, T.z - k.z);
-      if (d > GLOCK.max || far && d > 0.03) { toStep(l, k); return; } // left far behind (the walker turned or reversed, or past the hip's reach): a real step
+      // left far behind (the walker turned or reversed, or past the hip's reach): a real step (past GLOCK.max not while
+      // held for the other foot's step: it swings as soon as that lands)
+      if (p < GAIT_D && d > GLOCK.max || far && d > 0.03) { toStep(l, k); return; }
       const a = wrapA(k.y - yaw);
       if (Math.abs(a) > GLOCK.yaw) k.y = yaw + Math.sign(a) * GLOCK.yaw;
     }
@@ -1828,7 +1841,13 @@ function posePass(H, s, t, ground, raise) {
     if (_T.y - raise - ground < SOLE + LOCK.up) clampBack(l, _T, _hbQ, _hbF); // a planted foot no further behind than the hip extends
     const fy = ground + SOLE + raise, gk0 = l.gk;
     if (s.gph != null && s.lock != null) gaitLock(l, _T, s.gph / (Math.PI * 2) + p, s.lock === 1 && !l.lk ? blend(GLOCK.g[0], GLOCK.g[1], g) : 0, raise || s.again, s.yaw - ex,
-      gk0 && !gk0.sw && thighBack(l, gk0.x, fy, gk0.z, _hbQ) > HIP_BACK[1]);
+      gk0 && !gk0.sw && thighBack(l, gk0.x, fy, gk0.z, _hbQ) > HIP_BACK[1], H.legs[side === 'L' ? 'R' : 'L']);
+    // (a gait-locked foot's swing lift follows its own swing (u): held down for the other foot's step it kept the
+    // phase's lift and hovered up to 12 cm over its planted spot)
+    if (s.gph != null && s.lock != null) {
+      const up0 = gaitStep(s.gph / (Math.PI * 2) + p)[1], up1 = !l.gk ? up0 : l.gk.sw ? Math.sin(Math.PI * l.gk.u) : 0;
+      if (up1 !== up0) _T.addScaledVector(_ruV.set(0, 1, 0).applyQuaternion(H.root.getWorldQuaternion(_ruQ)), (up1 - up0) * GAIT_LIFT * g);
+    }
     if (l.gk && l.gk.sw) clampBack(l, _T, _hbQ, _hbF, HIP_BACK[1]); // (a foot swinging off from behind trailed further back as the body went on)
     const gk = s.lock != null && l.gk, qF = gk && gk.dy ? _qs3.setFromAxisAngle(_Y, gk.dy).multiply(qP) : qP;
     // foot lock (see LOCK): the planted foot stays on its floor spot, easing out of it as the foot rises; a step

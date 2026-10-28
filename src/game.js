@@ -2,7 +2,7 @@
 // Poses are the same hip-relative IK poses as the film (POSES), blended toward a target every step.
 // Combat: chained punches/kicks, launchers, sweeps, air attacks, juggles, bounces, hitstop, trades; keyboard + gamepad.
 import * as THREE from 'three';
-import { applyPose, setFace, GAIT_A, GAIT_SIDE, DMG_N } from './heroes.js';
+import { applyPose, setFace, GAIT_A, GAIT_SIDE, GAIT_D, DMG_N } from './heroes.js';
 import { POSES, face } from './timeline.js';
 import { groundAt } from './world.js';
 
@@ -1979,7 +1979,7 @@ export class Game {
         if (d > 1e-5 && d < 0.3) {
           const y = f.yaw + c.tw, lx = (wx * Math.cos(y) - wz * Math.sin(y)) / d, lz = (wx * Math.sin(y) + wz * Math.cos(y)) / d;
           f.gdx += (lx - f.gdx) * hk; f.gdz += (lz - f.gdz) * hk;
-          const n = Math.hypot(f.gdx, f.gdz) || 1, stride = 4 * GAIT_A * Math.max(0.2, c.gait) * Math.hypot(f.gdz / n, f.gdx / n * GAIT_SIDE);
+          const n = Math.hypot(f.gdx, f.gdz) || 1, stride = 2 * GAIT_A / GAIT_D * Math.max(0.2, c.gait) * Math.hypot(f.gdz / n, f.gdx / n * GAIT_SIDE);
           f.gph += Math.min(d / stride, 4.5 * dt) * Math.PI * 2;
         }
       }
@@ -1988,7 +1988,7 @@ export class Game {
       f.squash *= dt ? Math.exp(-dt * 7) : 1;
       const sq = f.y <= 0.001 && !f.ko && f.down <= 0 ? f.squash : 0;
       const s = { ...c, hx: f.hx, hy: f.hy, gph: f.gph, gdx: f.gdx, gdz: f.gdz };
-      s.h -= 0.014 * c.gait * Math.cos(2 * f.gph); // hips rise as a foot passes under them, dip in double support
+      s.h -= 0.014 * c.gait * Math.cos(2 * f.gph - Math.PI * (2 * GAIT_D - 1)); // hips rise as a foot passes under them, dip in double support
       if (sq > 0.002) { s.h -= sq; s.lf = [c.lf[0], c.lf[1] + sq, c.lf[2]]; s.rf = [c.rf[0], c.rf[1] + sq, c.rf[2]]; s.lean += sq; }
       const base = tg.base ?? f.y;
       // grip: the hands close on the held opponent (heroes.js s.hold), easing in and out: his torso in throws,
