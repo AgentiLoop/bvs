@@ -1186,15 +1186,21 @@ const BOOT_CORNERS = [[0, -0.074, -0.066], [0, -0.074, TOE_Z], [0.046, -0.074, 0
 // Toes bend up at the ball so they lie flat on the roof whenever the ball is down and the foot pitches toes-down
 // (heel lifted: walking toe-off, up on the toes past the ankle's dorsiflexion cap, a rear foot rolled onto its
 // ball). Off the floor (TOE_H above it at the joint) the boot's forefoot stays straight.
-const TOE_H = [0.015, 0.05], _tbV = new THREE.Vector3(), _tbP = new THREE.Vector3(), _tbQ = new THREE.Quaternion();
+// Higher up (TOE_AIR) a pointed foot curls its toes down with the ankle (flexor pull: flying, a jump's tucked
+// legs, a trailing kick leg), up to TOE_CURL at the airborne point AIR_PF; a boot lets them curl ~20 deg.
+const TOE_H = [0.015, 0.05], TOE_AIR = [0.08, 0.2], TOE_CURL = 0.35,
+  _tbV = new THREE.Vector3(), _tbP = new THREE.Vector3(), _tbQ = new THREE.Quaternion();
 function bendToes(l, ground) {
   const t = l.toe; if (!t) return;
   t.quaternion.copy(t.userData.q0); t.updateMatrixWorld(true);
   _tbV.set(0, 0, 1).transformDirection(l.an.matrixWorld);
   const pitch = Math.asin(Math.max(-1, Math.min(1, -_tbV.y))); // toes-down pitch of the rear foot
   const h = t.getWorldPosition(_tbP).y - ground;
-  const a = Math.min(TOE_UP, Math.max(0, pitch)) * (1 - blend(TOE_H[0], TOE_H[1], h));
-  if (a > 1e-4) { t.quaternion.multiply(_tbQ.setFromAxisAngle(_XA, -a)); t.updateMatrixWorld(true); }
+  _tbV.set(0, 0, 1).applyQuaternion(l.an.quaternion); // toes in the shin's frame: ankle plantarflexion
+  const pf = Math.atan2(-_tbV.y, _tbV.z);
+  const a = Math.min(TOE_UP, Math.max(0, pitch)) * (1 - blend(TOE_H[0], TOE_H[1], h))
+    - TOE_CURL * Math.min(1, Math.max(0, pf) / AIR_PF) * blend(TOE_AIR[0], TOE_AIR[1], h);
+  if (Math.abs(a) > 1e-4) { t.quaternion.multiply(_tbQ.setFromAxisAngle(_XA, -a)); t.updateMatrixWorld(true); }
 }
 const _btP = new THREE.Vector3(), _btQ = new THREE.Vector3();
 function bootLow(l) { // lowest boot point, world y
