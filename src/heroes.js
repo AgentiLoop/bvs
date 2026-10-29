@@ -606,7 +606,7 @@ export function makeHero(kind) {
       // white reads as a crisp inked shape instead of bleeding into the dark-blue cowl.
       part(lid, slab(1.22, 0.003, 0, -0.0031, 0.9), new THREE.MeshBasicMaterial({ color: 0x000000 })); // unlit ink: no rim light
       eyes.push(part(lid, slab(1, 0.004, 0.0008, -0.0035), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35,
-        emissive: 0xffffff, emissiveIntensity: 0.9 })));
+        emissive: 0xffffff, emissiveIntensity: 3 }))); // HDR: main.js grade() is 1 - exp(-1.3c), so 0.9 came out grey (~228)
     } else eyes.push(oval(lid, new THREE.MeshStandardMaterial({ color: 0xe1ddd4, roughness: 0.6, emissive: 0 }),
       [0, 0, 0], [0.018, 0.006, 0.006])); // seated in the socket
     if (!B) {

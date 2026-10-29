@@ -102,7 +102,7 @@ const post = new THREE.ShaderMaterial({
         e = max(e, 0.7 * smoothstep(0.27, 0.5, length(vec2(gx, gy))));
         // cel shading: keep the scene's hues, gently lift + saturate, then snap brightness into soft bands
         c = pow(c, vec3(0.82)) * 1.12;
-        float L = lum(c);
+        float L = min(lum(c), 1.0); // (past 1 the bands below wrap round and dim self-lit whites to grey)
         c = clamp(mix(vec3(L), c, 1.5), 0.0, 1.0);
         float b = L * 4.0, Lq = (floor(b) + smoothstep(0.38, 0.62, fract(b))) / 4.0;
         c *= (Lq + 0.04) / (L + 0.04);
@@ -110,11 +110,12 @@ const post = new THREE.ShaderMaterial({
         float ink = smoothstep(0.6, 0.08, Lq) * 0.75;
         c *= 1.0 - 0.42 * dots(fc, 0.7854, 5.0, ink);
         // paper: faint warm tint + grain, then soft ink outline
-        float grain = fract(sin(dot(floor(fc), vec2(12.9898, 78.233))) * 43758.5453);
-        c = mix(c, c * vec3(1.0, 0.97, 0.9) + 0.03, 0.55) * (0.96 + 0.04 * grain);
+        // (faded out on near-whites so Batman's lenses / teeth stay paper-white, not cream)
+        float grain = fract(sin(dot(floor(fc), vec2(12.9898, 78.233))) * 43758.5453), hiW = smoothstep(0.85, 0.98, lum(c));
+        c = mix(c, c * vec3(1.0, 0.97, 0.9) + 0.03, 0.55 * (1.0 - hiW)) * mix(0.96 + 0.04 * grain, 1.0, hiW);
         c = mix(c, vec3(0.05, 0.04, 0.06), e * 0.9);
       } else {
-        c *= vec3(0.96, 1.0, 1.07);                     // cool night grade
+        c *= mix(vec3(0.96, 1.0, 1.07), vec3(1.0), smoothstep(0.85, 0.98, lum(c))); // cool night grade (not on whites)
       }
       if (pixel > 0.5) {
         vec2 px = 1.0 / res;
