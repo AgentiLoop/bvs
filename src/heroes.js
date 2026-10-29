@@ -454,6 +454,7 @@ export function makeHero(kind) {
   // Superman's mouth corners turn down: the head's fighting chin-tuck sets the receding corners higher than the
   // middle on screen, so a level lip seam read as a smile; the lips and the mouth line follow this dip instead.
   const mouthDip = x => 0.004 * Math.min(1.5, (x / 0.023) ** 2);
+  const FLAT_N = 0.7; // front-plane superellipse exponent (1 = the old ellipse front, lower = flatter)
   const faceSculpt = (p, a) => {
     const front = Math.max(0, Math.cos(a)), f5 = front ** 5;
     if (B) {
@@ -469,7 +470,12 @@ export function makeHero(kind) {
     {
       const [rx, rz, off] = contour(faceRows, p.y), c = Math.cos(a), s = Math.sin(a);
       const jawT = (1 - blend(0.06, 0.1, p.y)) * blend(0.0, 0.016, p.y);
-      const nx = THREE.MathUtils.lerp(0.83, 0.6, jawT), nz = THREE.MathUtils.lerp(1, c > 0 ? 0.6 : 0.75, jawT);
+      let nx = THREE.MathUtils.lerp(0.83, 0.6, jawT), nz = THREE.MathUtils.lerp(1, c > 0 ? 0.6 : 0.75, jawT);
+      // Broad front plane from the cheekbones up the forehead: the round cross-section set the eyes ~25 deg
+      // around the head, so a three-quarter view lost the far eye behind the nose and brow. A flatter front
+      // (superellipse) brings the eye line forward and squares the turn into the temples.
+      const flatT = c > 0 ? blend(0.075, 0.105, p.y) * (1 - blend(0.2, 0.235, p.y)) : 0;
+      nx = THREE.MathUtils.lerp(nx, FLAT_N, flatT); nz = THREE.MathUtils.lerp(nz, FLAT_N, flatT);
       p.x = Math.sign(s) * Math.pow(Math.abs(s), nx) * rx;
       p.z = Math.sign(c) * Math.pow(Math.abs(c), nz) * Math.max(0.0001, rz) + off;
       // the mandible angle flares out a little below and in front of the ear
