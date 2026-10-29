@@ -685,6 +685,19 @@ export function makeHero(kind) {
       N.setXYZ(i, t.x * LID[0], t.y * LID[1], t.z * LID[2]);
     }
   }
+  // Comic lower lid: the eyeball's lower half stood up to 4 mm proud of the cheek with no lid over it, so the white
+  // ran down 5.7 mm under the iris and ended straight on skin. A skin cap over the eyeball's bottom (edge at
+  // LOW_Y, 0.7 mm proud of the ball) narrows the eye so the iris is cut by both lids, the stern comic-book squint,
+  // with a fine brown lower-lid line along its edge from under the inner iris to the outer corner.
+  const LOW = [0.0188, 0.0075, 0.0078], LOW_Y = -0.0035, LOW_T = Math.acos(LOW_Y / LOW[1]), LOW_S = Math.sin(LOW_T);
+  const lowerLid = new THREE.SphereGeometry(1, 32, 8, 0, Math.PI * 2, LOW_T, Math.PI - LOW_T);
+  {
+    const N = lowerLid.attributes.normal, P = lowerLid.attributes.position, t = new THREE.Vector3(), f = new THREE.Vector3(0, 0.12, 1).normalize();
+    for (let i = 0; i < N.count; i++) {
+      t.set(P.getX(i) / LOW[0], P.getY(i) / LOW[1], P.getZ(i) / LOW[2]).normalize().lerp(f, LID_FACE).normalize();
+      N.setXYZ(i, t.x * LOW[0], t.y * LOW[1], t.z * LOW[2]);
+    }
+  }
   for (const s of [-1, 1]) {
     const lid = new THREE.Group(); lid.position.set(s * 0.034, 0.143, faceZ(s * 0.034, 0.143) - 0.002); head.add(lid); lids.push(lid);
     eyes.push(oval(lid, new THREE.MeshStandardMaterial({ color: B ? 0xe4ecf2 : 0xe1ddd4, roughness: 0.6, emissive: 0 }),
@@ -702,6 +715,9 @@ export function makeHero(kind) {
       part(lid, upperLid, skin, [0, 0, 0], LID);
       line(lid, Array.from({ length: 9 }, (_, i) => { const f = -1.25 + i * 2.5 / 8;
         return [0.0181 * Math.sin(f), 0.0025 - 0.0006 * f * f, 0.0076 * Math.cos(f)]; }), 0.0005, lash);
+      part(lid, lowerLid, skin, [0, 0, 0], LOW);
+      line(lid, Array.from({ length: 9 }, (_, i) => { const f = -0.6 + i * 1.8 / 8;
+        return [s * LOW[0] * LOW_S * Math.sin(f), LOW_Y + 0.0002, LOW[2] * LOW_S * Math.cos(f) + 0.0002]; }), 0.00035, mat(0x4a2420, 0.9));
     }
     const bp = [s * 0.033, 0.159, faceZ(s * 0.033, 0.159)];
     const bg = new THREE.Group(); bg.position.set(...bp); head.add(bg); brows.push({ g: bg, s, y: bp[1] });
