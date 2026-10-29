@@ -154,25 +154,25 @@ const REACT = { head: MP.hitHead, body: MP.hitBody, low: MP.hitLow };
 const EASY = { cpuDmg: 0.8, meDmg: 1.1, think: [0.28, 0.35] };
 // Training mode (T): the CPU is a defence-only trainer (never attacks, can't hurt you), takes TRAIN.dmg x damage, no clock,
 // your meter stays full. One read per attack: block (height read right TRAIN.read), sidestep, backdash or take it.
-// It keeps within [far, near] m of you so there is always something to hit. LESSONS = the move prompts, done when act(you) is true.
+// It keeps within [far, near] m of you so there is always something to hit. LESSONS = [name, keyboard, Xbox pad, done when act(you) is true].
 const TRAIN = { dmg: 0.35, block: 0.4, read: 0.8, side: 0.1, back: 0.05, near: 2.4, far: 0.9, next: 1 };
 const LESSONS = [
-  ['PUNCH', 'J / Ⓧ', (a) => a.type === 'jab'],
-  ['KICK', 'K / Ⓨ', (a) => a.type === 'front'],
-  ['3-HIT PUNCH CHAIN', 'J J J', (a) => a.type === 'hook'],
-  ['UPPERCUT', 'HOLD SHIFT + J', (a) => a.type === 'upper'],
-  ['SWEEP', 'HOLD SHIFT + K', (a) => a.type === 'sweep'],
-  ['LOW KICK', 'HOLD C + K', (a) => a.type === 'ckick'],
-  ['JUMP KICK', 'Y, THEN K IN THE AIR', (a) => a.type === 'airkick'],
-  ['DASH IN', 'DOUBLE-TAP TOWARD', (a) => a.type === 'dash' && a.dir > 0],
-  ['SIDESTEP', 'DOUBLE-TAP W OR S', (a) => a.type === 'side'],
-  ['THROW', 'U (OR J + K TOGETHER) UP CLOSE', (a) => a.type === 'throw'],
-  ['PROJECTILE', 'C, THEN TOWARD + J', (a) => a.type === 'shoot'],
-  ['RISING UPPERCUT', 'O (OR TOWARD, C + TOWARD + J)', (a) => a.type === 'rise'],
-  ['SPECIAL', 'L / Ⓑ', (a) => a.type === 'flykick' || a.type === 'heat'],
-  ['DRIVE IMPACT', 'H / LB + RB', (a) => a.type === 'impact'],
-  ['SUPER', 'I (OR SHIFT + L)', (a) => a.type === 'super'],
-  ['GRAPNEL HOOK', 'G / R3', (a) => a.type === 'grapnel', 'bat'], // (4th entry: only for that hero)
+  ['PUNCH', 'J', 'Ⓧ', (a) => a.type === 'jab'],
+  ['KICK', 'K', 'Ⓨ', (a) => a.type === 'front'],
+  ['3-HIT PUNCH CHAIN', 'J J J', 'Ⓧ Ⓧ Ⓧ', (a) => a.type === 'hook'],
+  ['UPPERCUT', 'HOLD SHIFT + J', 'HOLD LB + Ⓧ', (a) => a.type === 'upper'],
+  ['SWEEP', 'HOLD SHIFT + K', 'HOLD LB + Ⓨ', (a) => a.type === 'sweep'],
+  ['LOW KICK', 'HOLD C + K', 'HOLD STICK DOWN + Ⓨ', (a) => a.type === 'ckick'],
+  ['JUMP KICK', 'Y, THEN K IN THE AIR', 'Ⓐ, THEN Ⓨ IN THE AIR', (a) => a.type === 'airkick'],
+  ['DASH IN', 'DOUBLE-TAP TOWARD', 'DOUBLE-TAP TOWARD', (a) => a.type === 'dash' && a.dir > 0],
+  ['SIDESTEP', 'DOUBLE-TAP W OR S', 'DOUBLE-TAP D-PAD UP OR DOWN', (a) => a.type === 'side'],
+  ['THROW', 'U (OR J + K TOGETHER) UP CLOSE', 'Ⓧ + Ⓨ TOGETHER UP CLOSE', (a) => a.type === 'throw'],
+  ['PROJECTILE', 'C, THEN TOWARD + J', 'DOWN, THEN TOWARD + Ⓧ', (a) => a.type === 'shoot'],
+  ['RISING UPPERCUT', 'O (OR TOWARD, C + TOWARD + J)', 'TOWARD, DOWN-TOWARD + Ⓧ', (a) => a.type === 'rise'],
+  ['SPECIAL', 'L', 'Ⓑ', (a) => a.type === 'flykick' || a.type === 'heat'],
+  ['DRIVE IMPACT', 'H', 'LB + RB', (a) => a.type === 'impact'],
+  ['SUPER', 'I (OR SHIFT + L)', 'HOLD LB + Ⓑ', (a) => a.type === 'super'],
+  ['GRAPNEL HOOK', 'G', 'R3', (a) => a.type === 'grapnel', 'bat'], // (5th entry: only for that hero)
 ];
 // keys: [time, pose]; hit: active frame; cancel: earliest chain into `next` (J punch / K kick); reach: horizontal range;
 // kb: knockback m/s; up: launch m/s (<0 spikes airborne targets down); at: striking limb; blast: hit-explosion size.
@@ -461,14 +461,14 @@ export class Game {
     this.updateTags(); this.trainUI();
     this.showCombo(on ? 'TRAINING MODE · T TO FIGHT' : 'FIGHT MODE · T TO TRAIN', null);
   }
-  lessons() { return LESSONS.filter((l) => !l[3] || l[3] === this.me.key); }
+  lessons() { return LESSONS.filter((l) => !l[4] || l[4] === this.me.key); }
   trainUI() {
     const el = this.ui.train;
     if (!el) return;
     el.style.display = this.train && this.active ? 'block' : 'none';
     if (!this.train) return;
-    const L = this.lessons(), i = this.lesson % L.length, [name, keys] = L[i];
-    el.innerHTML = `<h4>TRAINING · ${i + 1} / ${L.length}${this.lessonT > 0 ? ' · <em>NICE!</em>' : ''}</h4><p>${name}</p><b>${keys}</b>`
+    const L = this.lessons(), i = this.lesson % L.length, [name, keys, pad] = L[i];
+    el.innerHTML = `<h4>TRAINING · ${i + 1} / ${L.length}${this.lessonT > 0 ? ' · <em>NICE!</em>' : ''}</h4><p>${name}</p><b>${this.pad ? pad : keys}</b>`
       + '<small>TAB NEXT MOVE · T BACK TO FIGHT · THE TRAINER ONLY DEFENDS</small>';
   }
   nextLesson() { this.lesson = (this.lesson + 1) % this.lessons().length; this.lessonT = 0; this.trainUI(); }
@@ -477,8 +477,8 @@ export class Game {
     const me = this.me, a = me.act;
     if (me.meter < 100) { me.meter = 100; this.updateBars(); }
     if (this.lessonT > 0) { if ((this.lessonT -= dt) <= 0) this.nextLesson(); return; }
-    const L = this.lessons()[this.lesson % this.lessons().length];
-    if (a && L[2](a)) { this.lessonT = TRAIN.next; this.trainUI(); }
+    const L = this.lessons(), a2 = L[this.lesson % L.length];
+    if (a && a2[3](a)) { this.lessonT = TRAIN.next; this.trainUI(); }
   }
   // Trainer brain: no attacks at all, only guard / duck / sidestep / backdash / wake-up, and stays in range of you.
   trainAI(dt) {
@@ -563,7 +563,9 @@ export class Game {
   }
   // In game (standard mapping): X punch, Y kick, B special, A jump, LB/RB/LT/RT block, L3 crouch, R3 prop / grapnel, Start pause, Back menu.
   gamePad() {
+    const had = !!this.pad;
     this.readPad();
+    if (had !== !!this.pad) this.trainUI(); // pad found / lost: training card swaps keyboard <-> Xbox labels
     if (!this.pad) return true;
     if (this.padHit(8)) { this.ctx.quit(); return false; }
     if (this.demo) return true; // auto-pilot: Back still quits, the rest is ignored
