@@ -455,14 +455,15 @@ export class Game {
   // ---------- training mode (TRAIN / LESSONS) ----------
   setTrain(on) {
     this.train = on; this.lessonT = 0;
-    if (!this.inputMode) this.inputMode = this.pad ? 'pad' : 'keys'; // until you touch something: pad if one is plugged in
+    this.readPad(); if (on && this.pad) this.inputMode = 'pad'; // a controller is plugged in: start on its moves (T was a key)
+    if (!this.inputMode) this.inputMode = 'keys';
     const F = this.finish; // the CPU had you at FINISH HIM: let you off
     if (on && F && F.att === this.cpu && !F.go) { F.def.dazed = false; F.def.hp = Math.max(1, F.def.hp); this.finish = null; this.say(''); }
     const A = this.cpu.ai; A.t = A.block = A.crouch = A.chain = 0; A.air = false; this.cpu.buf = null;
     this.updateTags(); this.trainUI();
-    this.showCombo(on ? 'TRAINING MODE · T TO FIGHT' : 'FIGHT MODE · T TO TRAIN', null);
+    this.showCombo(this.inputMode === 'pad' ? (on ? 'TRAINING MODE' : 'FIGHT MODE') : on ? 'TRAINING MODE · T TO FIGHT' : 'FIGHT MODE · T TO TRAIN', null);
   }
-  // last device you used: 'keys' or 'pad' — the training card shows that device's moves
+  // last device you used: 'keys' or 'pad' — the training card shows only that device's moves
   useInput(mode) { if (this.inputMode !== mode) { this.inputMode = mode; this.trainUI(); } }
   lessons() { return LESSONS.filter((l) => !l[4] || l[4] === this.me.key); }
   trainUI() {
@@ -470,9 +471,9 @@ export class Game {
     if (!el) return;
     el.style.display = this.train && this.active ? 'block' : 'none';
     if (!this.train) return;
-    const L = this.lessons(), i = this.lesson % L.length, [name, keys, pad] = L[i];
-    el.innerHTML = `<h4>TRAINING · ${i + 1} / ${L.length}${this.lessonT > 0 ? ' · <em>NICE!</em>' : ''}</h4><p>${name}</p><b>${this.inputMode === 'pad' ? pad : keys}</b>`
-      + '<small>TAB NEXT MOVE · T BACK TO FIGHT · THE TRAINER ONLY DEFENDS</small>';
+    const L = this.lessons(), i = this.lesson % L.length, [name, keys, pad] = L[i], P = this.inputMode === 'pad';
+    el.innerHTML = `<h4>TRAINING · ${i + 1} / ${L.length}${this.lessonT > 0 ? ' · <em>NICE!</em>' : ''}</h4><p>${name}</p><b>${P ? pad : keys}</b>`
+      + `<small>${P ? 'DO THE MOVE FOR THE NEXT ONE' : 'TAB NEXT MOVE · T BACK TO FIGHT'} · THE TRAINER ONLY DEFENDS</small>`;
   }
   nextLesson() { this.lesson = (this.lesson + 1) % this.lessons().length; this.lessonT = 0; this.trainUI(); }
   // per step: the player's meter stays full, the clock stands still, a move done = NICE!, then the next prompt
