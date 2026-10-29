@@ -306,7 +306,7 @@ const KRUSH = { dmg: 1.5, dur: 1.25, ts: 0.18, moves: [
 // start-up (taking half damage, no stun), lands at `hit` s, then `dur` s of recovery if it whiffs (throws beat it).
 // On a counter / punish counter the foe CRUMPLES (doubles over and sinks to his knees, `crumple` s: a free combo);
 // with his back `wall` m or less from the arena edge, hit or blocked, he is SPLATTED against the wall (`splat` s).
-const IMPACT = { cost: 25, armor: 2, hit: 0.42, dur: 0.95, reach: 1.7, lunge: [0.12, 0.42, 3.2], crumple: 1.5, splat: 1.1, wall: 1.6,
+const IMPACT = { cost: 25, armor: 2, hit: 0.42, dur: 0.95, reach: 1.7, lunge: [0.12, 0.42, 3.2], crumple: 1.5, splat: 1.1, wall: 1.6, fly: 12,
   strike: { dmg: 11, kb: 5, stun: 0.55, heavy: true, at: 'rh', blast: 1.4 }, cpu: 0.18 };
 // Drive impact pose timing (s): coil -> palm eased over `strike`, palm -> recovery over `out`. Switched at 0.3 / 0.72, the
 // rear fist went from the hip to full reach (~1.1 m) with its fastest move in the first frame: 66 cm in one 30 fps frame.
@@ -898,9 +898,14 @@ export class Game {
     const cam = (s) => { this.cine = { f, t: 0, a0: Math.atan2(this.camN.x, this.camN.y), end: s, close: true }; };
     if (wall) {
       // slammed flat against the arena wall: pinned there, then slides down it
-      if (Math.abs(nx) >= Math.abs(nz)) o.x = nx > 0 ? ARENA.x1 : ARENA.x0; else o.z = nz > 0 ? ARENA.z1 : ARENA.z0;
+      // (onto the wall wallGap() found, the nearest one behind him: pinned to the wall of the larger direction component
+      // instead, a fighter 0.3 m from a side wall was thrown 5.7 m across the arena to the end wall in one frame. He is
+      // blown onto it at IMPACT.fly m/s (physics()): set there, he jumped up to 1.6 m in one frame)
+      const gx = nx > 0.3 ? ARENA.x1 - o.x : nx < -0.3 ? o.x - ARENA.x0 : Infinity, gz = nz > 0.3 ? ARENA.z1 - o.z : nz < -0.3 ? o.z - ARENA.z0 : Infinity;
+      o.splatTo = gx <= gz ? ['x', nx > 0 ? ARENA.x1 : ARENA.x0] : ['z', nz > 0 ? ARENA.z1 : ARENA.z0];
       o.kx = o.kz = 0; o.vy = 0; o.y = 0; o.launched = false; o.stun = o.stunMax = IMPACT.splat; o.zone = 'splat'; o.heavy = true;
-      const w = new THREE.Vector3(o.x + nx * 0.3, 1.2, o.z + nz * 0.3);
+      const wx = o.splatTo[0] === 'x' ? o.splatTo[1] : o.x, wz = o.splatTo[0] === 'z' ? o.splatTo[1] : o.z;
+      const w = new THREE.Vector3(wx + nx * 0.3, 1.2, wz + nz * 0.3);
       fx.rubble(w.x, w.y, w.z, 40, 4, 0.05, 0.2, 4); fx.dustBurst(w.x, 0.6, w.z, 70, 3); fx.waves.spawn(w.x, w.y, w.z, 3, 0xfff2d0, 0.6);
       fx.impact(w.x, w.y, w.z, 0.5); fx.flash(0.35);
       this.hitstop = Math.max(this.hitstop, 0.22); this.camKick(w, 1.4, f.key === 'bat' ? 1 : -1); cam(1.1);
@@ -1689,6 +1694,10 @@ export class Game {
     // knockback / momentum (little drag in the air so launched bodies carry it)
     f.x += f.kx * dt; f.z += f.kz * dt;
     const damp = Math.exp(-dt * (f.y > 0 ? 0.8 : 5)); f.kx *= damp; f.kz *= damp;
+    if (f.splatTo) { // drive impact wall splat: blown back onto the wall (impactHit)
+      const [ax, v] = f.splatTo, d = v - f[ax], st = IMPACT.fly * dt;
+      if (f.zone !== 'splat' || f.stun <= 0 || Math.abs(d) <= st) { if (f.zone === 'splat' && f.stun > 0) f[ax] = v; f.splatTo = null; } else f[ax] += Math.sign(d) * st;
+    }
     f.stun -= dt; f.down -= dt;
     const R = f.rollA;
     if (R) { // back roll: fast start, easing out, dust kicked up along the way
@@ -2114,7 +2123,7 @@ export class Game {
       // dashes and sidesteps keep their sliding footwork. Knocked back (hit / block stun, pushback) they hold too and
       // stumble back in steps: both feet skated 5-6 m per 90 s CPU fight under the pushback. Reeled in by the grapnel
       // line (7 m/s) they skid along (3): held, the rear leg trailed 40-54 deg behind the pelvis.
-      const reel = o.act && o.act.type === 'grapnel' && o.act.phase === 'latch';
+      const reel = o.act && o.act.type === 'grapnel' && o.act.phase === 'latch' || !!f.splatTo; // (and blown onto the wall, IMPACT.fly)
       s.lock = !this.active || f.y > gnd + 0.01 || f.ko || f.down > 0 || f.launched || f.heldBy ? 0 : reel ? 3
         : a ? (a.type !== 'dash' && a.type !== 'side' ? 2 : 1) : f.stun > 0 || Math.hypot(f.kx, f.kz) > 0.3 ? 2 : 1;
       s.dt = dt;
