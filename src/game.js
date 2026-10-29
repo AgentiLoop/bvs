@@ -159,20 +159,31 @@ const TRAIN = { dmg: 0.35, block: 0.4, read: 0.8, side: 0.1, back: 0.05, near: 2
 const LESSONS = [
   ['PUNCH', 'J', 'Ⓧ', (a) => a.type === 'jab'],
   ['KICK', 'K', 'Ⓨ', (a) => a.type === 'front'],
+  ['2-HIT PUNCH CHAIN', 'J J', 'Ⓧ Ⓧ', (a) => a.type === 'cross'],
   ['3-HIT PUNCH CHAIN', 'J J J', 'Ⓧ Ⓧ Ⓧ', (a) => a.type === 'hook'],
-  ['UPPERCUT', 'HOLD SHIFT + J', 'HOLD LB + Ⓧ', (a) => a.type === 'upper'],
+  ['4-HIT PUNCH CHAIN', 'J J J J', 'Ⓧ Ⓧ Ⓧ Ⓧ', (a) => a.type === 'upper' && a.ch],
+  ['ROUNDHOUSE', 'K K (OR J J K)', 'Ⓨ Ⓨ (OR Ⓧ Ⓧ Ⓨ)', (a) => a.type === 'round'],
+  ['PUNCH INTO KICK', 'J K', 'Ⓧ Ⓨ', (a) => a.type === 'front' && a.ch],
+  ['UPPERCUT', 'HOLD SHIFT + J', 'HOLD LB + Ⓧ', (a) => a.type === 'upper' && !a.ch],
   ['SWEEP', 'HOLD SHIFT + K', 'HOLD LB + Ⓨ', (a) => a.type === 'sweep'],
+  ['LOW JAB', 'HOLD C + J', 'HOLD STICK DOWN + Ⓧ', (a) => a.type === 'cjab'],
   ['LOW KICK', 'HOLD C + K', 'HOLD STICK DOWN + Ⓨ', (a) => a.type === 'ckick'],
+  ['JUMP PUNCH', 'Y, THEN J IN THE AIR', 'Ⓐ, THEN Ⓧ IN THE AIR', (a) => a.type === 'dive'],
   ['JUMP KICK', 'Y, THEN K IN THE AIR', 'Ⓐ, THEN Ⓨ IN THE AIR', (a) => a.type === 'airkick'],
   ['DASH IN', 'DOUBLE-TAP TOWARD', 'DOUBLE-TAP TOWARD', (a) => a.type === 'dash' && a.dir > 0],
+  ['BACKDASH', 'DOUBLE-TAP AWAY', 'DOUBLE-TAP AWAY', (a) => a.type === 'dash' && a.dir < 0],
   ['SIDESTEP', 'DOUBLE-TAP W OR S', 'DOUBLE-TAP D-PAD UP OR DOWN', (a) => a.type === 'side'],
   ['THROW', 'U (OR J + K TOGETHER) UP CLOSE', 'Ⓧ + Ⓨ TOGETHER UP CLOSE', (a) => a.type === 'throw'],
   ['PROJECTILE', 'C, THEN TOWARD + J', 'DOWN, THEN TOWARD + Ⓧ', (a) => a.type === 'shoot'],
   ['RISING UPPERCUT', 'O (OR TOWARD, C + TOWARD + J)', 'TOWARD, DOWN-TOWARD + Ⓧ', (a) => a.type === 'rise'],
   ['SPECIAL', 'L', 'Ⓑ', (a) => a.type === 'flykick' || a.type === 'heat'],
+  ['AMPLIFY', 'PROJECTILE / RISING UPPERCUT, THEN TAP SHIFT', 'PROJECTILE / RISING UPPERCUT, THEN TAP LB', (a) => !!a.amp],
   ['DRIVE IMPACT', 'H', 'LB + RB', (a) => a.type === 'impact'],
   ['SUPER', 'I (OR SHIFT + L)', 'HOLD LB + Ⓑ', (a) => a.type === 'super'],
-  ['GRAPNEL HOOK', 'G', 'R3', (a) => a.type === 'grapnel', 'bat'], // (5th entry: only for that hero)
+  ['FATAL BLOW', 'F', 'LT + RT', (a) => a.type === 'blow'],
+  ['HURL A STEEL DRUM', 'E NEXT TO A DRUM', 'R3 NEXT TO A DRUM', (a) => a.type === 'prop'],
+  ['GRAPNEL HOOK', 'G', 'R3', (a) => a.type === 'grapnel' && a.mode === 'hook', 'bat'], // (5th entry: only for that hero)
+  ['GRAPNEL SWING', 'HOLD SHIFT + G', 'HOLD LB + R3', (a) => a.type === 'grapnel' && a.mode === 'zip', 'bat'],
 ];
 // keys: [time, pose]; hit: active frame; cancel: earliest chain into `next` (J punch / K kick); reach: horizontal range;
 // kb: knockback m/s; up: launch m/s (<0 spikes airborne targets down); at: striking limb; blast: hit-explosion size.
@@ -651,7 +662,7 @@ export class Game {
       if (f.y > 0.3) name = f.buf === 'J' ? 'dive' : 'airkick';
       else if (f.y <= 0.001) name = f.bufMod ? (f.buf === 'J' ? 'upper' : 'sweep') : f.crouch ? (f.buf === 'J' ? 'cjab' : 'ckick') : (f.buf === 'J' ? 'jab' : 'front');
     } else if (M && M.next && a.done && !a.parried && a.t >= M.cancel) name = M.next[f.buf];
-    if (name) { f.buf = null; this.begin(f, name); }
+    if (name) { f.buf = null; this.begin(f, name); if (a) f.act.ch = true; } // ch: chained off the last move (training lessons)
   }
   begin(f, name) {
     f.act = { type: name, t: 0, done: false };
@@ -1068,7 +1079,8 @@ export class Game {
     return true;
   }
   // MK11 Fatal Blow (see BLOW). Armoured lunge; contact starts the close-up cinematic, a block or whiff only costs recovery.
-  canBlow(f) { return this.state === 'fight' && !this.finish && this.free(f) && !f.blowUsed && !f.dazed && f.hp > 0 && f.hp <= BLOW.hp; }
+  // (training: you can always practise it — you can't be hurt down to BLOW.hp there)
+  canBlow(f) { return this.state === 'fight' && !this.finish && this.free(f) && !f.dazed && (this.train && f === this.me || !f.blowUsed && f.hp > 0 && f.hp <= BLOW.hp); }
   blow(f) {
     if (!this.canBlow(f)) return false;
     const B = BLOW[f.key], { fx } = this.ctx, c = f.H.chest.getWorldPosition(new THREE.Vector3());
