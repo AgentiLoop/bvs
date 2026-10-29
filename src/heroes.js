@@ -1155,10 +1155,17 @@ export function makeHero(kind) {
   const ink = new THREE.MeshBasicMaterial({ color: 0x050608, side: THREE.BackSide });
   ink.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader.replace('#include <skinning_vertex>',
-      '#include <skinning_vertex>\n#ifdef USE_SKINNING\n  transformed += normalize(objectNormal) * 0.0055 * inkW;\n#else\n  transformed += normalize(normal) * 0.0055 * inkW;\n#endif');
+      '#include <skinning_vertex>\n  float iw = inkW;\n#ifdef INK_VIEW\n  iw = mix(1.0, iw, smoothstep(0.3, 0.6, abs(normalize((modelViewMatrix * vec4(0.0, 0.0, 1.0, 0.0)).xyz).z)));\n#endif\n#ifdef USE_SKINNING\n  transformed += normalize(objectNormal) * 0.0055 * iw;\n#else\n  transformed += normalize(normal) * 0.0055 * iw;\n#endif');
     sh.vertexShader = 'attribute float inkW;\n' + sh.vertexShader;
   };
   ink.customProgramCacheKey = () => 'hero-ink';
+  // Per-geometry fine lines (userData.inkW) are view-dependent: full weight again as the part turns to profile
+  // (its +z axis across the view), so the nose keeps a bold silhouette contour in side view while staying a fine
+  // line in front and three-quarter views. Non-skinned parts only (+z is the mesh's local forward).
+  const inkView = ink.clone();
+  inkView.defines = { INK_VIEW: '' };
+  inkView.onBeforeCompile = ink.onBeforeCompile;
+  inkView.customProgramCacheKey = () => 'hero-ink-view';
   const inked = [];
   root.traverse(o => { if (o.isMesh) inked.push(o); });
   for (const m of inked) {
@@ -1189,7 +1196,8 @@ export function makeHero(kind) {
     }
     if (g.userData.inkW) for (let i = 0; i < P.count; i++) w[i] = g.userData.inkW(P.getX(i), P.getY(i), P.getZ(i));
     og.setAttribute('inkW', new THREE.BufferAttribute(w, 1));
-    const o = m.isSkinnedMesh ? new THREE.SkinnedMesh(og, ink) : new THREE.Mesh(og, ink);
+    const im = g.userData.inkW && !m.isSkinnedMesh ? inkView : ink;
+    const o = m.isSkinnedMesh ? new THREE.SkinnedMesh(og, im) : new THREE.Mesh(og, im);
     o.frustumCulled = false;
     if (m.isSkinnedMesh) { root.add(o); o.bind(m.skeleton, m.bindMatrix); }
     else { o.position.copy(m.position); o.quaternion.copy(m.quaternion); o.scale.copy(m.scale); m.parent.add(o); }
