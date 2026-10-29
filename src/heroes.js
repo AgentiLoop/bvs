@@ -571,13 +571,22 @@ export function makeHero(kind) {
   // the mouth is a dark cavity + upper teeth behind the lip line that the jaw drops open.
   const eyes = [], lids = [], brows = [];
   const brow = B ? dark : mat(0x241c1a, 0.9);
+  // Superman's upper eyelid: the top cap of an ellipsoid a little larger than the eyeball, its lower edge
+  // level at y +2.5 mm (theta 1.272 rad of a 8.5 mm-tall cap), plus a near-black lash line along that edge.
+  const upperLid = new THREE.SphereGeometry(1, 32, 12, 0, Math.PI * 2, 0, 1.272), lash = new THREE.MeshBasicMaterial({ color: 0x140e0c });
   for (const s of [-1, 1]) {
     const lid = new THREE.Group(); lid.position.set(s * 0.034, 0.143, faceZ(s * 0.034, 0.143) - 0.002); head.add(lid); lids.push(lid);
     eyes.push(oval(lid, new THREE.MeshStandardMaterial({ color: B ? 0xe4ecf2 : 0xe1ddd4, roughness: 0.6, emissive: 0 }),
       [0, 0, 0], [0.018, 0.006, 0.006])); // seated in the socket
     if (!B) {
-      oval(lid, mat(0x416b88), [0, 0, 0.0045], [0.0045, 0.005, 0.002]);
-      oval(lid, dark, [0, 0, 0.0062], [0.002, 0.003, 0.001]);
+      // Comic-book eyes: a big blue iris + pupil as thin lenses on the front of the eyeball (the old iris
+      // was mostly buried in the white), and a heavy upper lid whose straight lower edge cuts across the top
+      // of the iris (the stern, level Superman gaze), outlined by a dark lash line.
+      oval(lid, mat(0x3f6f96), [0, -0.0003, 0.0054], [0.006, 0.0049, 0.0008]);
+      oval(lid, new THREE.MeshBasicMaterial({ color: 0x0a0a0c }), [0, -0.0003, 0.0062], [0.0021, 0.0025, 0.0005]);
+      part(lid, upperLid, skin, [0, 0, 0], [0.0188, 0.0085, 0.0075]);
+      line(lid, Array.from({ length: 9 }, (_, i) => { const f = -1.25 + i * 2.5 / 8;
+        return [0.0181 * Math.sin(f), 0.0025 - 0.0006 * f * f, 0.0076 * Math.cos(f)]; }), 0.0005, lash);
     }
     const bp = [s * 0.033, 0.159, faceZ(s * 0.033, 0.159)];
     const bg = new THREE.Group(); bg.position.set(...bp); head.add(bg); brows.push({ g: bg, s, y: bp[1] });
