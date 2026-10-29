@@ -554,7 +554,7 @@ function updateVisuals() {
   }
 
   const heat = game.active ? !!game.heat : inHeat(simT), ht = game.active ? game.t : simT;
-  for (const e of sup.eyes) { e.material.emissive.setHex(heat ? 0xff2000 : 0); e.material.emissiveIntensity = heat ? 6 : 0; }
+  for (const e of sup.eyes) { const [c, k] = e.material.userData.rest || [0, 0]; e.material.emissive.setHex(heat ? 0xff2000 : c); e.material.emissiveIntensity = heat ? 6 : k; }
   heatLight.intensity = heat ? 14 + Math.sin(ht * 60) * 4 : 0;
   if (heat) {
     const tg = game.active ? game.heat : heatTarget(simT);

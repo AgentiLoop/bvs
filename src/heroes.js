@@ -622,7 +622,11 @@ export function makeHero(kind) {
       // Comic-book eyes: a big blue iris + pupil as thin lenses on the front of the eyeball (the old iris
       // was mostly buried in the white), and a heavy upper lid whose straight lower edge cuts across the top
       // of the iris (the stern, level Superman gaze), outlined by a dark lash line.
-      oval(lid, mat(0x3f6f96), [0, -0.0003, 0.0054], [0.006, 0.0049, 0.0008]);
+      // Comic-book whites: a faint self-glow (kept in userData.rest, restored after heat vision) so the
+      // eyeball under the lid and brow reads off-white instead of grey, its lower half no longer near black.
+      const white = eyes[eyes.length - 1].material;
+      white.userData.rest = [0xe1ddd4, 0.3]; white.emissive.setHex(0xe1ddd4); white.emissiveIntensity = 0.3;
+      oval(lid, mat(0x3f6f96, 0.5, 0, { emissive: 0x3f6f96, emissiveIntensity: 0.25 }), [0, -0.0003, 0.0054], [0.006, 0.0049, 0.0008]);
       oval(lid, new THREE.MeshBasicMaterial({ color: 0x0a0a0c }), [0, -0.0003, 0.0062], [0.0021, 0.0025, 0.0005]);
       part(lid, upperLid, skin, [0, 0, 0], [0.0188, 0.0085, 0.0075]);
       line(lid, Array.from({ length: 9 }, (_, i) => { const f = -1.25 + i * 2.5 / 8;
