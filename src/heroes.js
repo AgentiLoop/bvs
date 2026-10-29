@@ -449,6 +449,9 @@ export function makeHero(kind) {
       [0.182, 0.079, 0.076, -0.006], [0.214, 0.068, 0.064, -0.009],
       [0.237, 0.036, 0.035, -0.009], [0.245, 0.0001, 0.0001, -0.009]];
   const hairMask = [];
+  // Comic Batman's cowl edge is not a level line under the nose: it runs from just under the nose tip diagonally
+  // down and out across the cheeks toward the jaw angle, so the exposed skin is a tapered shield (y at |x|, smooth).
+  const cowlEdge = ax => { const s = ax - 0.012; return 0.082 - 0.25 * (s + Math.hypot(s, 0.006)); };
   const faceSculpt = (p, a) => {
     const front = Math.max(0, Math.cos(a)), f5 = front ** 5;
     p.x = Math.sign(p.x) * Math.pow(Math.abs(Math.sin(a)), 0.83) * contour(faceRows, p.y)[0];
@@ -465,7 +468,7 @@ export function makeHero(kind) {
         + 0.0042 * bump(p.y, 0.064, 0.007) * bump(p.x, 0, 0.019)             // upper lip
         + 0.0035 * bump(p.y, 0.052, 0.007) * bump(p.x, 0, 0.016)             // lower lip
         - 0.0022 * bump(p.y, 0.044, 0.005) * bump(p.x, 0, 0.02)              // groove under the lip
-        + 0.003 * bump(p.y, 0.085, 0.004) * (1 - bump(p.x, 0, 0.012)));      // cowl edge overhang
+        + 0.003 * bump(p.y, cowlEdge(ax) + 0.003, 0.004) * (1 - bump(p.x, 0, 0.012))); // cowl edge overhang
       p.z += front ** 2 * (0.009 * bump(p.y, 0.157 - 0.12 * Math.max(0, 0.03 - ax), 0.009) * bump(ax, 0.032, 0.026) // brow plates, inner ends low
         + 0.006 * bump(ax, 0.054, 0.016) * bump(p.y, 0.106, 0.013)            // cheekbones
         - 0.005 * bump(ax, 0.05, 0.014) * bump(p.y, 0.072, 0.012));           // hollow cheeks
@@ -525,14 +528,14 @@ export function makeHero(kind) {
     for (let i = 0; i < pos.count; i++) {
       // Soft-edged jaw opening (smooth 0..1 mask) so the cowl edge is a clean line, not stair-stepped facets.
       const x = Math.abs(pos.getX(i)), y = pos.getY(i), z = pos.getZ(i);
-      const jaw = (1 - blend(0.077, 0.087, y)) * blend(0.04, 0.05, z) * (1 - blend(0.056, 0.068, x));
+      const e = cowlEdge(x), jaw = (1 - blend(e - 0.005, e + 0.005, y)) * blend(0.04, 0.05, z) * (1 - blend(0.056, 0.068, x));
       // Skin shading: rosier lips, a faint blue-grey five-o'clock shadow on the jaw and chin (not the lips).
       const lip = bump(x, 0, 0.017) * Math.max(bump(y, 0.064, 0.006), bump(y, 0.052, 0.006));
       const beard = (1 - blend(0.05, 0.068, y)) * (1 - lip) * 0.22;
       // Baked occlusion so the jaw sits under the mask instead of reading as a flat pasted-on patch: a contact
       // shadow under the cowl's overhanging edge (top and sides), the groove under the lower lip, and the
       // underside of the chin / jaw turning away into the neck.
-      const ao = (1 - 0.38 * blend(0.06, 0.08, y)) * (1 - 0.28 * blend(0.042, 0.064, x))
+      const ao = (1 - 0.38 * blend(e - 0.022, e - 0.002, y)) * (1 - 0.28 * blend(0.042, 0.064, x))
         * (1 - 0.14 * bump(y, 0.045, 0.005) * bump(x, 0, 0.02)) * (1 - 0.32 * (1 - blend(0.004, 0.026, y)));
       // Comic Batman's grim set jaw: inked creases bracketing the mouth like parentheses (nasolabial fold from under
       // the cowl edge out past the mouth corner, then a frown line dropping toward the jaw). Painted, because the
