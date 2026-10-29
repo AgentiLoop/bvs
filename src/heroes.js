@@ -516,10 +516,25 @@ export function makeHero(kind) {
     }
     faceGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     part(head, faceGeo, mat(0xffffff, 0.7, 0, { vertexColors: true }));
+    // Skull radius along a direction (head-local x, z - axis) at height y: the cowl ears are filleted onto it.
+    const skullR = (y, dx, dz) => {
+      const [rx, rz, off] = contour(faceRows, y), th = Math.atan2(Math.abs(dx), dz - off);
+      let lo = 0, hi = Math.PI;
+      for (let k = 0; k < 24; k++) { const a = (lo + hi) / 2; if (Math.atan2(Math.sin(a) ** 0.83 * rx, rz * Math.cos(a)) < th) lo = a; else hi = a; }
+      return Math.hypot(Math.sin(lo) ** 0.83 * rx, rz * Math.cos(lo));
+    };
     for (const s of [-1, 1]) {
-      // Short, sharp modern cowl ears (~7 cm above the crown), not tall devil horns.
-      const ear = surface([[0.19, 0.025, 0.022], [0.225, 0.017, 0.013], [0.27, 0.008, 0.006], [0.305, 0.0001, 0.0001]], p => { p.x += s * (0.064 + (p.y - 0.19) * 0.045); return p; }, 32, 24);
-      part(head, ear, dark, [0, 0, -0.017]);
+      // Short, sharp modern cowl ears (~7 cm above the crown), not tall devil horns. The base starts lower and wider
+      // and, below ~2 cm up, is pressed onto the skull so the ear sweeps out of the cowl in a smooth fillet instead
+      // of an open-bottomed cone stuck through the side of the head with a hard crease.
+      const ear = surface([[0.16, 0.034, 0.03], [0.19, 0.025, 0.022], [0.225, 0.017, 0.013], [0.27, 0.008, 0.006], [0.305, 0.0001, 0.0001]], p => {
+        p.x += s * (0.064 + (p.y - 0.19) * 0.045); p.z -= 0.017;
+        const off = contour(faceRows, p.y)[2], dz = p.z - off, r = Math.hypot(p.x, dz), R = skullR(p.y, p.x, p.z) - 0.0008;
+        const t = blend(0.165, 0.215, p.y);
+        if (r > R) { const k = (R + (r - R) * t) / r; p.x *= k; p.z = off + dz * k; }
+        return p;
+      }, 40, 24);
+      part(head, ear, dark);
     }
   } else {
     const hair = mat(0x0c1018, 0.5);
