@@ -466,7 +466,7 @@ export class Game {
     this.ui.combo.style.opacity = 0;
     this.say('');
     this.updateBars();
-    this.lesson = 0; this.lessonT = 0; this.trainUI();
+    this.lesson = 22; /* TEMP TEST: start trainer at 23/27 — set back to 0 */ this.lessonT = 0; this.trainUI();
   }
 
   // ---------- training mode (TRAIN / LESSONS) ----------

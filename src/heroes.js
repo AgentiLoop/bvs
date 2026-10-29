@@ -170,7 +170,7 @@ const GL = { a: 0.062, x: 0.068, w: 0.072, y: -0.08, u: 0.095, l: 0.08, p: 2.3, 
 // Seat corrective: fades in as the thigh lifts forward a0..a1 rad. With it the cheek (k of GL's dome) and a band of
 // the seat (depth d at hips height y, width w) flatten, so a crouch's backside is one smooth line into the hamstrings.
 // k 0: the held cheek stays round (k 1 erased it in the guard, whose forward thigh is already 0.77 of the way in).
-const SEAT = { a0: 0, a1: 1.5, k: 0, d: 0.02, y: -0.05, w: 0.04, f: 1, g: 1, b0: 0.05, b1: 0.35, c0: 0.8, c1: 1.6, cd: 0.6, bx: 0.055 };
+const SEAT = { a0: 0, a1: 1.5, k: 0, d: 0.02, y: -0.05, w: 0.04, f: 1, g: 1.5, b0: 0.05, b1: 0.35, c0: 0.8, c1: 1.6, cd: 0.6, bx: 0.055, gd: 1 };
 // Seat hold: (y, z) delta, around the hip joint, that undoes a forward thigh flexion of SEAT.a1 for a vertex with
 // thigh weight w (the rest on the hips), blended by m. A = (1 - w) I + w R(a1) is the skinning; the delta is
 // m * (A^-1 v - v), so at a1 the backside sits where it hangs and the flexed leg's cheek mirrors the standing one.
@@ -1469,7 +1469,7 @@ export function applyPose(H, s, t, ground = 0) {
     const deep = blend(CREASE.a1, 2.4, ang), f = lift * (1 + CREASE.k * deep) * Math.max(0, _A.z) / r, o = lift * Math.max(0, l.s * _A.x) / r;
     const inn = lift * Math.max(deep * CREASE.ki, Math.max(0, -l.s * _A.x) / r);
     const st = blend(SEAT.a0, SEAT.a1, ang) * Math.max(0, _A.z) / r; // seat: forward lift holds the glute where it hangs
-    for (const m of l.crease) { const w = m.morphTargetInfluences; w[0] = f; w[1] = o; w[2] = inn; w[3] = st; w[5] = blend(SEAT.b0, SEAT.b1, ang); }
+    for (const m of l.crease) { const w = m.morphTargetInfluences; w[0] = f; w[1] = o; w[2] = inn; w[3] = st; w[5] = blend(SEAT.b0, SEAT.b1, ang) * (1 - SEAT.gd * blend(SEAT.c0, SEAT.c1, ang)); }
     const sb = blend(SEAT.b0, SEAT.b1, ang) * (1 - SEAT.cd * blend(SEAT.c0, SEAT.c1, ang)); // cheek fill: a swung thigh sinks its cheek top (the seat hold takes over in deep flexion)
     for (const m of H.seat) { m.morphTargetInfluences[side === 'L' ? 0 : 1] = st; m.morphTargetInfluences[side === 'L' ? 2 : 3] = sb; }
   }
