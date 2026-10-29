@@ -1285,7 +1285,7 @@ export function applyPose(H, s, t, ground = 0) {
 // maps straight down to straight forward, a horizontal forward leg to straight up, a high kick to up-and-back.
 // The sideways pull (knees over spread feet) fades as the foot rises toward hip height (KNEE_LAT: share of the
 // hip->foot line pointing down): a foot kicked out wide rolled the knee 55 deg out (front kick, sweep, knee lift).
-const KNEE_LAT = [0.3, 0.7], TW_PLANT = [-0.8, 0.45], TW_SPINE = 0.7, LEAN_PELVIS = 0.54, HIP_RHYTHM = [1.6, 0.5], HIP_EXT = 0.8, SPINE_EXT = 0.5, NECK_EXT = [0.8, 0.94];
+const KNEE_LAT = [0.3, 0.7], TW_PLANT = [-0.8, 0.45], TW_SPINE = 0.7, LEAN_PELVIS = 0.54, HIP_RHYTHM = [1.6, 0.5], HIP_FLEX = 2.15, HIP_EXT = 0.8, SPINE_EXT = 0.5, NECK_EXT = [0.8, 0.94];
 const _qs1 = new THREE.Quaternion(), _qs2 = new THREE.Quaternion(), _qs3 = new THREE.Quaternion();
 // (tg and the pole are in the pelvis' frame: the root turned back by a, the twist the waist takes; posePass)
 const yawXZ = (v, a) => { const c = Math.cos(a), s = Math.sin(a), x = v.x; v.x = x * c + v.z * s; v.z = v.z * c - x * s; return v; };
@@ -1791,6 +1791,15 @@ function posePass(H, s, t, ground, raise) {
   // the spine takes it back, so the chest, arms and head end up where they were.
   let pb = Math.min(0, s.lean) * LEAN_PELVIS;
   for (const [f, o] of [[s.lf, s.rf], [s.rf, s.lf]]) pb -= Math.max(0, Math.atan2(f[2], -f[1]) - HIP_RHYTHM[0]) * HIP_RHYTHM[1] * plant(o) * (1 - plant(f));
+  // (that tracked the foot, not the thigh: a front kick's foot rising from the chamber passes close in front of the
+  // hip, the knee folds and rides up above it, and the thigh rose 150-167 deg in the socket, onto the belly (a hip
+  // flexes ~120-130 with the knee bent). Past HIP_FLEX of the thigh's estimated angle (foot direction + the knee's
+  // offset from the hip->foot line, knee pole up-forward) the pelvis tips back the rest.)
+  for (const [f, sd] of [[s.lf, 1], [s.rf, -1]]) {
+    const dx = f[0] - sd * 0.1, dy = f[1] + 0.04, dz = f[2], d = Math.hypot(dx, dy, dz);
+    const th = Math.atan2(dz, -dy) + Math.acos(Math.min(1, d / 0.92));
+    const lim = HIP_FLEX - th; if (lim < pb) pb += (lim - pb) * (1 - plant(f));
+  }
   // In-game leans go past the poses (a heavy hit adds -0.6, launches and stuns reach -0.9..-1.0), and the spine
   // (1.35x lean less the tilt) still arched 41-48 deg back: the rest beyond SPINE_EXT now tips the pelvis too.
   pb = Math.min(pb, s.lean * 1.35 + SPINE_EXT);
