@@ -635,10 +635,10 @@ function render() {
 }
 
 // ---------- input ----------
-const playUI = document.getElementById('play');
-if (qs.has('freeze') || qs.has('t') || qs.has('cam')) playUI.style.display = 'none'; // clean frames for stills
-function startGame(choice, demo = false, train = false) { reset(); game.demo = demo; game.train = train; game.start(choice); playUI.style.display = 'none'; paused = false; }
-function quitGame() { game.stop(); reset(); playUI.style.display = 'flex'; if (paused) { paused = false; sound.pause(false); } }
+const playUI = document.getElementById('play'), keysUI = document.getElementById('hud');
+if (qs.has('freeze') || qs.has('t') || qs.has('cam')) playUI.style.display = keysUI.style.display = 'none'; // clean frames for stills
+function startGame(choice, demo = false, train = false) { reset(); game.demo = demo; game.train = train; game.start(choice); playUI.style.display = keysUI.style.display = 'none'; paused = false; }
+function quitGame() { game.stop(); reset(); playUI.style.display = 'flex'; keysUI.style.display = ''; if (paused) { paused = false; sound.pause(false); } }
 // In a match: SPACE / ENTER / Start (Menu) pauses (and resumes); the controls panel stays up while paused.
 function togglePause() { paused = !paused; sound.pause(paused); game.help(paused || game.state === 'enter', paused); }
 playUI.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('button'); const h = b && b.dataset.hero; if (h) { b.blur(); startGame(h, false, !!b.dataset.train); } });
