@@ -17,7 +17,7 @@ const TAIKO = [1, 0, 0, 0, 0, 0, 0.6, 0, 0.8, 0, 0, 0, 0, 0, 0.5, 0.4];
 
 export class Sound {
   constructor() {
-    this.ctx = null; this.on = true; this.intensity = 0.2; this.target = 0.2; this.slow = 1;
+    this.ctx = null; this.on = localStorage.getItem('bvs.sound') !== '0'; this.intensity = 0.2; this.target = 0.2; this.slow = 1; // on by default; remembers the user's M / speaker choice
     this.frame = this.blank(); this.heatOn = false; this.step16 = 0; this.next = 0;
   }
   blank() { return { impact: 0, sparks: 0, blast: 0, wave: 0, rubble: 0, dust: 0, flash: 0, swing: 0, metal: 0 }; }
@@ -43,7 +43,7 @@ export class Sound {
     this.next = ctx.currentTime + 0.1;
     this.timer = setInterval(() => this.schedule(), 25);
   }
-  toggle() { this.on = !this.on; if (this.ctx) this.on ? this.ctx.resume() : this.ctx.suspend(); return this.on; }
+  toggle() { this.on = !this.on; localStorage.setItem('bvs.sound', this.on ? '1' : '0'); if (this.ctx) this.on ? this.ctx.resume() : this.ctx.suspend(); return this.on; }
   pause(p) { if (this.ctx && this.on) p ? this.ctx.suspend() : this.ctx.resume(); }
 
   impulse(sec, decay) {

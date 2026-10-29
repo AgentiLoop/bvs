@@ -33,8 +33,19 @@ const SEED = +(qs.get('seed') || 1337);
 const DEMO = qs.get('demo') === '1'; // ?demo=1 attract mode: the title film, then a CPU v CPU auto-pilot match, then the film again
 const DT = 1 / 60;
 const LOOP_END = 21.5; // real seconds
-let pixelMode = qs.get('pixel') === '1', comicMode = !qs.has('pixel') || qs.get('pixel') === '2'; // comic by default; ?pixel=0 normal. P cycles: normal → pixel-art → comic → normal
-let PIX = +(qs.get('px') || 2), CPIX = 1; const CSTEPS = [1, 1.25, 1.5, 2, 3, 4, 5, 6, 7, 8]; // pixel size for pixel-art / comic modes (- / + keys); comic gets fine steps after 1
+// Screen settings (mode + pixel sizes) are remembered in localStorage; URL params still override.
+const saved = (() => { try { return JSON.parse(localStorage.getItem('bvs.screen')) || {}; } catch { return {}; } })();
+const mode = qs.has('pixel') ? qs.get('pixel') : saved.mode != null ? String(saved.mode) : '2';
+let pixelMode = mode === '1', comicMode = mode === '2'; // comic by default; ?pixel=0 smooth 3D. P cycles: smooth 3D → pixel-art → comic → smooth 3D
+const CSTEPS = [1, 1.25, 1.5, 2, 3, 4, 5, 6, 7, 8]; // pixel size for pixel-art / comic modes (- / + keys); comic gets fine steps after 1
+let PIX = +(qs.get('px') || saved.px || 2), CPIX = CSTEPS.includes(saved.cpx) ? saved.cpx : 1;
+function saveScreen() { localStorage.setItem('bvs.screen', JSON.stringify({ mode: pixelMode ? 1 : comicMode ? 2 : 0, px: PIX, cpx: CPIX })); }
+function cycleMode() { if (pixelMode) { pixelMode = false; comicMode = true; } else if (comicMode) comicMode = false; else pixelMode = true; saveScreen(); resize(); }
+function pixStep(d) {
+  if (comicMode) CPIX = CSTEPS[Math.max(0, Math.min(CSTEPS.length - 1, CSTEPS.indexOf(CPIX) + d))];
+  else PIX = Math.max(1, Math.min(8, PIX + d));
+  saveScreen(); resize();
+}
 let ditherIGN = qs.get("dither") !== "bayer"; // pixel-art dither: interleaved gradient noise (default) or Bayer 4x4 (?dither=bayer); N toggles
 let paused = false, freeCam = false;
 
@@ -637,19 +648,24 @@ addEventListener('keydown', (e) => {
   if (game.active) {
     if (e.key === 'Escape') { quitGame(); return; }
     if ((e.key === 'Enter' || e.code === 'Space') && !game.matchOver) { e.preventDefault(); if (!e.repeat) togglePause(); return; }
-    if (paused) { if ((e.key === 'h' || e.key === 'H') && !e.repeat) game.help(game.ui.help.style.display === 'none', true); return; } // H hides / shows the controls panel while paused
+    if (paused) { // H hides / shows the controls panel while paused; - / + still change pixel size
+      if ((e.key === 'h' || e.key === 'H') && !e.repeat) game.help(game.ui.help.style.display === 'none', true);
+      else if (e.key === '-' || e.key === '_') pixStep(-1);
+      else if (e.key === '=' || e.key === '+') pixStep(1);
+      return;
+    }
     if (e.code === 'Space' || e.key.startsWith('Arrow')) e.preventDefault();
     game.keydown(e);
-    if (e.key === 'p' || e.key === 'P') { if (pixelMode) { pixelMode = false; comicMode = true; } else if (comicMode) comicMode = false; else pixelMode = true; resize(); }
+    if (e.key === 'p' || e.key === 'P') cycleMode();
     if (e.key === "n" || e.key === "N") { ditherIGN = !ditherIGN; resize(); }
     return;
   }
   if (e.key === 'b' || e.key === 'B' || e.key === '1') startGame('bat');
   else if (e.key === 's' || e.key === 'S' || e.key === '2') startGame('sup');
   else if (e.code === 'Space') { paused = !paused; sound.pause(paused); }
-  else if (e.key === 'p' || e.key === 'P') { if (pixelMode) { pixelMode = false; comicMode = true; } else if (comicMode) comicMode = false; else pixelMode = true; resize(); }
-  else if (e.key === '-' || e.key === '_') { if (comicMode) CPIX = CSTEPS[Math.max(0, CSTEPS.indexOf(CPIX) - 1)]; else PIX = Math.max(1, PIX - 1); resize(); }
-  else if (e.key === '=' || e.key === '+') { if (comicMode) CPIX = CSTEPS[Math.min(CSTEPS.length - 1, CSTEPS.indexOf(CPIX) + 1)]; else PIX = Math.min(8, PIX + 1); resize(); }
+  else if (e.key === 'p' || e.key === 'P') cycleMode();
+  else if (e.key === '-' || e.key === '_') pixStep(-1);
+  else if (e.key === '=' || e.key === '+') pixStep(1);
   else if (e.key === 'r' || e.key === 'R') reset();
   else if (e.key === "n" || e.key === "N") { ditherIGN = !ditherIGN; resize(); }
   else if (e.key === 'c' || e.key === 'C') { freeCam = !freeCam; controls.enabled = freeCam; }
