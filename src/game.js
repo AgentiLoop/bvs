@@ -179,7 +179,7 @@ const LESSONS = [
   ['PROJECTILE', 'C, THEN TOWARD + J', 'DOWN, THEN TOWARD + Ⓧ', (a) => a.type === 'shoot'],
   ['RISING UPPERCUT', 'O (OR TOWARD, C + TOWARD + J)', 'TOWARD, DOWN-TOWARD + Ⓧ', (a) => a.type === 'rise'],
   ['SPECIAL', 'L', 'Ⓑ', (a) => a.type === 'flykick' || a.type === 'heat'],
-  ['AMPLIFY', 'PRESS O (RISING UPPERCUT), THEN TAP SHIFT AT ONCE', 'RISING UPPERCUT (TOWARD, DOWN-TOWARD + Ⓧ), THEN TAP LB AT ONCE', (a) => !!a.amp],
+  ['AMPLIFY', 'O, THEN TAP SHIFT AT ONCE', 'TOWARD, DOWN-TOWARD + Ⓧ, THEN TAP LB AT ONCE', (a) => !!a.amp],
   ['DRIVE IMPACT', 'H', 'LB + RB', (a) => a.type === 'impact'],
   ['SUPER', 'I (OR SHIFT + L)', 'HOLD LB + Ⓑ', (a) => a.type === 'super'],
   ['FATAL BLOW', 'F', 'LT + RT', (a) => a.type === 'blow'],
