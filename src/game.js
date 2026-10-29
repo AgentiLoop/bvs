@@ -454,21 +454,28 @@ export class Game {
 
   // ---------- training mode (TRAIN / LESSONS) ----------
   setTrain(on) {
-    this.train = on; this.lessonT = 0;
+    this.train = on; this.lessonT = 0; this.inputMode = null; // training on: ask keyboard or controller first
     const F = this.finish; // the CPU had you at FINISH HIM: let you off
     if (on && F && F.att === this.cpu && !F.go) { F.def.dazed = false; F.def.hp = Math.max(1, F.def.hp); this.finish = null; this.say(''); }
     const A = this.cpu.ai; A.t = A.block = A.crouch = A.chain = 0; A.air = false; this.cpu.buf = null;
     this.updateTags(); this.trainUI();
     this.showCombo(on ? 'TRAINING MODE · T TO FIGHT' : 'FIGHT MODE · T TO TRAIN', null);
   }
+  // the training card's answer: 'keys' or 'pad' (the press that answers is swallowed)
+  pickInput(mode) { this.inputMode = mode; this.lessonT = 0; this.trainUI(); }
   lessons() { return LESSONS.filter((l) => !l[4] || l[4] === this.me.key); }
   trainUI() {
     const el = this.ui.train;
     if (!el) return;
     el.style.display = this.train && this.active ? 'block' : 'none';
     if (!this.train) return;
+    if (!this.inputMode) {
+      el.innerHTML = '<h4>TRAINING</h4><p>KEYBOARD OR CONTROLLER?</p><b>PRESS ANY KEY · OR ANY BUTTON</b>'
+        + '<small>THE MOVE PROMPTS WILL MATCH WHAT YOU PICK</small>';
+      return;
+    }
     const L = this.lessons(), i = this.lesson % L.length, [name, keys, pad] = L[i];
-    el.innerHTML = `<h4>TRAINING · ${i + 1} / ${L.length}${this.lessonT > 0 ? ' · <em>NICE!</em>' : ''}</h4><p>${name}</p><b>${this.pad ? pad : keys}</b>`
+    el.innerHTML = `<h4>TRAINING · ${i + 1} / ${L.length}${this.lessonT > 0 ? ' · <em>NICE!</em>' : ''}</h4><p>${name}</p><b>${this.inputMode === 'pad' ? pad : keys}</b>`
       + '<small>TAB NEXT MOVE · T BACK TO FIGHT · THE TRAINER ONLY DEFENDS</small>';
   }
   nextLesson() { this.lesson = (this.lesson + 1) % this.lessons().length; this.lessonT = 0; this.trainUI(); }
@@ -476,6 +483,7 @@ export class Game {
   trainStep(dt) {
     const me = this.me, a = me.act;
     if (me.meter < 100) { me.meter = 100; this.updateBars(); }
+    if (!this.inputMode) return; // still waiting for keyboard / controller
     if (this.lessonT > 0) { if ((this.lessonT -= dt) <= 0) this.nextLesson(); return; }
     const L = this.lessons(), a2 = L[this.lesson % L.length];
     if (a && a2[3](a)) { this.lessonT = TRAIN.next; this.trainUI(); }
@@ -523,6 +531,7 @@ export class Game {
     if (this.demo) return; // auto-pilot: no fight keys (ESC still quits, main.js)
     if (this.matchOver && this.overT > 1.5 && (k === ' ' || k === 'enter' || k === 'r')) { this.ctx.restart(this.choice); return; }
     if (e.repeat) return;
+    if (this.train && !this.inputMode && k !== 't') { e.preventDefault(); this.pickInput('keys'); return; }
     if (k === 'j') this.press(this.me, 'J', this.blockHeld());
     else if (k === 'k') this.press(this.me, 'K', this.blockHeld());
     else if (k === 'l') this.press(this.me, 'S', this.blockHeld());
@@ -563,10 +572,9 @@ export class Game {
   }
   // In game (standard mapping): X punch, Y kick, B special, A jump, LB/RB/LT/RT block, L3 crouch, R3 prop / grapnel, Start pause, Back menu.
   gamePad() {
-    const had = !!this.pad;
     this.readPad();
-    if (had !== !!this.pad) this.trainUI(); // pad found / lost: training card swaps keyboard <-> Xbox labels
     if (!this.pad) return true;
+    if (this.train && !this.inputMode && !this.demo && this.padNow.some((_, i) => i !== 8 && i !== 9 && this.padHit(i))) { this.pickInput('pad'); return true; }
     if (this.padHit(8)) { this.ctx.quit(); return false; }
     if (this.demo) return true; // auto-pilot: Back still quits, the rest is ignored
     if (this.matchOver && this.overT > 1.5 && (this.padHit(9) || this.padHit(0))) { this.ctx.restart(this.choice); return true; }
