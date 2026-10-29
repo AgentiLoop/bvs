@@ -174,6 +174,7 @@ const LESSONS = [
   ['DASH IN', 'DOUBLE-TAP TOWARD', 'DOUBLE-TAP TOWARD', (a) => a.type === 'dash' && a.dir > 0],
   ['BACKDASH', 'DOUBLE-TAP AWAY', 'DOUBLE-TAP AWAY', (a) => a.type === 'dash' && a.dir < 0],
   ['SIDESTEP', 'DOUBLE-TAP W OR S', 'DOUBLE-TAP D-PAD UP OR DOWN', (a) => a.type === 'side'],
+  ['BARREL ROLL LEFT · RIGHT', 'Q · R', 'FLICK RIGHT STICK LEFT · RIGHT', (a) => a.type === 'broll'],
   ['THROW', 'U (OR J + K TOGETHER) UP CLOSE', 'Ⓧ + Ⓨ TOGETHER UP CLOSE', (a) => a.type === 'throw'],
   ['PROJECTILE', 'C, THEN TOWARD + J', 'DOWN, THEN TOWARD + Ⓧ', (a) => a.type === 'shoot'],
   ['RISING UPPERCUT', 'O (OR TOWARD, C + TOWARD + J)', 'TOWARD, DOWN-TOWARD + Ⓧ', (a) => a.type === 'rise'],
@@ -320,6 +321,10 @@ const WAKE = { open: 0.8, dist: 2.2, roll: 0.45, kneel: 0.15, quick: 0.2, cpu: [
 // projectiles fly past; hooks, the roundhouse and the sweep track it. Cancels into attacks after `cancel` s.
 // cpu: chance to sidestep a straight attack it reads.
 const SIDE = { ang: 0.62, dur: 0.36, evade: [0.03, 0.28], cancel: 0.24, cpu: 0.2 };
+// Barrel roll left / right (Q / R, flick the right stick): a sideways roll off the fight line, `dist` m over `dur` s,
+// invulnerable for the first `inv` s. From neutral it's free; caught in hit stun (getting pummeled, standing on the
+// ground) it costs `cost` meter and rolls you straight out of the combo. cpu: chance per combo hit that the CPU rolls out.
+const BROLL = { dist: 2.6, dur: 0.46, inv: 0.38, cost: 25, cpu: 0.08 };
 // SF6 counters: a clean hit on a fighter still winding up his own attack = COUNTER (more damage + stun, longer combo
 // window); a hit while he recovers from a whiff, a parried / blocked move or a sidestep = PUNISH COUNTER (more again,
 // and heavy blows launch higher for a juggle). meter: bonus to the attacker.
@@ -550,6 +555,8 @@ export class Game {
     else if (k === 'h') this.impact(this.me);
     else if (k === 'e') this.interact(this.me);
     else if (k === 'g') this.grapnelIn(this.me);
+    else if (k === 'q') this.barrelRoll(this.me, -1);
+    else if (k === 'r') this.barrelRoll(this.me, 1);
     else if (k === 'y') this.press(this.me, 'A');
     else if (k === 'shift') this.amplify(this.me);
     else if (k === 't') this.setTrain(!this.train); // training mode on / off (the CPU becomes a defence-only trainer)
@@ -567,8 +574,10 @@ export class Game {
     this.padNow = Array.from({ length: n }, (_, i) => list.some((g) => g.buttons[i] && (g.buttons[i].pressed || g.buttons[i].value > 0.5)));
     let axes = [0, 0], rs = 0;
     for (const g of list) if (g.axes.length >= 2 && Math.hypot(g.axes[0], g.axes[1]) > Math.hypot(axes[0], axes[1])) axes = [g.axes[0], g.axes[1]];
-    for (const g of list) if (g.axes.length >= 4) rs = Math.max(rs, g.axes[3]);
-    this.pad = { axes, rs };
+    let rx = 0;
+    for (const g of list) if (g.axes.length >= 4) { rs = Math.max(rs, g.axes[3]); if (Math.abs(g.axes[2]) > Math.abs(rx)) rx = g.axes[2]; }
+    this.rxPrev = this.pad ? this.pad.rx : 0;
+    this.pad = { axes, rs, rx };
   }
   padHit(i) { return !!this.padNow[i] && !this.padPrev[i]; }
   // Title screen: X / d-pad left = Batman, B / d-pad right = Superman.
@@ -597,6 +606,8 @@ export class Game {
     if (this.padHit(0)) this.press(this.me, 'A');
     if ([4, 5].some((i) => this.padHit(i))) this.amplify(this.me); // a block tap during a special's start-up
     if (this.padHit(11) && !this.interact(this.me)) this.grapnelIn(this.me); // R3 = stage interactable, else Batman's grapnel
+    // right stick flicked left / right = barrel roll that way (fresh flick only)
+    if (Math.abs(this.pad.rx) > 0.7 && Math.abs(this.rxPrev) <= 0.7) this.barrelRoll(this.me, Math.sign(this.pad.rx));
     if (both) { // both triggers = fatal blow (the second trigger cancels the jab the first one just started)
       const a = this.me.act;
       if (a && (a.type === 'jab' || a.type === 'cross') && !a.done && a.t < 0.12) this.me.act = null;
@@ -690,6 +701,19 @@ export class Game {
     this.ctx.fx.dustBurst(f.x, 0, f.z, 8, 1);
     return true;
   }
+  // Barrel roll (see BROLL): s = -1 rolls to the fighter's left, +1 to his right, square to the line to the foe.
+  barrelRoll(f, s) {
+    if (this.state !== 'fight' || f.ko || f.dazed || f.dizzy > 0 || f.heldBy || f.down > 0 || f.launched || f.y > 0.001) return false;
+    const o = f === this.me ? this.cpu : this.me, oa = o.act, esc = f.stun > 0;
+    if (esc ? f.meter < BROLL.cost || this.finish || (oa && (oa.type === 'super' || oa.type === 'blow' || oa.type === 'fatal')) : !this.free(f) && !(f.act && f.act.type === 'side')) return false;
+    if (esc) { f.meter -= BROLL.cost; f.stun = 0; o.hits = 0; this.showCombo('BARREL ROLL!', f.key); this.updateBars(); }
+    const dx = o.x - f.x, dz = o.z - f.z, d = Math.hypot(dx, dz) || 1;
+    f.act = { type: 'broll', t: 0, s, nx: -dz / d * s, nz: dx / d * s }; // (fighter's right = (-fwd.z, fwd.x))
+    f.buf = null; f.block = f.crouch = false; f.kx = f.kz = 0;
+    this.ctx.fx.dustBurst(f.x, 0, f.z, 16, 1.3);
+    return true;
+  }
+  rolling(o) { const a = o.act; return !!a && a.type === 'broll' && a.t < BROLL.inv; }
   evading(o) { const a = o.act; return !!a && a.type === 'side' && a.t >= SIDE.evade[0] && a.t <= SIDE.evade[1]; }
   evaded(o) { const { fx } = this.ctx; fx.dustBurst(o.x, 0, o.z, 14, 1.2); this.showCombo('SIDESTEP!', o.key); }
   // Grab attempt; while being held, the same input techs (breaks) the throw inside the tech window.
@@ -705,7 +729,7 @@ export class Game {
   grabbable(o) {
     const a = o.act;
     if (o.ko || o.down > 0 || o.launched || o.y > 0.05 || o.stun > 0 || o.heldBy) return false;
-    return !(a && (a.type === 'super' || a.type === 'blow' || a.type === 'flykick' || a.type === 'rise' || a.type === 'dash' && a.dir < 0 && a.t < DASH.invuln));
+    return !(a && (a.type === 'super' || a.type === 'blow' || a.type === 'flykick' || a.type === 'rise' || a.type === 'dash' && a.dir < 0 && a.t < DASH.invuln)) && !this.rolling(o);
   }
   // Throw broken: both are shoved apart.
   tech(f, o) {
@@ -792,7 +816,7 @@ export class Game {
       } else {
         // swept test along this step's stretch of the line against his chest
         const c = o.H.chest.getWorldPosition(new THREE.Vector3()), k = clamp(c.clone().sub(a.o).dot(a.dir), s0, a.s);
-        const miss = o.ko || o.down > 0 || o.heldBy || this.evading(o) || (o.act && o.act.type === 'dash' && o.act.dir < 0 && o.act.t < DASH.invuln);
+        const miss = o.ko || o.down > 0 || o.heldBy || this.evading(o) || this.rolling(o) || (o.act && o.act.type === 'dash' && o.act.dir < 0 && o.act.t < DASH.invuln);
         if (!miss && c.distanceTo(a.o.clone().addScaledVector(a.dir, k)) < R.r) {
           const guarding = o.block && !o.act && o.stun <= 0 && o.y <= 0.001;
           this.hurt(o, f, R.hit, c);
@@ -861,7 +885,7 @@ export class Game {
       if (o.ko || o.down > 0 || o.heldBy || Math.hypot(o.x - s.x, o.z - s.z) > S.r) continue;
       if (S.hi ? o.y > 0.9 || (o.crouch && o.y <= 0.001) : o.y > 0.45) continue; // jumped over / ducked under
       if (o.act && o.act.type === 'dash' && o.act.dir < 0 && o.act.t < DASH.invuln) continue;
-      if (this.riseInv(o)) continue; // rising uppercut passes through
+      if (this.riseInv(o) || this.rolling(o)) continue; // rising uppercut / barrel roll passes through
       s.dead = true;
       const at = new THREE.Vector3(s.x, Math.max(s.y, 0.7), s.z);
       if (this.canParry(o, S)) this.parry(o, null, S, at); else this.hurt(o, s.f, S, at);
@@ -954,7 +978,7 @@ export class Game {
       if (!p.harmless) { p.spin += dt * 11; p.rx = Math.PI / 2 + p.spin; if (this.ctx.rng() < 0.5) fx.sparkBurst(p.x, p.y, p.z, 1, 0.5, 0xffb060); }
       const o = p.by && (p.by === this.me ? this.cpu : this.me);
       if (o && !p.harmless && this.state === 'fight' && !o.ko && o.down <= 0 && !o.heldBy && Math.hypot(o.x - p.x, o.z - p.z) < PROP.r
-        && p.y > o.y + 0.1 && p.y < o.y + 2.0 && !(o.act && o.act.type === 'dash' && o.act.dir < 0 && o.act.t < DASH.invuln) && !this.riseInv(o)) {
+        && p.y > o.y + 0.1 && p.y < o.y + 2.0 && !(o.act && o.act.type === 'dash' && o.act.dir < 0 && o.act.t < DASH.invuln) && !this.riseInv(o) && !this.rolling(o)) {
         const at = new THREE.Vector3(p.x, p.y, p.z), att = p.by;
         this.burstProp(p);
         this.hurt(o, att, PROP.hit, at);
@@ -1346,6 +1370,7 @@ export class Game {
     if (this.train && att === this.cpu) return; // training: the trainer can't hurt you
     if (def.act && (def.act.type === 'super' || def.act.type === 'blow')) { this.ctx.fx.sparkBurst(at.x, at.y, at.z, 10, 2, 0xffffff); return; } // armoured
     if (def.act && def.act.type === 'dash' && def.act.dir < 0 && def.act.t < DASH.invuln) return; // backdash invulnerability
+    if (this.rolling(def)) return; // barrel roll invulnerability
     if (def.act && def.act.type === 'impact' && !def.act.done && def.act.armor < IMPACT.armor && !M.fin) { // drive impact armour soaks it
       def.act.armor++; def.hp = Math.max(1, def.hp - M.dmg * 0.5); att.hits = 0;
       fx.sparkBurst(at.x, at.y, at.z, 24, 3, 0xffffff); fx.blast(at.x, at.y, at.z, 0.5, 0.3, def.key === 'bat' ? 0xffd23a : 0x6fa8ff); fx.impact(at.x, at.y, at.z, 0.12);
@@ -1681,6 +1706,7 @@ export class Game {
     }
     // one breaker roll per combo hit taken
     if (f.stun > 0 && A.brkN !== o.hits && this.canBreak(f)) { A.brkN = o.hits; if (rng() < BREAK.cpu) this.breaker(f); }
+    if (f.stun > 0 && o.hits >= 2 && A.rollN !== o.hits) { A.rollN = o.hits; if (rng() < BROLL.cpu) this.barrelRoll(f, rng() < 0.5 ? 1 : -1); } // or roll out
     // one wake-up choice per knockdown: back roll, quick rise, or stay down for the full count (delayed wake-up)
     if (f.down <= 0) A.wk = null;
     else if (A.wk == null && f.down > 0.3 && f.down < 0.7) { const r = rng(); A.wk = r < WAKE.cpu[0] ? 'roll' : r < WAKE.cpu[0] + WAKE.cpu[1] ? 'quick' : ''; if (A.wk) this.wake(f, A.wk); }
@@ -1868,6 +1894,12 @@ export class Game {
         if (a.t >= IMPACT.dur) f.act = null;
       } else if (a.type === 'grapnel') {
         if (!this.grapnelStep(f, o, a, dt)) f.act = null;
+      } else if (a.type === 'broll') {
+        // sideways roll: fast start, easing out (like the wake-up roll), dust along the way
+        const v = 2 * BROLL.dist / BROLL.dur * Math.max(0, 1 - a.t / BROLL.dur);
+        f.x += a.nx * v * dt; f.z += a.nz * v * dt;
+        if (this.ctx.rng() < 0.4) fx.dustBurst(f.x, 0, f.z, 3, 0.8);
+        if (a.t >= BROLL.dur) f.act = null;
       } else if (a.type === 'side') {
         // arc round the foe: rotate about him by the eased share of the step this frame (fast start, settling)
         const u = Math.min(1, a.t / SIDE.dur), e = 1 - (1 - u) * (1 - u), th = a.s * SIDE.ang * (e - a.e);
@@ -2047,6 +2079,10 @@ export class Game {
     if (a && a.type === 'fatal') {
       if (a.pose) return T(MP[a.pose] || POSES[a.pose]);
       return keyPose(MOVES[a.name].keys, a.kt * (a.name === 'round' ? 1 : 1.5));
+    }
+    if (a && a.type === 'broll') { // barrel roll: balled up, hips low so the shoulders clear the floor (the turn itself: P.spin)
+      const u = clamp(a.t / BROLL.dur, 0, 1);
+      return T(POSES.tuck, { h: 0.5 + 0.12 * Math.sin(Math.PI * u), lean: 0.5, pitch: 0, roll: 0 });
     }
     if (a && MOVES[a.type]) return keyPose(MOVES[a.type].keys, a.t);
     if (a && a.type === 'super') {
@@ -2253,9 +2289,11 @@ export class Game {
       // line (7 m/s) they skid along (3): held, the rear leg trailed 40-54 deg behind the pelvis.
       const reel = o.act && o.act.type === 'grapnel' && o.act.phase === 'latch' || !!f.splatTo; // (and blown onto the wall, IMPACT.fly)
       s.lock = !this.active || f.y > gnd + 0.01 || f.ko || f.down > 0 || f.launched || f.heldBy ? 0 : reel ? 3
-        : a ? (a.type !== 'dash' && a.type !== 'side' ? 2 : 1) : f.stun > 0 || Math.hypot(f.kx, f.kz) > 0.3 ? 2 : 1;
+        : a ? (a.type === 'broll' ? 0 : a.type !== 'dash' && a.type !== 'side' ? 2 : 1) : f.stun > 0 || Math.hypot(f.kx, f.kz) > 0.3 ? 2 : 1;
       s.dt = dt;
       const P = { ...s, p: [f.x, base + s.h, f.z], yaw: f.yaw + c.tw };
+      // barrel roll: one full turn of the whole body about its forward axis (root only, not eased: 0 and 2 pi look the same)
+      if (a && a.type === 'broll') { const u = clamp(a.t / BROLL.dur, 0, 1); P.spin = a.s * (1 - (1 - u) * (1 - u)) * Math.PI * 2; }
       applyPose(f.H, P, this.t, gnd);
       if (this.active) setFace(f.H, this.expr(f, dt));
       if (!first) first = { f, o, P, gnd };

@@ -1244,7 +1244,7 @@ function weightShift(H, s) {
 // while it is within STAND of that height: a raised knee or kick keeps its height.
 const STAND = [0.06, 0.2], _sdE = new THREE.Euler(), _sdQ = new THREE.Quaternion(), _sdV = new THREE.Vector3();
 function standFeet(s, ground) {
-  _sdQ.setFromEuler(_sdE.set(s.pitch || 0, 0, s.roll || 0, 'YXZ'));
+  _sdQ.setFromEuler(_sdE.set(s.pitch || 0, 0, (s.roll || 0) + (s.spin || 0), 'YXZ'));
   const yl = _sdV.set(...s.lf).applyQuaternion(_sdQ).y, yr = _sdV.set(...s.rf).applyQuaternion(_sdQ).y, low = Math.min(yl, yr);
   const d = s.p[1] + low - ground - SOLE;
   if (!(d > 0.002)) return s;
@@ -1780,7 +1780,7 @@ function wrapFingers(a, O, o, hw) {
 
 function posePass(H, s, t, ground, raise) {
   H.root.position.set(s.p[0] + _wsx, s.p[1] + raise, s.p[2] + _wsz);
-  H.root.rotation.set(s.pitch, s.yaw, s.roll, 'YXZ');
+  H.root.rotation.set(s.pitch, s.yaw, s.roll + (s.spin || 0), 'YXZ'); // spin: game.js barrel roll
   // Athletic, coiled posture: the lean is spread through spine and chest at 1.35x (hunched shoulders,
   // chest driving forward) and the head counters most of it so the eyes stay on the opponent.
   // The pelvis tips forward too (anterior tilt) so the hinge starts at the hips, not just the back.
