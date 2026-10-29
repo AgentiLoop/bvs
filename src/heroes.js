@@ -795,6 +795,12 @@ export function makeHero(kind) {
       // Boot cuff: a slight flared lip just below the boot top so the boot reads as a real boot, not paint.
       const cuff = 1 + 0.07 * bump(p.y, -0.612, 0.011);
       p.x *= cuff; p.z *= cuff;
+      // Batman's shin guard: a hard plate down the front of the boot shaft from below the cuff to above the ankle,
+      // 3.5 mm proud with a raised centre ridge over the tibia, wrapping ~100 deg of the shin.
+      if (B) {
+        const g = (0.0035 + 0.0015 * bump(Math.sin(a), 0, 0.15)) * blend(-0.86, -0.84, p.y) * (1 - blend(-0.645, -0.63, p.y)) * blend(0.25, 0.45, Math.cos(a));
+        p.x += g * Math.sin(a); p.z += g * Math.cos(a);
+      }
       // Superman's classic boot top dips into a V at the front of the shin. Rings near the boot line are
       // pulled down at the front (smooth falloff, slope < 1 so rings never cross), moving the colour edge.
       if (!B) p.y -= 0.03 * bump(p.y, -0.6, 0.04) * Math.max(0, Math.cos(a)) ** 3;
@@ -868,10 +874,23 @@ export function makeHero(kind) {
     const footGeo = surface([[-0.066, 0.001, 0.001, 0.04], [-0.057, 0.033, 0.03, 0.04], [-0.034, 0.042, 0.042, 0.03],
       [0.0, 0.044, 0.046, 0.026], [0.05, 0.046, 0.036, 0.04], [0.113, 0.045, 0.024, 0.052],
       [0.17, 0.036, 0.018, 0.057], [0.208, 0.021, 0.013, 0.06], [0.224, 0.001, 0.001, 0.062]],
-    p => {
+    (p, a) => {
       p.z = Math.min(p.z, 0.074);
       const L = p.y, inn = blend(0, 0.038, -s * p.x), out = blend(0, 0.038, s * p.x), low = blend(0.035, 0.074, p.z), top = 1 - blend(0.03, 0.06, p.z);
       p.z -= (0.014 * inn + 0.003 * out) * bump(L, 0.044, 0.053) * low;           // medial (high) / lateral (low) arches
+      if (B) {
+        // Batman's armoured boot: separate plates stand 2-3 mm proud of the upper, split at the joints a foot bends
+        // at so they read as hard shells over a flexible boot. A toe cap ahead of the toe crease (oblique like the
+        // joint, wrapping the sides down to the welt and easing into the tip), an instep plate over the
+        // metatarsals with a raised centre ridge, ending before the ball so the toes still flex, and a heel
+        // counter cupping the back of the heel above the sole. a = 0 is the sole, a = PI the top.
+        const up = -Math.cos(a);
+        const cap = 0.0025 * blend(0.16, 0.168, L + s * TOE_YAW * p.x) * (1 - blend(0.2, 0.218, L)) * blend(-0.5, -0.25, up);
+        const inst = (0.003 + 0.0015 * bump(p.x, 0, 0.006)) * blend(0.012, 0.02, L) * (1 - blend(0.112, 0.12, L)) * blend(0.3, 0.45, up);
+        const heel = 0.002 * blend(-0.064, -0.054, L) * (1 - blend(-0.04, -0.032, L)) * blend(-0.55, -0.35, up) * (1 - blend(0.25, 0.4, up));
+        const g = cap + inst + heel;
+        p.x += g * Math.sin(a); p.z += g * Math.cos(a);
+      }
       p.x -= s * 0.0045 * bump(L, 0.145, 0.038) * inn;                            // ball of the big toe
       p.z += 0.0018 * bump(L, TOE_Z + 0.004, 0.006) * top;                         // flex crease across the toe box, over the toe joint
       p.z -= 0.003 * bump(L, 0.19, 0.022) * bump(p.x, -s * 0.018, 0.012) * top;    // big toe rides higher in the toe box
