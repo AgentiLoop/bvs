@@ -831,7 +831,7 @@ export function makeHero(kind) {
       // Outer seat (ro: rear-outer side, around the hip joint): up to half on the hips, like the trunks over it. Fully
       // on the thigh, a lifted / swung-out leg folded its back-top onto itself there (crease lines across the outer
       // cheek, seen from behind in chambers, knees, front and round kicks: leg self-crease px 5993 -> 4255, guard 398 -> 192).
-      const r = Math.hypot(p.x, p.z) || 1, ro = blend(0.5, 0.9, s * p.x / r) * blend(-0.3, 0.3, -p.z / r);
+      const r = Math.hypot(p.x, p.z) || 1, ro = blend(0, 0.6, s * p.x / r) * blend(-0.3, 0.3, -p.z / r);
       const lower = 1 - blend(-0.52, -0.40, p.y), pelvis = Math.max(blend(-0.015, 0.10, p.y) * 0.7, 0.6 * blend(-0.34, -0.04, p.y) * (Math.max(0, p.z) / r) ** 3, 0.5 * ro * blend(-0.14, 0.03, p.y)); // front only, gentle falloff: no groin pinch
       // Ankle: the boot shaft's bottom (the 2 cm below the ankle that sits inside the boot foot) was rigid with the
       // shin, so a pointed foot (flying, kicks, jumps) left it standing 2 cm out of the instep, and the shaft and the
