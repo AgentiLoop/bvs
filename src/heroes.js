@@ -454,10 +454,20 @@ export function makeHero(kind) {
   // Comic Batman's cowl edge is not a level line under the nose: it runs from just under the nose tip diagonally
   // down and out across the cheeks toward the jaw angle, so the exposed skin is a tapered shield (y at |x|, smooth).
   const cowlEdge = ax => { const s = ax - 0.012; return 0.082 - 0.25 * (s + Math.hypot(s, 0.006)); };
+  // Batman's cowl has a broad flat front plane (mask face) from the cheekbones up the brow: the round cross-section
+  // set the lenses ~25 deg around the head, so an in-game three-quarter view hid the far lens behind the cowl nose.
+  // Front-half superellipse: x / z exponents lerp to 0.7 over y 0.075-0.105 .. 0.2-0.235 (midline and sides fixed).
+  const batSec = (y, c) => {
+    const t = c > 0 ? blend(0.075, 0.105, y) * (1 - blend(0.2, 0.235, y)) : 0;
+    return [THREE.MathUtils.lerp(0.83, 0.7, t), THREE.MathUtils.lerp(1, 0.7, t)];
+  };
   const faceSculpt = (p, a) => {
     const front = Math.max(0, Math.cos(a)), f5 = front ** 5;
     p.x = Math.sign(p.x) * Math.pow(Math.abs(Math.sin(a)), 0.83) * contour(faceRows, p.y)[0];
     if (B) {
+      const [, rz, off] = contour(faceRows, p.y), c = Math.cos(a), [nx, nz] = batSec(p.y, c);
+      p.x = Math.sign(p.x) * Math.pow(Math.abs(Math.sin(a)), nx) * contour(faceRows, p.y)[0];
+      p.z = Math.sign(c) * Math.pow(Math.abs(c), nz) * Math.max(0.0001, rz) + off;
       // Batman: hard cowl plates above, a lean square-jawed face below. A sharp cowl nose ridge, angled brow
       // plates hooding the lenses, cheekbones over hollow cheeks, defined lips, a cleft square chin and a
       // slight cowl overhang where the mask edge meets the skin.
@@ -575,8 +585,9 @@ export function makeHero(kind) {
     const skullR = (y, dx, dz) => {
       const [rx, rz, off] = contour(faceRows, y), th = Math.atan2(Math.abs(dx), dz - off);
       let lo = 0, hi = Math.PI;
-      for (let k = 0; k < 24; k++) { const a = (lo + hi) / 2; if (Math.atan2(Math.sin(a) ** 0.83 * rx, rz * Math.cos(a)) < th) lo = a; else hi = a; }
-      return Math.hypot(Math.sin(lo) ** 0.83 * rx, rz * Math.cos(lo));
+      const sec = a => { const c = Math.cos(a), [nx, nz] = batSec(y, c); return [Math.sin(a) ** nx * rx, rz * Math.sign(c) * Math.abs(c) ** nz]; };
+      for (let k = 0; k < 24; k++) { const a = (lo + hi) / 2, [px, pz] = sec(a); if (Math.atan2(px, pz) < th) lo = a; else hi = a; }
+      return Math.hypot(...sec(lo));
     };
     for (const s of [-1, 1]) {
       // Short, sharp modern cowl ears (~7 cm above the crown), not tall devil horns. The base starts lower and wider
