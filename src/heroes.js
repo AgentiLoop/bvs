@@ -2014,7 +2014,7 @@ function posePass(H, s, t, ground, raise) {
     }
     const gk0 = l.gk;
     if (s.gph != null && s.lock != null) gaitLock(l, _T, s.gph / (Math.PI * 2) + p, s.lock === 1 && !l.lk ? blend(GLOCK.g[0], GLOCK.g[1], g) : 0, raise || s.again, s.yaw - ex,
-      gk0 && !gk0.sw && thighBack(l, gk0.x, fy, gk0.z, _hbQ) > HIP_BACK[1], H.legs[side === 'L' ? 'R' : 'L']);
+      gk0 && !gk0.sw && thighBack(l, l.ga ? l.ga.x : gk0.x, fy, l.ga ? l.ga.z : gk0.z, _hbQ) > HIP_BACK[1], H.legs[side === 'L' ? 'R' : 'L']);
     // (a gait-locked foot's swing lift follows its own swing (u): held down for the other foot's step it kept the
     // phase's lift and hovered up to 12 cm over its planted spot)
     if (s.gph != null && s.lock != null) {
@@ -2039,6 +2039,10 @@ function posePass(H, s, t, ground, raise) {
       if (k) {
         const w = k.w;
         _T.x += (k.x - _T.x) * w; _T.z += (k.z - _T.z) * w; sl = k.y * w; lw = w;
+        // (a step from far behind in a dash or walk: the body ran on faster than the step brought the foot up, which
+        // trailed 38-40 deg behind the pelvis on a straight knee as it lifted; a foot easing out of its spot (drive
+        // impact's rear leg reaching out) blended from that spot left it 37-38 deg behind)
+        if (k.st >= 0 || w < 1) clampBack(l, _T, _hbQ, _hbF, HIP_BACK[1]);
         _LK.copy(_T); _LK.y -= raise; H.root.worldToLocal(_LK);
         tg = [_LK.x, _LK.y, _LK.z]; tgP = ex ? [...yawXZ(_LK, ex).toArray()] : tg;
       }
@@ -2077,6 +2081,9 @@ function posePass(H, s, t, ground, raise) {
         const on = (pk === k ? lw : gk.w) * blend(0.01, 0.03, _LK.y - _P.y); // heel up: the ball holds its spot
         if (on > 0) {
           _T.x += (pk.bx - _P.x) * on; _T.z += (pk.bz - _P.z) * on;
+          // (rolled up onto the ball behind the body, the ankle swung back with the heel: a rear leg easing out of the
+          // lock in a drive impact ended 38 deg behind the pelvis. Past HIP_BACK[2] the ball gives instead.)
+          clampBack(l, _T, _hbQ, _hbF, HIP_BACK[2]);
           kneePole(H, l, tgP, ex);
           solveIK(l.th, l.kn, 0.46, 0.46, _T, _P, false, kMin);
           orientFoot(l, qF);
