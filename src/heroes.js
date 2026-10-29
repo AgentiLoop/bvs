@@ -506,7 +506,7 @@ export function makeHero(kind) {
   if (B) {
     // Color the exposed jaw on the cowl surface; there is no overlapping mouth patch.
     const colors = [], skinW = [], pos = faceGeo.attributes.position;
-    const cowlColor = dark.color, skinColor = skin.color, stubble = new THREE.Color(0x5a5560), lipColor = new THREE.Color(0xa8645a);
+    const cowlColor = dark.color, skinColor = skin.color, stubble = new THREE.Color(0x5a5560), lipColor = new THREE.Color(0xa8645a), inkColor = new THREE.Color(0x4a2420);
     for (let i = 0; i < pos.count; i++) {
       // Soft-edged jaw opening (smooth 0..1 mask) so the cowl edge is a clean line, not stair-stepped facets.
       const x = Math.abs(pos.getX(i)), y = pos.getY(i), z = pos.getZ(i);
@@ -519,7 +519,16 @@ export function makeHero(kind) {
       // underside of the chin / jaw turning away into the neck.
       const ao = (1 - 0.38 * blend(0.06, 0.08, y)) * (1 - 0.28 * blend(0.042, 0.064, x))
         * (1 - 0.14 * bump(y, 0.045, 0.005) * bump(x, 0, 0.02)) * (1 - 0.32 * (1 - blend(0.004, 0.026, y)));
-      const sk = skinColor.clone().lerp(stubble, beard).lerp(lipColor, lip * 0.45).multiplyScalar(ao);
+      // Comic Batman's grim set jaw: inked creases bracketing the mouth like parentheses (nasolabial fold from under
+      // the cowl edge out past the mouth corner, then a frown line dropping toward the jaw). Painted, because the
+      // comic cel bands swallow mm-deep grooves; a near-full lerp to ink so it still shows on the lit band.
+      let d = 1;
+      for (const [x0, y0, x1, y1] of [[0.029, 0.082, 0.022, 0.06], [0.022, 0.06, 0.024, 0.042]]) {
+        const t = Math.min(1, Math.max(0, ((x - x0) * (x1 - x0) + (y - y0) * (y1 - y0)) / ((x1 - x0) ** 2 + (y1 - y0) ** 2)));
+        d = Math.min(d, Math.hypot(x - x0 - t * (x1 - x0), y - y0 - t * (y1 - y0)));
+      }
+      const crease = (1 - blend(0.0012, 0.0032, d)) * blend(0.038, 0.046, y);
+      const sk = skinColor.clone().lerp(stubble, beard).lerp(lipColor, lip * 0.45).multiplyScalar(ao).lerp(inkColor, crease * 0.85);
       const c = cowlColor.clone().lerp(sk, jaw); colors.push(c.r, c.g, c.b);
       skinW.push(jaw * (1 - lip * 0.5));
     }
