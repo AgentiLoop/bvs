@@ -585,6 +585,8 @@ export class Game {
     this.readPad();
     if (this.padHit(2) || this.padHit(14)) return 'bat';
     if (this.padHit(1) || this.padHit(15)) return 'sup';
+    if (this.padHit(4)) return 'bat:train'; // LB Batman training, RB Superman training
+    if (this.padHit(5)) return 'sup:train';
     return null;
   }
   // In game (standard mapping): X punch, Y kick, B special, A jump, LT left jab, RT right jab, LB/RB block, L3 crouch, R3 prop / grapnel, Start pause, Back menu.

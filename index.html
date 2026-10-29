@@ -58,6 +58,9 @@
   #play button.bat:hover { background: #ffd23a; color: #111; text-shadow: none; }
   #play button.sup:hover { background: #c21a1a; }
   #play kbd { font: inherit; min-width: 1.6em; padding: .1em .35em; text-align: center; color: #111; background: #f4f1ea; border-radius: 2px; text-shadow: none; }
+  #play .pad { margin-left: auto; min-width: 2em; padding: .05em .3em; text-align: center; font-size: .9em; letter-spacing: .05em; color: #f4f1ea;
+               border: 1px solid rgba(244,241,234,.6); border-radius: 1em; }
+  #play button:hover .pad { border-color: currentColor; color: inherit; }
   #play small { font: .8em monospace; letter-spacing: .2em; color: #aab; }
   @keyframes pulse { 50% { border-color: #c21a1a; } }
   #game { position: fixed; inset: 0; pointer-events: none; display: none; color: #f4f1ea; font: bold 1.1vw monospace; letter-spacing: .2em; text-shadow: 0 0 6px #000; }
@@ -103,9 +106,9 @@
 <div id="hud">Models: "Batman" by Salstar123, "Superman" by shreyhaldkar0 (Sketchfab, CC-BY-4.0) · P pixel-art · [ ] pixel size · C free camera · SPACE pause · R restart</div>
 <div id="play"><div class="grid">
   <h3 class="bat">BATMAN</h3><h3 class="sup">SUPERMAN</h3>
-  <button class="bat fight" data-hero="bat"><kbd>B</kbd>FIGHT</button><button class="sup fight" data-hero="sup"><kbd>S</kbd>FIGHT</button>
-  <button class="bat" data-hero="bat" data-train="1"><kbd>T</kbd>TRAIN</button><button class="sup" data-hero="sup" data-train="1"><kbd>Y</kbd>TRAIN</button>
-</div><small>GAMEPAD: Ⓧ BATMAN · Ⓑ SUPERMAN</small></div>
+  <button class="bat fight" data-hero="bat"><kbd>B</kbd>FIGHT<span class="pad">Ⓧ</span></button><button class="sup fight" data-hero="sup"><kbd>S</kbd>FIGHT<span class="pad">Ⓑ</span></button>
+  <button class="bat" data-hero="bat" data-train="1"><kbd>T</kbd>TRAIN<span class="pad">LB</span></button><button class="sup" data-hero="sup" data-train="1"><kbd>Y</kbd>TRAIN<span class="pad">RB</span></button>
+</div><small>KEY · GAMEPAD</small></div>
 <div id="game">
   <div class="hp" id="hpBatWrap"><span id="tagBat">BATMAN</span><b id="hpBat"><i></i></b><b class="mt" id="mtBat"><i></i></b></div>
   <div class="hp" id="hpSupWrap"><span id="tagSup">SUPERMAN</span><b id="hpSup"><i></i></b><b class="mt" id="mtSup"><i></i></b></div>

@@ -489,8 +489,8 @@ function step() {
     sdt = game.step(DT); t = game.t; realT += DT; stepCount++;
     if (game.demo && game.matchOver && game.overT > 6) { quitGame(); return; } // auto-pilot match over: back to the film
   } else {
-    const pick = playUI.style.display !== 'none' && game.menuPad(); // gamepad on the title loop: X Batman, B Superman
-    if (pick) { if (sound.on) sound.start(); startGame(pick); return; }
+    const pick = playUI.style.display !== 'none' && game.menuPad(); // gamepad on the title loop: X Batman, B Superman, LB/RB training
+    if (pick) { if (sound.on) sound.start(); const [h, tr] = pick.split(':'); startGame(h, false, !!tr); return; }
     const scale = simT < SLOWMO - 0.3 ? 1 : simT < SLOWMO ? 1 - 0.88 * (simT - (SLOWMO - 0.3)) / 0.3 : 0.12;
     sdt = DT * scale;
     simT += sdt; realT += DT; stepCount++; t = simT;
