@@ -876,10 +876,11 @@ export function makeHero(kind) {
     // toe, and the ball of the foot swells out on the inside.
     // Size: the boot was 23.6 cm long on a 2.1 m hero (11% of height; a real foot is ~15%, and comic heroes
     // stand on big, planted boots). Now 29 cm heel to toe (forefoot x1.26, heel x1.14) and 10% wider.
-    const footGeo = surface([[-0.066, 0.001, 0.001, 0.04], [-0.057, 0.033, 0.03, 0.04], [-0.034, 0.042, 0.042, 0.03],
+    const footRows = [[-0.066, 0.001, 0.001, 0.04], [-0.057, 0.033, 0.03, 0.04], [-0.034, 0.042, 0.042, 0.03],
       [0.0, 0.044, 0.046, 0.026], [0.05, 0.046, 0.036, 0.04], [0.113, 0.045, 0.024, 0.052],
-      [0.17, 0.036, 0.018, 0.057], [0.208, 0.021, 0.013, 0.06], [0.224, 0.001, 0.001, 0.062]],
-    (p, a) => {
+      [0.17, 0.036, 0.018, 0.057], [0.208, 0.021, 0.013, 0.06], [0.224, 0.001, 0.001, 0.062]];
+    // fx = [flex, curl]: the toe-joint correctives' full shapes (see below), [0, 0] = the rest sculpt.
+    const footSculpt = fx => (p, a) => {
       p.z = Math.min(p.z, 0.074);
       const L = p.y, inn = blend(0, 0.038, -s * p.x), out = blend(0, 0.038, s * p.x), low = blend(0.035, 0.074, p.z), top = 1 - blend(0.03, 0.06, p.z);
       p.z -= (0.014 * inn + 0.003 * out) * bump(L, 0.044, 0.053) * low;           // medial (high) / lateral (low) arches
@@ -896,14 +897,31 @@ export function makeHero(kind) {
         const g = cap + inst + heel;
         p.x += g * Math.sin(a); p.z += g * Math.cos(a);
       }
+      // Toe-joint correctives. Flex (toes bent up: toe-off, up on the ball, a ball-of-foot kick): the vamp over the
+      // joint buckles the way a worn boot creases, a deep crease on the joint line with a ridge either side and
+      // fainter valleys beyond, oblique like the joint, across the top and fading down the sides (Batman's
+      // stiffer boot creases less, between his instep plate and toe cap). Curl (pointed toes): the vamp stretches
+      // taut over the knuckles and the rest crease pulls out.
+      if (fx[0]) {
+        const lo = L + s * TOE_YAW * p.x, d = TOE_Z + 0.003;
+        const g = -fx[0] * (B ? 0.0014 : 0.0022) * bump(lo, d, 0.012) * Math.cos(2 * Math.PI * (lo - d) / 0.014) * blend(-0.2, 0.5, -Math.cos(a));
+        p.x += g * Math.sin(a); p.z += g * Math.cos(a);
+      }
       p.x -= s * 0.0045 * bump(L, 0.145, 0.038) * inn;                            // ball of the big toe
-      p.z += 0.0018 * bump(L, TOE_Z + 0.004, 0.006) * top;                         // flex crease across the toe box, over the toe joint
+      p.z += 0.0018 * (1 - fx[1]) * bump(L, TOE_Z + 0.004, 0.006) * top;          // flex crease across the toe box, over the toe joint
       p.z -= 0.003 * bump(L, 0.19, 0.022) * bump(p.x, -s * 0.018, 0.012) * top;    // big toe rides higher in the toe box
       p.y -= 0.02 * blend(0.126, 0.224, L) * blend(-0.01, 0.033, s * p.x);         // toe line slants back to the little toe
       p.x -= s * 0.011 * blend(0.088, 0.224, L);                                  // big toe leads on the inside
       return p;
-    }, 56, 32);
-    footGeo.rotateX(Math.PI / 2);
+    };
+    // 84 rings (3.5 mm; was 56) so the flex creases (14 mm apart) resolve.
+    const [footGeo, flexGeo, curlGeo] = [[0, 0], [1, 0], [0, 1]].map(fx => surface(footRows, footSculpt(fx), 84, 32).rotateX(Math.PI / 2));
+    // Driven by the toe joint's angle in bendToes (legs[s].flex), on the boot and its outline.
+    const dlt = (g, k) => new THREE.Float32BufferAttribute(g.attributes[k].array.map((x, i) => x - footGeo.attributes[k].array[i]), 3);
+    footGeo.morphAttributes.position = [flexGeo, curlGeo].map(g => dlt(g, 'position'));
+    footGeo.morphAttributes.normal = [flexGeo, curlGeo].map(g => dlt(g, 'normal'));
+    footGeo.morphTargetsRelative = true;
+    footGeo.userData.flex = side;
     // Toe joint: the forefoot bends at the ball (metatarsophalangeal joints) instead of the boot staying a rigid
     // block, so a planted foot rolls up onto its ball with the toes flat on the roof (toe-off in the walk, up on
     // the toes in a crouch or lunge). The joint's axis is oblique like a real foot's (big toe ahead of the
@@ -947,7 +965,7 @@ export function makeHero(kind) {
     // Tread edges under the toes (the big toe's and little toe's side), checked against the roof with the toe tip:
     // the oblique toe axis tips the big-toe edge down when the toes bend flat.
     toe.userData.tread = [[-s * 0.041, -0.071, 0.19], [s * 0.022, -0.0732, 0.18]].map(p => new THREE.Vector3(...p).applyMatrix4(tInv));
-    legs[side] = { th, kn, an, toe, s, crease: [] };
+    legs[side] = { th, kn, an, toe, s, crease: [], flex: [] };
   }
   root.updateMatrixWorld(true);
   const bones = [];
@@ -968,6 +986,7 @@ export function makeHero(kind) {
     mesh.frustumCulled = false;
     root.add(mesh); mesh.bind(skeleton);
     if (geometry.userData.leg) legs[geometry.userData.leg].crease.push(mesh);
+    if (geometry.userData.flex) legs[geometry.userData.flex].flex.push(mesh);
     if (geometry.userData.seat) seat.push(mesh);
   }
   // Comic-book ink outline: an inverted hull pushed out along the (skinned) normal, so it bends with
@@ -1013,6 +1032,7 @@ export function makeHero(kind) {
     if (m.isSkinnedMesh) { root.add(o); o.bind(m.skeleton, m.bindMatrix); }
     else { o.position.copy(m.position); o.quaternion.copy(m.quaternion); o.scale.copy(m.scale); m.parent.add(o); }
     if (g.userData.leg) legs[g.userData.leg].crease.push(o); // the outline follows the crease too
+    if (g.userData.flex) legs[g.userData.flex].flex.push(o);
     if (g.userData.seat) seat.push(o);
   }
   // Torso cross-section [halfWidth, halfDepth] at a hips-space height, for cloth collision.
@@ -1245,7 +1265,8 @@ const BOOT_CORNERS = [[0, -0.074, -0.066], [0, -0.074, TOE_Z], [0.046, -0.074, 0
 // A front kick strikes with the ball of the foot, toes pulled back out of the way (pose s.lt / s.rt 0..1): the
 // curl gives way to TOE_BACK up there (the boot stiffens the ~60-70 deg a bare foot manages), so the ball leads
 // instead of the curled toe tip (front kick: the tip led the ball by 6 cm).
-const TOE_H = [0.015, 0.05], TOE_AIR = [0.08, 0.2], TOE_CURL = 0.35, TOE_BACK = 1.0,
+// TOE_FLEX: toe bend (rad) at which the boot's flex creases are fully formed (bendToes drives legs[s].flex).
+const TOE_H = [0.015, 0.05], TOE_AIR = [0.08, 0.2], TOE_CURL = 0.35, TOE_BACK = 1.0, TOE_FLEX = 0.7,
   _tbV = new THREE.Vector3(), _tbP = new THREE.Vector3(), _tbQ = new THREE.Quaternion();
 function bendToes(l, ground, tb = 0) {
   const t = l.toe; if (!t) return;
@@ -1258,6 +1279,7 @@ function bendToes(l, ground, tb = 0) {
   const a = Math.min(TOE_UP, Math.max(0, pitch)) * (1 - blend(TOE_H[0], TOE_H[1], h))
     + (tb * TOE_BACK - (1 - tb) * TOE_CURL * Math.min(1, Math.max(0, pf) / AIR_PF)) * blend(TOE_AIR[0], TOE_AIR[1], h);
   if (Math.abs(a) > 1e-4) { t.quaternion.multiply(_tbQ.setFromAxisAngle(_XA, -a)); t.updateMatrixWorld(true); }
+  if (l.flex) for (const m of l.flex) { const w = m.morphTargetInfluences; w[0] = Math.min(1, Math.max(0, a) / TOE_FLEX); w[1] = Math.min(1, Math.max(0, -a) / TOE_CURL); }
 }
 const _btP = new THREE.Vector3(), _btQ = new THREE.Vector3();
 function bootLow(l) { // lowest boot point, world y
