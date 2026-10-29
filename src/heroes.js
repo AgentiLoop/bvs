@@ -535,7 +535,36 @@ export function makeHero(kind) {
     // Spit curl: each control point is dropped onto the sculpted forehead/pompadour surface (it used to
     // float ~1 cm in front of the head after the hair gained volume).
     line(head, [[-0.027, 0.21], [0.003, 0.2], [0.017, 0.184], [0.008, 0.169], [-0.002, 0.174]].map(onFace(0.0025)), 0.004, hair);
-    for (const s of [-1, 1]) oval(head, skin, [s * 0.079, 0.126, -0.006], [0.008, 0.024, 0.015]); // ears tucked to the skull
+    // Sculpted ears instead of flattened spheres: an ear-shaped plate (front edge on the cheek, lobe at the
+    // bottom front) with a rolled helix rim around the top and back, the antihelix ridge inside it, a tragus
+    // flap over the ear hole and a fleshy lobe. Ear-local frame: x = out from the skull, y = up, z = forward.
+    // Points are [z, y]; the ear spans the brow line down to the nose base, set close to the head.
+    const earOutline = [[0.006, -0.013], [0.007, 0.004], [0.008, 0.017], [0.003, 0.026], [-0.006, 0.028],
+      [-0.014, 0.022], [-0.018, 0.01], [-0.017, -0.004], [-0.012, -0.016], [-0.006, -0.026], [0.001, -0.027], [0.005, -0.021]];
+    const es = new THREE.Shape(new THREE.SplineCurve(earOutline.map(([z, y]) => new THREE.Vector2(-z, y))).getPoints(48));
+    const earPlate = new THREE.ExtrudeGeometry(es, { depth: 0.0022, bevelEnabled: true, bevelThickness: 0.0012,
+      bevelSize: 0.0012, bevelSegments: 3, curveSegments: 24 });
+    earPlate.rotateY(Math.PI / 2); // shape (-z, y) extruded along +z -> plate in the y-z plane, thickness along +x
+    const earTube = (pts, r, x) => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(([z, y, dx = 0]) =>
+      new THREE.Vector3(x + dx, y, z))), 32, r, 8, false);
+    // helix: from the crus above the ear hole, up and around the back to the lobe
+    const helix = earTube([[0.002, 0.004, -0.002], [0.005, 0.014], [0.002, 0.0235], [-0.006, 0.0255], [-0.0125, 0.0205],
+      [-0.0158, 0.009], [-0.015, -0.004], [-0.011, -0.014]], 0.0024, 0.0026);
+    // antihelix: a softer inner ridge forking up under the helix and running down to the antitragus
+    const antihelix = earTube([[-0.001, 0.017, -0.001], [-0.006, 0.014], [-0.0095, 0.006], [-0.0095, -0.003], [-0.005, -0.009]], 0.0017, 0.0024);
+    const earFlesh = (s) => {
+      const g = new THREE.Group();
+      g.position.set(s * 0.0865, 0.12, -0.011);
+      g.rotation.set(-0.18, -0.32 * s, 0); // top tilted back; back edge stands out from the skull
+      g.scale.set(s, 1, 1);
+      head.add(g);
+      part(g, earPlate, skin);
+      part(g, helix, skin);
+      part(g, antihelix, skin);
+      oval(g, skin, [0.0045, -0.002, 0.0055], [0.0022, 0.0042, 0.003]);   // tragus
+      oval(g, skin, [0.0022, -0.019, -0.003], [0.0034, 0.0075, 0.0068]); // lobe
+    };
+    for (const s of [-1, 1]) earFlesh(s);
   }
   // Expressive face rig (driven by setFace): each eye (white + iris + pupil) sits in a lid group that
   // squeezes shut vertically, each brow pivots about its middle (inner end down = scowl, up = pain), and
