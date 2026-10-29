@@ -436,12 +436,24 @@ export function makeHero(kind) {
   const hairMask = [];
   const faceSculpt = (p, a) => {
     const front = Math.max(0, Math.cos(a)), f5 = front ** 5;
-    p.x = Math.sign(p.x) * Math.pow(Math.abs(Math.sin(a)), 0.83) * contour(faceRows, p.y)[0];
     if (B) {
+      p.x = Math.sign(p.x) * Math.pow(Math.abs(Math.sin(a)), 0.83) * contour(faceRows, p.y)[0];
       p.z += f5 * (0.025 * bump(p.x, 0, 0.014) * bump(p.y, 0.112, 0.032)
         + 0.012 * bump(p.y, 0.032, 0.023) - 0.008 * bump(p.y, 0.068, 0.012));
       p.z -= 0.008 * bump(Math.abs(p.x), 0.034, 0.021) * bump(p.y, 0.144, 0.014) * front;
       return p;
+    }
+    // Square comic-book jaw: below the mouth the cross-section turns from an ellipse into a rounded box
+    // (superellipse), so the chin is a broad flat front plane, the jawline runs straight back from its
+    // corners, and the jaw angle under the ear is a corner rather than a curve.
+    {
+      const [rx, rz, off] = contour(faceRows, p.y), c = Math.cos(a), s = Math.sin(a);
+      const jawT = (1 - blend(0.06, 0.1, p.y)) * blend(0.0, 0.016, p.y);
+      const nx = THREE.MathUtils.lerp(0.83, 0.6, jawT), nz = THREE.MathUtils.lerp(1, c > 0 ? 0.6 : 0.75, jawT);
+      p.x = Math.sign(s) * Math.pow(Math.abs(s), nx) * rx;
+      p.z = Math.sign(c) * Math.pow(Math.abs(c), nz) * Math.max(0.0001, rz) + off;
+      // the mandible angle flares out a little below and in front of the ear
+      p.x += Math.sign(s) * jawT * 0.004 * bump(c, -0.15, 0.4);
     }
     // Superman: a comic-book profile. A straight nose rises from a set-back nasion to a defined tip with
     // nostril wings and a crisp underside; a philtrum leads to two full lips that sit on the nose-chin line,
@@ -465,6 +477,7 @@ export function makeHero(kind) {
       - 0.003 * bump(p.x, 0, 0.005) * bump(y, 0.022, 0.012));               // chin cleft
     p.z += front ** 2 * 0.012 * bump(y, 0.178, 0.022) * bump(p.x, 0, 0.05);  // full forehead: no shelf above the brow
     p.z += front ** 2 * 0.007 * bump(ax, 0.052, 0.018) * bump(y, 0.112, 0.016); // cheekbones
+    p.z -= front ** 2 * 0.004 * bump(ax, 0.056, 0.014) * bump(y, 0.082, 0.013); // flat cheek plane hollowing under them
     p.z -= front ** 3 * 0.0035 * bump(ax, 0.034, 0.016) * bump(y, 0.141, 0.01); // shallow eye sockets
     if (isHair) {
       // Real hair volume instead of a painted cap: fuller on top, a swept-up pompadour at the front,
