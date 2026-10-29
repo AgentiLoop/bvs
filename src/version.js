@@ -1,7 +1,7 @@
 // Build version, shown after "M sound" in the HUD.
 // `git archive` (deploy/loop.sh) fills in the describe string via .gitattributes export-subst:
-//   on a release tag  'v0.0.3'             -> '0.0.3'
-//   past a tag        'v0.0.3-69-gde03263' -> '0.0.4-dev' (the next patch release, in development)
+//   on a release tag  'v0.0.4'             -> '0.0.4'
+//   past a tag        'v0.0.4-12-g91810ed' -> '0.0.5-dev' (the next patch release, in development)
 // Served straight from a working tree (no substitution) it reads 'dev'.
 const D = '$Format:%(describe:tags)$';
 const m = /^v?(\d+)\.(\d+)\.(\d+)(-\d+-g[0-9a-f]+)?$/.exec(D);
