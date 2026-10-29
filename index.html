@@ -66,6 +66,11 @@
   .pips { color: #f6c400; letter-spacing: .1em; }
   #banner { position: fixed; left: 0; right: 0; top: 34vh; text-align: center; font-size: 6vw; font-weight: 900; letter-spacing: .12em; opacity: 0; transition: opacity .25s; }
   #combo { position: absolute; left: 4vw; right: 4vw; top: 12vh; font-size: 2.6vw; font-weight: 900; letter-spacing: .12em; opacity: 0; transition: opacity .3s; }
+  #train { position: absolute; left: 50%; bottom: 6vh; transform: translateX(-50%); display: none; min-width: 30vw; padding: .8vw 1.4vw; text-align: center;
+           background: rgba(6,8,14,.8); border: 1px solid rgba(244,241,234,.35); border-top: 3px solid #39ff6a; }
+  #train h4 { margin: 0; font: bold .9vw monospace; letter-spacing: .25em; color: #9fffb8; } #train h4 em { font-style: normal; color: #f6c400; }
+  #train p { margin: .4vw 0 .2vw; font-size: 1.8vw; font-weight: 900; } #train b { display: block; font-size: 1.4vw; color: #f6c400; }
+  #train small { display: block; margin-top: .5vw; font: .75vw monospace; letter-spacing: .15em; color: #ccd; }
   #banner small { display: block; font: 1.2vw monospace; letter-spacing: .25em; margin-top: 1em; color: #ccd; }
   #help { position: fixed; left: 3vw; right: 3vw; bottom: 3vh; display: none; grid-template-columns: repeat(4, 1fr); gap: .6vw 1.6vw;
           padding: 1vw 1.4vw; background: rgba(6,8,14,.82); border: 1px solid rgba(244,241,234,.35); border-top: 3px solid #c21a1a;
@@ -88,13 +93,14 @@
   <p>EVERY PIXEL FROM CODE · THREE.JS</p></div>
 <div id="sub"></div>
 <div id="hud">Models: "Batman" by Salstar123, "Superman" by shreyhaldkar0 (Sketchfab, CC-BY-4.0) · P pixel-art · [ ] pixel size · C free camera · SPACE pause · R restart</div>
-<div id="play"><button data-hero="bat">B · PLAY AS BATMAN</button><button data-hero="sup">S · PLAY AS SUPERMAN</button><small>GAMEPAD: Ⓧ BATMAN · Ⓑ SUPERMAN</small></div>
+<div id="play"><button data-hero="bat">B · PLAY AS BATMAN</button><button data-hero="sup">S · PLAY AS SUPERMAN</button><button data-hero="bat" data-train="1">T · TRAINING</button><small>GAMEPAD: Ⓧ BATMAN · Ⓑ SUPERMAN</small></div>
 <div id="game">
   <div class="hp" id="hpBatWrap"><span id="tagBat">BATMAN</span><b id="hpBat"><i></i></b><b class="mt" id="mtBat"><i></i></b></div>
   <div class="hp" id="hpSupWrap"><span id="tagSup">SUPERMAN</span><b id="hpSup"><i></i></b><b class="mt" id="mtSup"><i></i></b></div>
   <div id="timer">60</div>
   <div id="combo"></div>
   <div id="banner"></div>
+  <div id="train"></div>
 </div>
 <div id="help">
   <header><span>CONTROLS · KEYBOARD / GAMEPAD</span><span class="go">SPACE / MENU = PAUSE HERE</span><span class="ps">PAUSED · SPACE / MENU RESUME · H HIDE · ESC / VIEW QUIT</span></header>
@@ -107,6 +113,7 @@
     <p>Jump (+ punch / kick in air)<b>Y / Ⓐ</b></p>
     <p>Special<b>L / Ⓑ</b></p>
     <p>Pause · Quit<b>SPACE / MENU · ESC / VIEW</b></p>
+    <p>Training (CPU only defends) · next move<b>T · TAB</b></p>
   </section>
   <section><h3>ATTACKS</h3>
     <p>Low jab · Low kick<b>CROUCH + PUNCH / KICK</b></p>

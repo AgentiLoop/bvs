@@ -152,6 +152,28 @@ const MP = {
 const REACT = { head: MP.hitHead, body: MP.hitBody, low: MP.hitLow };
 // Difficulty: damage x for clean hits the CPU lands on you / you land on the CPU; `think` = CPU decision interval [min, +rand] s.
 const EASY = { cpuDmg: 0.8, meDmg: 1.1, think: [0.28, 0.35] };
+// Training mode (T): the CPU is a defence-only trainer (never attacks, can't hurt you), takes TRAIN.dmg x damage, no clock,
+// your meter stays full. One read per attack: block (height read right TRAIN.read), sidestep, backdash or take it.
+// It keeps within [far, near] m of you so there is always something to hit. LESSONS = the move prompts, done when act(you) is true.
+const TRAIN = { dmg: 0.35, block: 0.4, read: 0.8, side: 0.1, back: 0.05, near: 2.4, far: 0.9, next: 1 };
+const LESSONS = [
+  ['PUNCH', 'J / Ⓧ', (a) => a.type === 'jab'],
+  ['KICK', 'K / Ⓨ', (a) => a.type === 'front'],
+  ['3-HIT PUNCH CHAIN', 'J J J', (a) => a.type === 'hook'],
+  ['UPPERCUT', 'HOLD SHIFT + J', (a) => a.type === 'upper'],
+  ['SWEEP', 'HOLD SHIFT + K', (a) => a.type === 'sweep'],
+  ['LOW KICK', 'HOLD C + K', (a) => a.type === 'ckick'],
+  ['JUMP KICK', 'Y, THEN K IN THE AIR', (a) => a.type === 'airkick'],
+  ['DASH IN', 'DOUBLE-TAP TOWARD', (a) => a.type === 'dash' && a.dir > 0],
+  ['SIDESTEP', 'DOUBLE-TAP W OR S', (a) => a.type === 'side'],
+  ['THROW', 'U (OR J + K TOGETHER) UP CLOSE', (a) => a.type === 'throw'],
+  ['PROJECTILE', 'C, THEN TOWARD + J', (a) => a.type === 'shoot'],
+  ['RISING UPPERCUT', 'O (OR TOWARD, C + TOWARD + J)', (a) => a.type === 'rise'],
+  ['SPECIAL', 'L / Ⓑ', (a) => a.type === 'flykick' || a.type === 'heat'],
+  ['DRIVE IMPACT', 'H / LB + RB', (a) => a.type === 'impact'],
+  ['SUPER', 'I (OR SHIFT + L)', (a) => a.type === 'super'],
+  ['GRAPNEL HOOK', 'G / R3', (a) => a.type === 'grapnel', 'bat'], // (4th entry: only for that hero)
+];
 // keys: [time, pose]; hit: active frame; cancel: earliest chain into `next` (J punch / K kick); reach: horizontal range;
 // kb: knockback m/s; up: launch m/s (<0 spikes airborne targets down); at: striking limb; blast: hit-explosion size.
 // Height (SF/MK mix-ups): hi = whiffs over a crouching foe; low = must be blocked crouching; air/over = overhead,
@@ -402,6 +424,7 @@ export class Game {
       bars: { bat: document.querySelector('#hpBat i'), sup: document.querySelector('#hpSup i') },
       tags: { bat: document.getElementById('tagBat'), sup: document.getElementById('tagSup') },
       meters: { bat: document.getElementById('mtBat'), sup: document.getElementById('mtSup') }, timer: document.getElementById('timer'),
+      train: document.getElementById('train'),
     };
   }
 
@@ -426,9 +449,70 @@ export class Game {
     this.ui.combo.style.opacity = 0;
     this.say('');
     this.updateBars();
+    this.lesson = 0; this.lessonT = 0; this.trainUI();
   }
 
-  stop() { this.active = false; if (this.F) for (const f of Object.values(this.F)) setFace(f.H, { eye: 1, ang: 0, pain: 0, mouth: 0 }); this.heat = null; this.shots = []; this.grap = null; this.orb = null; this.ui.hud.style.display = 'none'; this.help(false); this.say(''); }
+  // ---------- training mode (TRAIN / LESSONS) ----------
+  setTrain(on) {
+    this.train = on; this.lessonT = 0;
+    const F = this.finish; // the CPU had you at FINISH HIM: let you off
+    if (on && F && F.att === this.cpu && !F.go) { F.def.dazed = false; F.def.hp = Math.max(1, F.def.hp); this.finish = null; this.say(''); }
+    const A = this.cpu.ai; A.t = A.block = A.crouch = A.chain = 0; A.air = false; this.cpu.buf = null;
+    this.updateTags(); this.trainUI();
+    this.showCombo(on ? 'TRAINING MODE · T TO FIGHT' : 'FIGHT MODE · T TO TRAIN', null);
+  }
+  lessons() { return LESSONS.filter((l) => !l[3] || l[3] === this.me.key); }
+  trainUI() {
+    const el = this.ui.train;
+    if (!el) return;
+    el.style.display = this.train && this.active ? 'block' : 'none';
+    if (!this.train) return;
+    const L = this.lessons(), i = this.lesson % L.length, [name, keys] = L[i];
+    el.innerHTML = `<h4>TRAINING · ${i + 1} / ${L.length}${this.lessonT > 0 ? ' · <em>NICE!</em>' : ''}</h4><p>${name}</p><b>${keys}</b>`
+      + '<small>TAB NEXT MOVE · T BACK TO FIGHT · THE TRAINER ONLY DEFENDS</small>';
+  }
+  nextLesson() { this.lesson = (this.lesson + 1) % this.lessons().length; this.lessonT = 0; this.trainUI(); }
+  // per step: the player's meter stays full, the clock stands still, a move done = NICE!, then the next prompt
+  trainStep(dt) {
+    const me = this.me, a = me.act;
+    if (me.meter < 100) { me.meter = 100; this.updateBars(); }
+    if (this.lessonT > 0) { if ((this.lessonT -= dt) <= 0) this.nextLesson(); return; }
+    const L = this.lessons()[this.lesson % this.lessons().length];
+    if (a && L[2](a)) { this.lessonT = TRAIN.next; this.trainUI(); }
+  }
+  // Trainer brain: no attacks at all, only guard / duck / sidestep / backdash / wake-up, and stays in range of you.
+  trainAI(dt) {
+    const f = this.cpu, o = this.me, A = f.ai, rng = this.ctx.rng;
+    const d = Math.hypot(o.x - f.x, o.z - f.z), tx = (o.x - f.x) / (d || 1), tz = (o.z - f.z) / (d || 1);
+    A.t -= dt; A.block -= dt; A.crouch -= dt; f.buf = null;
+    if (f.dazed || f.dizzy > 0) { f.block = f.crouch = false; f.moving = 0; if (f.dizzy > 0) f.dizzy -= DIZZY.cpuMash * dt; return; }
+    if (f.down <= 0) A.wk = null;
+    else if (A.wk == null && f.down > 0.3 && f.down < 0.7) { A.wk = rng() < 0.5 ? 'quick' : ''; if (A.wk) this.wake(f, A.wk); }
+    // incoming projectile: block it at its height
+    for (const s of this.shots) {
+      if (s.f === f || s.seen || Math.hypot(s.x - f.x, s.z - f.z) > 4) continue;
+      s.seen = true;
+      if (rng() < TRAIN.block) { A.block = 0.5; A.crouch = s.S.low ? 0.5 : 0; }
+    }
+    // one read per attack you start
+    if (o.act && A.seen !== o.act && d < 3) {
+      A.seen = o.act; const r = rng(), OM = MOVES[o.act.type];
+      if (r < TRAIN.block) {
+        const low = !!(OM && OM.low), over = o.y > 0.3 || !!(OM && OM.air) || o.act.type === 'flykick', read = rng() < TRAIN.read;
+        A.block = 0.5; A.crouch = (low ? read : over ? !read : false) ? 0.5 : 0;
+      } else if (r < TRAIN.block + TRAIN.side && OM && !OM.track) this.sidestep(f, rng() < 0.5 ? 1 : -1);
+      else if (r < TRAIN.block + TRAIN.side + TRAIN.back) this.dash(f, -1);
+    }
+    f.block = A.block > 0 && this.free(f);
+    f.crouch = A.crouch > 0 && this.canCrouch(f);
+    if (A.t <= 0) {
+      A.t = EASY.think[0] + rng() * EASY.think[1]; A.mx = A.mz = 0;
+      if (d > TRAIN.near) { A.mx = tx; A.mz = tz; } else if (d < TRAIN.far) { A.mx = -tx; A.mz = -tz; }
+    }
+    if (!f.block) this.walk(f, A.mx, A.mz, dt);
+  }
+
+  stop() { this.active = false; if (this.ui.train) this.ui.train.style.display = 'none'; if (this.F) for (const f of Object.values(this.F)) setFace(f.H, { eye: 1, ang: 0, pain: 0, mouth: 0 }); this.heat = null; this.shots = []; this.grap = null; this.orb = null; this.ui.hud.style.display = 'none'; this.help(false); this.say(''); }
 
   say(text, sub = '') { this.ui.banner.innerHTML = text ? `${text}${sub ? `<small>${sub}</small>` : ''}` : ''; this.ui.banner.style.opacity = text ? 1 : 0; }
 
@@ -451,6 +535,8 @@ export class Game {
     else if (k === 'g') this.grapnelIn(this.me);
     else if (k === 'y') this.press(this.me, 'A');
     else if (k === 'shift') this.amplify(this.me);
+    else if (k === 't') this.setTrain(!this.train); // training mode on / off (the CPU becomes a defence-only trainer)
+    else if (k === 'tab' && this.train) { e.preventDefault(); this.nextLesson(); }
   }
   keyup(e) { this.keys.delete(e.key.toLowerCase()); }
 
@@ -1230,6 +1316,7 @@ export class Game {
   hurt(def, att, M, at, trade = false) {
     const { fx } = this.ctx;
     if (def.ko || def.down > 0 || def.brk > 0) return;
+    if (this.train && att === this.cpu) return; // training: the trainer can't hurt you
     if (def.act && (def.act.type === 'super' || def.act.type === 'blow')) { this.ctx.fx.sparkBurst(at.x, at.y, at.z, 10, 2, 0xffffff); return; } // armoured
     if (def.act && def.act.type === 'dash' && def.act.dir < 0 && def.act.t < DASH.invuln) return; // backdash invulnerability
     if (def.act && def.act.type === 'impact' && !def.act.done && def.act.armor < IMPACT.armor && !M.fin) { // drive impact armour soaks it
@@ -1247,7 +1334,7 @@ export class Game {
     const guarding = def.block && !def.act && def.stun <= 0 && def.y <= 0.001, over = M.air || M.over;
     const rage = att.rage > 0 ? POWER.rage.mult : 1;
     if (guarding && (def.crouch ? !over : !M.low)) {
-      def.hp = Math.max(1, def.hp - M.dmg * 0.15 * rage);
+      def.hp = Math.max(1, def.hp - M.dmg * 0.15 * rage * (this.train && def === this.cpu ? TRAIN.dmg : 1));
       att.meter = Math.min(100, att.meter + 2); def.meter = Math.min(100, def.meter + 4);
       def.kx += nx * M.kb * 0.45; def.kz += nz * M.kb * 0.45; att.kx -= nx * 0.6; att.kz -= nz * 0.6;
       def.jl = (def.jl || 0) - (M.heavy ? 0.22 : 0.12); def.hx -= 0.12; // the guard absorbs the blow: a small jolt back
@@ -1262,7 +1349,7 @@ export class Game {
     const juggle = def.stun > 0 || def.launched || def.y > 0.05;
     att.hits = juggle ? att.hits + 1 : 1;
     const KB = trade ? null : this.krushOf(def, att, M0, CK);
-    const dmg = M.dmg * rage * Math.max(0.45, 1 - 0.1 * (att.hits - 1)) * (KB ? KRUSH.dmg : 1) * (att === this.cpu ? EASY.cpuDmg : EASY.meDmg);
+    const dmg = M.dmg * rage * Math.max(0.45, 1 - 0.1 * (att.hits - 1)) * (KB ? KRUSH.dmg : 1) * (att === this.cpu ? EASY.cpuDmg : EASY.meDmg) * (this.train && def === this.cpu ? TRAIN.dmg : 1);
     def.act = null; def.buf = null; def.frz = 0; def.stun = def.stunMax = M.stun; def.heavy = !!M.heavy;
     const c0 = def.cur; def.p0 = { ...c0, lh: [...c0.lh], rh: [...c0.rh], lf: [...c0.lf], rf: [...c0.rf] }; def.hitA = this.t; // (target(): the reaction eases in from here)
     def.zone = M.low ? 'low' : M.hi || M.air || M.over || (M.up || 0) > 5 ? 'head' : 'body'; def.hitSide = M.at === 'lh' ? -1 : 1;
@@ -1302,7 +1389,7 @@ export class Game {
     if (KB) this.krush(def, att, KB, at);
     if (def.hp <= 0) {
       if (!M.fin && att.act && att.act.type === 'fatal') return; // fatality string: only its last blow K.O.s
-      if (!this.finish && this.wins[att.key] + 1 >= WINS) { this.finishHim(def, att); return; }
+      if (!this.finish && !this.train && this.wins[att.key] + 1 >= WINS) { this.finishHim(def, att); return; }
       def.dazed = false; this.finish = null;
       def.ko = true; def.act = null; def.launched = true; def.kx *= 1.6; def.kz *= 1.6; def.vy = Math.max(def.vy, 4); def.y = Math.max(def.y, 0.001);
       this.endRound(att, M.fin ? 'FATALITY' : 'K.O.');
@@ -1393,16 +1480,17 @@ export class Game {
   updateTags() {
     for (const k of ['bat', 'sup']) {
       const pips = '●'.repeat(this.wins[k]) + '○'.repeat(WINS - this.wins[k]);
-      const who = `${k === 'bat' ? 'BATMAN' : 'SUPERMAN'} · ${this.choice === k && !this.demo ? 'YOU' : 'CPU'}`;
+      const who = `${k === 'bat' ? 'BATMAN' : 'SUPERMAN'} · ${this.choice === k && !this.demo ? 'YOU' : this.train ? 'TRAINER' : 'CPU'}`;
       this.ui.tags[k].innerHTML = k === 'bat' ? `${who} <span class="pips">${pips}</span>` : `<span class="pips">${pips}</span> ${who}`;
     }
   }
   // Round over (KO or time). winner null = draw. First to WINS rounds takes the match.
   endRound(winner, text) {
     this.state = 'over'; this.overT = 0; this.winner = winner; this.shownWin = false;
-    if (winner) this.wins[winner.key]++;
+    if (winner && !this.train) this.wins[winner.key]++; // training: no score, the trainer just gets back up
     this.matchOver = Object.values(this.wins).some((w) => w >= WINS);
     this.updateTags();
+    if (this.train) { this.say(text, 'TRAINER DOWN · HE WILL BE RIGHT BACK'); return; }
     this.say(text, this.matchOver ? '' : winner ? `${winner.key === 'bat' ? 'BATMAN' : 'SUPERMAN'} TAKES ROUND ${this.round}` : 'NO WINNER');
   }
   nextRound() {
@@ -1435,8 +1523,9 @@ export class Game {
       if (this.state === 'fight') {
         for (const f of [this.me, this.cpu]) this.dizzyStep(f, sdt);
         this.player(sdt); this.ai(sdt);
+        if (this.train) this.trainStep(sdt);
         this.fightT += sdt;
-        if (!this.cine && !this.finish) this.clock = Math.max(0, this.clock - sdt);
+        if (!this.cine && !this.finish && !this.train) this.clock = Math.max(0, this.clock - sdt);
         // nobody finished him in time: he collapses (plain K.O.)
         for (const f of [this.me, this.cpu]) if (!f.blowSaid && !f.blowUsed && !f.ko && !f.dazed && f.hp > 0 && f.hp <= BLOW.hp) {
           f.blowSaid = true; if (f === this.me) this.showCombo('FATAL BLOW READY · F / LT+RT', f.key);
@@ -1466,7 +1555,7 @@ export class Game {
         this.say(`${w} WINS`, this.demo ? 'AUTO-PILOT DEMO · ESC / BACK MENU' : this.winner === this.me ? 'YOU WIN · ENTER / START REMATCH · ESC / BACK MENU' : 'YOU LOSE · ENTER / START REMATCH · ESC / BACK MENU');
       }
     }
-    this.ui.timer.textContent = Math.ceil(this.clock);
+    this.ui.timer.textContent = this.train ? '∞' : Math.ceil(this.clock);
     this.pose(sdt, dt);
     this.camera(dt);
     return sdt;
@@ -1550,6 +1639,7 @@ export class Game {
   }
 
   ai(dt) {
+    if (this.train) return this.trainAI(dt);
     const f = this.cpu, o = this.me, A = f.ai, rng = this.ctx.rng;
     const d = Math.hypot(o.x - f.x, o.z - f.z), tx = (o.x - f.x) / (d || 1), tz = (o.z - f.z) / (d || 1);
     A.t -= dt; A.block -= dt; A.crouch -= dt;

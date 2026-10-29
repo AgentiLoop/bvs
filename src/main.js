@@ -638,11 +638,11 @@ function render() {
 // ---------- input ----------
 const playUI = document.getElementById('play');
 if (qs.has('freeze') || qs.has('t') || qs.has('cam')) playUI.style.display = 'none'; // clean frames for stills
-function startGame(choice, demo = false) { reset(); game.demo = demo; game.start(choice); playUI.style.display = 'none'; paused = false; }
+function startGame(choice, demo = false, train = false) { reset(); game.demo = demo; game.train = train; game.start(choice); playUI.style.display = 'none'; paused = false; }
 function quitGame() { game.stop(); reset(); playUI.style.display = 'flex'; if (paused) { paused = false; sound.pause(false); } }
 // In a match: SPACE / ENTER / Start (Menu) pauses (and resumes); the controls panel stays up while paused.
 function togglePause() { paused = !paused; sound.pause(paused); game.help(paused || game.state === 'enter', paused); }
-playUI.addEventListener('click', (e) => { const h = e.target.dataset && e.target.dataset.hero; if (h) { e.target.blur(); startGame(h); } });
+playUI.addEventListener('click', (e) => { const h = e.target.dataset && e.target.dataset.hero; if (h) { e.target.blur(); startGame(h, false, !!e.target.dataset.train); } });
 addEventListener('keyup', (e) => game.keyup(e));
 addEventListener('keydown', (e) => {
   if (e.key === 'm' || e.key === 'M') { if (sound.toggle()) { sound.start(); if (paused) sound.pause(true); } return; }
@@ -663,6 +663,7 @@ addEventListener('keydown', (e) => {
   }
   if (e.key === 'b' || e.key === 'B' || e.key === '1') startGame('bat');
   else if (e.key === 's' || e.key === 'S' || e.key === '2') startGame('sup');
+  else if (e.key === 't' || e.key === 'T') startGame('bat', false, true); // training (T in a match toggles it, either hero)
   else if (e.code === 'Space') { paused = !paused; sound.pause(paused); }
   else if (e.key === 'p' || e.key === 'P') cycleMode();
   else if (e.key === '-' || e.key === '_') pixStep(-1);
