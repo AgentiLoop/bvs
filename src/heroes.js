@@ -443,11 +443,14 @@ export function makeHero(kind) {
   // Superman's face has a broad, square jaw rather than an egg-shaped head.
   // Comic Batman's jaw is just as heavy: the lower face no longer tapers to a narrow V chin (it was ~1.5 cm
   // narrower than Superman's from the mouth down), the jaw angle stays wide and the chin is broad and flat.
+  // The cranium is taller than the bare shared rows (crown 0.245 -> 0.265, rows above the lenses stretched x 1.21):
+  // the crown sat only 10 cm above the lenses vs ~15 cm down to the chin (eyes 41% down the head, a low, sloping
+  // brow); a real / comic head has the eyes near half-way (Superman's hair puts his at ~45%).
   const faceRows = B ? [[0.002, 0.034, 0.026, 0.032], [0.019, 0.064, 0.052, 0.023],
     [0.047, 0.08, 0.066, 0.01], [0.082, 0.083, 0.071, 0.003],
     [0.115, 0.087, 0.077, 0], [0.149, 0.083, 0.077, -0.002],
-    [0.182, 0.084, 0.077, -0.006], [0.214, 0.071, 0.065, -0.009],
-    [0.237, 0.037, 0.036, -0.009], [0.245, 0.0001, 0.0001, -0.009]]
+    [0.189, 0.084, 0.077, -0.006], [0.2275, 0.071, 0.065, -0.009],
+    [0.2553, 0.037, 0.036, -0.009], [0.265, 0.0001, 0.0001, -0.009]]
     : [[0.004, 0.036, 0.03, 0.03], [0.02, 0.063, 0.056, 0.02],
       [0.047, 0.08, 0.068, 0.008], [0.082, 0.084, 0.072, 0.002],
       [0.115, 0.085, 0.076, 0], [0.149, 0.081, 0.077, -0.002],
@@ -459,9 +462,9 @@ export function makeHero(kind) {
   const cowlEdge = ax => { const s = ax - 0.012; return 0.082 - 0.25 * (s + Math.hypot(s, 0.006)); };
   // Batman's cowl has a broad flat front plane (mask face) from the cheekbones up the brow: the round cross-section
   // set the lenses ~25 deg around the head, so an in-game three-quarter view hid the far lens behind the cowl nose.
-  // Front-half superellipse: x / z exponents lerp to 0.7 over y 0.075-0.105 .. 0.2-0.235 (midline and sides fixed).
+  // Front-half superellipse: x / z exponents lerp to 0.7 over y 0.075-0.105 .. 0.21-0.253 (midline and sides fixed).
   const batSec = (y, c) => {
-    const t = c > 0 ? blend(0.075, 0.105, y) * (1 - blend(0.2, 0.235, y)) : 0;
+    const t = c > 0 ? blend(0.075, 0.105, y) * (1 - blend(0.21, 0.253, y)) : 0;
     return [THREE.MathUtils.lerp(0.83, 0.7, t), THREE.MathUtils.lerp(1, 0.7, t)];
   };
   // Batman's skull was a ball (as wide as it was deep, a flat back straight down to the nape): a real / comic head
@@ -601,10 +604,11 @@ export function makeHero(kind) {
       // of an open-bottomed cone stuck through the side of the head with a hard crease.
       // In profile a comic cowl ear is a fin, not a round cone: a long base, a near-vertical front edge and the back
       // edge raking down to the rear (the row offsets shift each section forward as it narrows).
-      const ear = surface([[0.16, 0.034, 0.036, 0], [0.19, 0.025, 0.028, 0.008], [0.225, 0.017, 0.018, 0.016], [0.27, 0.008, 0.008, 0.024], [0.305, 0.0001, 0.0001, 0.03]], p => {
-        p.x += s * (0.064 + (p.y - 0.19) * 0.045); p.z -= 0.026;
+      // Rows ride up with the taller cranium (base on the stretched skull, the tip 2 cm higher like the crown).
+      const ear = surface([[0.162, 0.034, 0.036, 0], [0.198, 0.025, 0.028, 0.008], [0.241, 0.017, 0.018, 0.016], [0.29, 0.008, 0.008, 0.024], [0.325, 0.0001, 0.0001, 0.03]], p => {
+        p.x += s * (0.064 + (p.y - 0.198) * 0.045); p.z -= 0.026;
         const off = contour(faceRows, p.y)[2], dz = p.z - off, r = Math.hypot(p.x, dz), R = skullR(p.y, p.x, p.z) - 0.0008;
-        const t = blend(0.165, 0.215, p.y);
+        const t = blend(0.168, 0.225, p.y);
         if (r > R) { const k = (R + (r - R) * t) / r; p.x *= k; p.z = off + dz * k; }
         return p;
       }, 40, 24);
