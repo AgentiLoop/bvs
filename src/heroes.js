@@ -283,10 +283,26 @@ export function makeHero(kind) {
     const lat = 0.012 * bump(ax, xl - 0.035, 0.045) * bump(y, 0.38, 0.13) * blend(0.2, 0.6, c);
     return scap + lumbar + (erector + groove + trap) * blend(0.6, 0.9, c) + lat;
   };
+  // Superman's neck was a plain cylinder. A comic-book neck is a column of muscle: the sternocleidomastoids run as
+  // two cords from behind the ears down and forward to the pit of the throat (a notch between their lower ends,
+  // a small Adam's apple above it), and the trapezius climbs the back and sides of the neck, so the nape flows
+  // out into the shoulders in one slope instead of a cylinder standing on them.
+  const neckSculpt = (p, a) => {
+    const y = p.y, aa = Math.acos(Math.cos(a)); // 0 at the throat .. PI at the nape
+    if (y < 0.69) return;
+    const scmA = THREE.MathUtils.lerp(0.25, 1.75, THREE.MathUtils.clamp((y - 0.742) / 0.09, 0, 1));
+    const scm = 0.006 * bump(aa, scmA, 0.24) * blend(0.733, 0.75, y);
+    const notch = -0.004 * bump(aa, 0, 0.2) * bump(y, 0.744, 0.01);
+    const adam = 0.003 * bump(aa, 0, 0.12) * bump(y, 0.764, 0.008);
+    const trap = 0.009 * bump(aa, 2.35, 0.5) * bump(y, 0.738, 0.028) + 0.006 * bump(aa, Math.PI, 0.6) * bump(y, 0.752, 0.03);
+    const h = scm + notch + adam + trap;
+    p.x += Math.sin(a) * h; p.z += Math.cos(a) * h;
+  };
   // 96 sides (was 48, ~3.7 cm apart across the upper back) so the blades, spine groove and columns resolve.
   const torsoGeo = surface(torsoRows, (p, a) => {
     if (Math.cos(a) > 0) p.z = chestDepth(p.x, p.y);
     else p.z -= backDepth(p.x, p.y, a);
+    if (!B) neckSculpt(p, a);
     return p;
   }, 96, 96);
   const torsoWeights = (p) => {
