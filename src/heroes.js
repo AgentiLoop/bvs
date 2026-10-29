@@ -210,6 +210,9 @@ export function makeHero(kind) {
   const B = kind === 'batman';
   const suit = mat(B ? 0x414751 : 0x174b9c, 0.82, 0.0);
   const dark = mat(0x10151e, 0.57, 0.06);
+  // Batman's cowl is one moulded piece: the neck, ears and brow ridges share the head's semi-gloss cowl response
+  // (roughness 0.42, metalness 0.12) so there is no sheen seam where the cowl meets the neck or the ears' fillet.
+  const cowl = mat(0x10151e, 0.42, 0.12);
   const red = mat(0xa9152b, 0.8);
   const skin = mat(0xdca784, 0.84);
   const yellow = mat(0xd9ac38, 0.48, 0.24);
@@ -298,7 +301,7 @@ export function makeHero(kind) {
   const neckRing = Math.ceil((0.738 - 0.035) / 0.8 * 96);
   torsoGeo.addGroup(0, neckRing * 96 * 6, 0);
   torsoGeo.addGroup(neckRing * 96 * 6, (96 - neckRing) * 96 * 6, 1);
-  skinSurface(hips, torsoGeo, [suit, B ? dark : skin], torsoWeights);
+  skinSurface(hips, torsoGeo, [suit, B ? cowl : skin], torsoWeights);
   // Chest emblem (Superman: big chest-spanning shield). It is a copy of the torso's own front triangles lifted 2.5 mm, not a
   // separate grid sampling chestDepth: a finer grid's chords dipped under the torso's coarser ones across the sternum
   // groove, so the suit cut a vertical scar down the middle of both insignias.
@@ -552,7 +555,7 @@ export function makeHero(kind) {
         if (r > R) { const k = (R + (r - R) * t) / r; p.x *= k; p.z = off + dz * k; }
         return p;
       }, 40, 24);
-      part(head, ear, dark);
+      part(head, ear, cowl);
     }
   } else {
     const hair = mat(0x0c1018, 0.5);
@@ -570,7 +573,7 @@ export function makeHero(kind) {
   // squeezes shut vertically, each brow pivots about its middle (inner end down = scowl, up = pain), and
   // the mouth is a dark cavity + upper teeth behind the lip line that the jaw drops open.
   const eyes = [], lids = [], brows = [];
-  const brow = B ? dark : mat(0x241c1a, 0.9);
+  const brow = B ? cowl : mat(0x241c1a, 0.9);
   for (const s of [-1, 1]) {
     const lid = new THREE.Group(); lid.position.set(s * 0.034, 0.143, faceZ(s * 0.034, 0.143) - 0.002); head.add(lid); lids.push(lid);
     if (B) {
