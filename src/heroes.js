@@ -829,7 +829,7 @@ export function makeHero(kind) {
       // Front of the upper thigh shares weight with the hips so a raised knee folds the hip crease instead
       // of pushing suit out through the front of the trunks.
       const r = Math.hypot(p.x, p.z) || 1, ro = blend(0.5, 0.9, s * p.x / r) * blend(-0.3, 0.3, -p.z / r);
-      const lower = 1 - blend(-0.52, -0.40, p.y), pelvis = Math.max(blend(-0.015, 0.10, p.y) * 0.7, 0.6 * blend(-0.34, -0.04, p.y) * (Math.max(0, p.z) / r) ** 3, 0.7 * ro * blend(-0.12, 0.04, p.y)); // front only, gentle falloff: no groin pinch
+      const lower = 1 - blend(-0.52, -0.40, p.y), pelvis = Math.max(blend(-0.015, 0.10, p.y) * 0.7, 0.6 * blend(-0.34, -0.04, p.y) * (Math.max(0, p.z) / r) ** 3, 0.5 * ro * blend(-0.14, 0.03, p.y)); // front only, gentle falloff: no groin pinch
       // Ankle: the boot shaft's bottom (the 2 cm below the ankle that sits inside the boot foot) was rigid with the
       // shin, so a pointed foot (flying, kicks, jumps) left it standing 2 cm out of the instep, and the shaft and the
       // foot met in a hard intersection. It now follows the foot across the ankle, so the boot bends there. The back
