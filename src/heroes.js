@@ -450,7 +450,7 @@ export function makeHero(kind) {
       [0.115, 0.085, 0.076, 0], [0.149, 0.081, 0.077, -0.002],
       [0.182, 0.079, 0.076, -0.006], [0.214, 0.068, 0.064, -0.009],
       [0.237, 0.036, 0.035, -0.009], [0.245, 0.0001, 0.0001, -0.009]];
-  const hairMask = [], foldMask = [], cheekMask = [];
+  const hairMask = [], foldMask = [], cheekMask = [], cleftMask = [];
   // Superman's mouth corners turn down: the head's fighting chin-tuck sets the receding corners higher than the
   // middle on screen, so a level lip seam read as a smile; the lips and the mouth line follow this dip instead.
   const mouthDip = x => 0.004 * Math.min(1.5, (x / 0.023) ** 2);
@@ -533,6 +533,9 @@ export function makeHero(kind) {
       }
       cheekMask.push(front ** 2 * Math.max(0, wt) * Math.exp(-((dm / 0.003) ** 2)));
     }
+    // Comic chin cleft: a short vertical inked stroke down the chin's front plane (the 3 mm dent alone only
+    // shaded its top edge, a faint horizontal smudge under the lower-lip shadow).
+    cleftMask.push(front ** 2 * bump(p.x, 0, 0.003) * bump(y, 0.033, 0.0055));
     p.z -= front ** 3 * 0.0035 * bump(ax, 0.034, 0.016) * bump(y, 0.141, 0.01); // shallow eye sockets
     // Orbital fold: the skin under the brow bulges forward over the lid instead of a 5 mm shelf facing
     // 35-40 deg down, which the high night key light left as a dark band between brow and lash line. It
@@ -600,7 +603,7 @@ export function makeHero(kind) {
     const foldInk = new THREE.Color(0x4a2420); // nasolabial creases, the mouth line's brown
     hairMask.forEach((h, i) => {
       // (fold 0.55: the warped, denser columns resolve the 3 mm stroke, and 0.75 turned it into a broad black smear)
-      hc.copy(skin.color).lerp(foldInk, 0.55 * foldMask[i] + cheekMask[i]).lerp(hairDark, h);
+      hc.copy(skin.color).lerp(foldInk, 0.55 * foldMask[i] + cheekMask[i] + cleftMask[i]).lerp(hairDark, h);
       if (h > 0) {
         const u = (i % 129) / 128 * Math.PI * 2, a = u - FACE_WARP * Math.sin(u), y = fp.getY(i);
         const streak = 0.15 + 0.85 * blend(0.1, 0.8, Math.sin(a * 11 + y * 70));
