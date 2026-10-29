@@ -196,6 +196,7 @@ const TOSS = {
   bat: { dmg: 12, kb: 5, up: 6.5, stun: 0.8, heavy: true, at: 'rh', blast: 1, back: true, keys: [[0, 'grab'], [0.22, 'hipToss']] },
   sup: { dmg: 13, kb: 3, up: -5, stun: 0.8, heavy: true, at: 'rh', blast: 1.2, lift: true, keys: [[0, 'grab'], [0.18, 'lift'], [0.44, 'slam']] },
 };
+const WALK_HZ = 1.5; // walk: gait strides (2 steps) a second at most (game.walk)
 const DASH = { fwd: 8.5, back: 5.5, dur: 0.32, invuln: 0.16, tap: 0.25 };
 const HEATKO = { dmg: 0.01, kb: 2, up: 2, stun: 0.5, heavy: true, blast: 1 };
 // MK finishers: the blow that would win the match leaves the loser dazed on his feet at 0 HP ("FINISH HIM!").
@@ -1633,7 +1634,12 @@ export class Game {
     const m = Math.hypot(mx, mz);
     f.moving = 0;
     if (!this.free(f) || f.block || f.crouch || m < 0.01) return;
-    const sp = 2.6 / Math.max(1, m);
+    // The legs set the pace (WALK_HZ): at 2.6 m/s on a 1 m stride (0.55 m sideways) the feet ran 5.8-6.3 steps a
+    // second, a third of the time at the 9 /s cap (sideways), twice what a walker's legs do. The speed is now held to
+    // WALK_HZ strides a second of the stride for this direction and stick tilt (pose(): the gait's stride).
+    const y = f.yaw + (f.cur.tw || 0), lx = (mx * Math.cos(y) - mz * Math.sin(y)) / m, lz = (mx * Math.sin(y) + mz * Math.cos(y)) / m;
+    const stride = 2 * GAIT_A / GAIT_D * Math.max(0.2, Math.min(1, m)) * Math.hypot(lz, lx * GAIT_SIDE);
+    const sp = Math.min(2.6, WALK_HZ * stride / Math.min(1, m)) / Math.max(1, m);
     f.x += mx * sp * dt; f.z += mz * sp * dt; f.moving = Math.min(1, m);
   }
 
@@ -2055,14 +2061,15 @@ export class Game {
       }
       f.hy += (hy - f.hy) * hk; f.hx += (hx - f.hx) * hk;
       // gait: the step cycle advances with the ground actually covered, in the hip-local direction of travel
-      // (forward, backward or sideways), so planted feet stay put instead of sliding (capped at 4.5 strides/s)
+      // (forward, backward or sideways), so planted feet stay put instead of sliding (capped at 1.5 WALK_HZ strides/s:
+      // at 4.5 a walk's first frames, the feet still coming out to full stride, ran at up to 9 steps a second)
       if (dt && f.gpx != null) {
         const wx = f.x - f.gpx, wz = f.z - f.gpz, d = Math.hypot(wx, wz);
         if (d > 1e-5 && d < 0.3) {
           const y = f.yaw + c.tw, lx = (wx * Math.cos(y) - wz * Math.sin(y)) / d, lz = (wx * Math.sin(y) + wz * Math.cos(y)) / d;
           f.gdx += (lx - f.gdx) * hk; f.gdz += (lz - f.gdz) * hk;
           const n = Math.hypot(f.gdx, f.gdz) || 1, stride = 2 * GAIT_A / GAIT_D * Math.max(0.2, c.gait) * Math.hypot(f.gdz / n, f.gdx / n * GAIT_SIDE);
-          f.gph += Math.min(d / stride, 4.5 * dt) * Math.PI * 2;
+          f.gph += Math.min(d / stride, 1.5 * WALK_HZ * dt) * Math.PI * 2;
         }
       }
       f.gpx = f.x; f.gpz = f.z;
