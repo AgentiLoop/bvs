@@ -21,8 +21,11 @@ const mat = (color, roughness = 0.6, metalness = 0, extra = {}) =>
 // Comic Batman's cowl is inked black with flat blue highlight shapes on the planes facing the sky (crown, top of the
 // brow plates, nose bridge, ear edges). In-game it is moon-backlit and the cowl read as a featureless black mass,
 // so the sky-facing planes get a cool sheen of their own (the comic cel bands snap it into crisp shapes).
+// The cowl's own glints are inked blue too: the orange city light's specular on the semi-gloss cowl read as brown
+// skin-coloured patches on the mask's cheeks, so its highlights keep their brightness but take a blue-black hue.
 // w = GLSL weight of the cowl surface on the mesh.
 const COWL_SHEEN = (w) => `
+  reflectedLight.directSpecular = mix(reflectedLight.directSpecular, dot(reflectedLight.directSpecular, vec3(0.3, 0.59, 0.11)) * vec3(0.7, 0.95, 1.8), ${w});
   reflectedLight.directSpecular += (${w}) * vec3(0.05, 0.09, 0.2) * smoothstep(0.3, 0.75, inverseTransformDirection(normal, viewMatrix).y);`;
 
 // MK11-style battle damage: up to DMG_N bruise / scuff spots (world positions + strength, refreshed each
