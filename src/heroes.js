@@ -461,13 +461,16 @@ export function makeHero(kind) {
     const t = c > 0 ? blend(0.075, 0.105, y) * (1 - blend(0.2, 0.235, y)) : 0;
     return [THREE.MathUtils.lerp(0.83, 0.7, t), THREE.MathUtils.lerp(1, 0.7, t)];
   };
+  // Batman's skull was a ball (as wide as it was deep, a flat back straight down to the nape): a real / comic head
+  // is long front to back. The occiput swells out behind (back half only, fading to the sides, the crown and the nape).
+  const batOcc = (y, c) => c < 0 ? 1 + 0.25 * bump(y, 0.15, 0.06) * c * c : 1;
   const faceSculpt = (p, a) => {
     const front = Math.max(0, Math.cos(a)), f5 = front ** 5;
     p.x = Math.sign(p.x) * Math.pow(Math.abs(Math.sin(a)), 0.83) * contour(faceRows, p.y)[0];
     if (B) {
       const [, rz, off] = contour(faceRows, p.y), c = Math.cos(a), [nx, nz] = batSec(p.y, c);
       p.x = Math.sign(p.x) * Math.pow(Math.abs(Math.sin(a)), nx) * contour(faceRows, p.y)[0];
-      p.z = Math.sign(c) * Math.pow(Math.abs(c), nz) * Math.max(0.0001, rz) + off;
+      p.z = Math.sign(c) * Math.pow(Math.abs(c), nz) * Math.max(0.0001, rz) * batOcc(p.y, c) + off;
       // Batman: hard cowl plates above, a lean square-jawed face below. A sharp cowl nose ridge, angled brow
       // plates hooding the lenses, cheekbones over hollow cheeks, defined lips, a cleft square chin and a
       // slight cowl overhang where the mask edge meets the skin.
@@ -585,7 +588,7 @@ export function makeHero(kind) {
     const skullR = (y, dx, dz) => {
       const [rx, rz, off] = contour(faceRows, y), th = Math.atan2(Math.abs(dx), dz - off);
       let lo = 0, hi = Math.PI;
-      const sec = a => { const c = Math.cos(a), [nx, nz] = batSec(y, c); return [Math.sin(a) ** nx * rx, rz * Math.sign(c) * Math.abs(c) ** nz]; };
+      const sec = a => { const c = Math.cos(a), [nx, nz] = batSec(y, c); return [Math.sin(a) ** nx * rx, rz * batOcc(y, c) * Math.sign(c) * Math.abs(c) ** nz]; };
       for (let k = 0; k < 24; k++) { const a = (lo + hi) / 2, [px, pz] = sec(a); if (Math.atan2(px, pz) < th) lo = a; else hi = a; }
       return Math.hypot(...sec(lo));
     };
