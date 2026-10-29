@@ -450,6 +450,9 @@ export function makeHero(kind) {
       [0.182, 0.079, 0.076, -0.006], [0.214, 0.068, 0.064, -0.009],
       [0.237, 0.036, 0.035, -0.009], [0.245, 0.0001, 0.0001, -0.009]];
   const hairMask = [];
+  // Superman's mouth corners turn down: the head's fighting chin-tuck sets the receding corners higher than the
+  // middle on screen, so a level lip seam read as a smile; the lips and the mouth line follow this dip instead.
+  const mouthDip = x => 0.004 * Math.min(1.5, (x / 0.023) ** 2);
   const faceSculpt = (p, a) => {
     const front = Math.max(0, Math.cos(a)), f5 = front ** 5;
     if (B) {
@@ -491,8 +494,8 @@ export function makeHero(kind) {
       + 0.006 * bump(y, 0.157, 0.008) * bump(p.x, 0, 0.012)                 // glabella
       + 0.008 * bump(y, 0.159, 0.009) * bump(ax, 0.03, 0.03)                // brow ridge
       + 0.012 * bump(y, 0.082, 0.014) * bump(p.x, 0, 0.02)                  // philtrum rising into the nose base
-      + 0.0165 * bump(y, 0.0675, 0.0075) * bump(p.x, 0, 0.018)              // upper lip
-      + 0.016 * bump(y, 0.053, 0.0075) * bump(p.x, 0, 0.016)                // fuller lower lip
+      + 0.0165 * bump(y + mouthDip(p.x), 0.0675, 0.0075) * bump(p.x, 0, 0.022) // upper lip (wide: corners below the inner iris edge)
+      + 0.016 * bump(y + mouthDip(p.x), 0.053, 0.0075) * bump(p.x, 0, 0.02)    // fuller lower lip
       + 0.016 * bump(y, 0.028, 0.016) * bump(p.x, 0, 0.04)                  // jutting chin
       - 0.003 * bump(p.x, 0, 0.005) * bump(y, 0.022, 0.012));               // chin cleft
     p.z += front ** 2 * 0.012 * bump(y, 0.178, 0.022) * bump(p.x, 0, 0.05);  // full forehead: no shelf above the brow
@@ -687,8 +690,19 @@ export function makeHero(kind) {
   const teeth = oval(head, mat(0xe6e0d2, 0.5), [0, 0.0598, mz - 0.0006], [0.0095, 0.0004, 0.0022]);
   cavity.visible = teeth.visible = false;
   // Closed, firm mouth: a thin line close to the lip colour so it reads as set lips, not an open shout.
-  line(head, [[-0.016, 0.0605], [0, 0.0615], [0.016, 0.0605]].map(onFace(0.0004)),
-    B ? 0.0016 : 0.0011, mat(B ? 0x754b43 : 0x9a5f52, 0.9));
+  // Superman's is a dark comic-book mouth line: wide (corners below the inner iris edge, ~4.6 cm instead of
+  // 3.2), dipping slightly at the set corners, and laid IN the seam between the lips (ray-cast onto the
+  // face: faceZ's 4 mm max sat it on the upper lip's crest, so it floated above the seam as a second line).
+  let mouthPts = [[-0.016, 0.0605], [0, 0.0615], [0.016, 0.0605]].map(onFace(0.0004));
+  if (!B) {
+    const fm = new THREE.Mesh(faceGeo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), rc = new THREE.Raycaster(), dn = new THREE.Vector3(0, 0, -1);
+    mouthPts = Array.from({ length: 9 }, (_, i) => {
+      const x = -0.023 + i * 0.046 / 8, y = 0.0603 - mouthDip(x);
+      rc.set(new THREE.Vector3(x, y, 1), dn); const h = rc.intersectObject(fm)[0];
+      return [x, y, (h ? h.point.z : faceZ(x, y)) - 0.0003];
+    });
+  }
+  line(head, mouthPts, B ? 0.0016 : 0.0011, mat(B ? 0x754b43 : 0x4a2420, 0.9));
   const faceRig = { lids, brows, cavity, teeth, blinks: !B };
 
   for (const [side, s] of [['L', 1], ['R', -1]]) {
