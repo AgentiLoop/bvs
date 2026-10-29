@@ -170,7 +170,7 @@ const GL = { a: 0.062, x: 0.068, w: 0.072, y: -0.08, u: 0.095, l: 0.08, p: 2.3, 
 // Seat corrective: fades in as the thigh lifts forward a0..a1 rad. With it the cheek (k of GL's dome) and a band of
 // the seat (depth d at hips height y, width w) flatten, so a crouch's backside is one smooth line into the hamstrings.
 // k 0: the held cheek stays round (k 1 erased it in the guard, whose forward thigh is already 0.77 of the way in).
-const SEAT = { a0: 0.5, a1: 1.5, k: 0, d: 0.02, y: -0.05, w: 0.04, f: 1, b0: 0.05, b1: 0.35, h0: -0.09, h1: -0.03 };
+const SEAT = { a0: 0, a1: 1.5, k: 0, d: 0.02, y: -0.05, w: 0.04, f: 1, b0: 0.05, b1: 0.35, h0: -1, h1: -0.9, g: 1.5, l0: -0.16, l1: -0.08, c0: 9, c1: 10, e0: 9, e1: 10 };
 // Seat hold: (y, z) delta, around the hip joint, that undoes a forward thigh flexion of SEAT.a1 for a vertex with
 // thigh weight w (the rest on the hips), blended by m. A = (1 - w) I + w R(a1) is the skinning; the delta is
 // m * (A^-1 v - v), so at a1 the backside sits where it hangs and the flexed leg's cheek mirrors the standing one.
@@ -893,8 +893,15 @@ export function makeHero(kind) {
         const g = (B ? 0.6 : 1) * (-0.0028 * bump(y, -0.889, 0.008) + 0.0016 * bump(y, -0.866, 0.008)) * Math.max(0, Math.cos(a)) ** 2;
         dT[i * 3] = g * Math.sin(a); dT[i * 3 + 2] = g * Math.cos(a);
       }
-      legGeo.morphAttributes.position = [dF, dO, dI, dS, dT].map(d => new THREE.Float32BufferAttribute(d, 3));
-      legGeo.morphAttributes.normal = [dF, dO, dI, dS, dT].map(nrm);
+      // Cheek fill (morph 5, with the trunks' 2 / 3): a swung thigh carries its cheek top down and in, under the
+      // pelvis-riding trunks; this holds the upper cheek round so it meets the trunks without a step.
+      const dC = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        p.fromBufferAttribute(P0, i);
+        dC[i * 3 + 2] = -SEAT.g * cheek(p.x + s * 0.1, p.y - 0.04) * blend(SEAT.l0, SEAT.l1, p.y - 0.04) * seatMask(p.x, p.z);
+      }
+      legGeo.morphAttributes.position = [dF, dO, dI, dS, dT, dC].map(d => new THREE.Float32BufferAttribute(d, 3));
+      legGeo.morphAttributes.normal = [dF, dO, dI, dS, dT, dC].map(nrm);
       legGeo.morphTargetsRelative = true;
       legGeo.userData.leg = side;
     }
@@ -1462,8 +1469,8 @@ export function applyPose(H, s, t, ground = 0) {
     const deep = blend(CREASE.a1, 2.4, ang), f = lift * (1 + CREASE.k * deep) * Math.max(0, _A.z) / r, o = lift * Math.max(0, l.s * _A.x) / r;
     const inn = lift * Math.max(deep * CREASE.ki, Math.max(0, -l.s * _A.x) / r);
     const st = blend(SEAT.a0, SEAT.a1, ang) * Math.max(0, _A.z) / r; // seat: forward lift holds the glute where it hangs
-    for (const m of l.crease) { const w = m.morphTargetInfluences; w[0] = f; w[1] = o; w[2] = inn; w[3] = st; }
-    const sb = blend(SEAT.b0, SEAT.b1, ang); // cheek fill: any swing of the thigh sinks its cheek top
+    for (const m of l.crease) { const w = m.morphTargetInfluences; w[0] = f; w[1] = o; w[2] = inn; w[3] = st; w[5] = blend(SEAT.b0, SEAT.b1, ang) * (1 - blend(SEAT.e0, SEAT.e1, ang)); }
+    const sb = blend(SEAT.b0, SEAT.b1, ang) * (1 - blend(SEAT.c0, SEAT.c1, ang)); // cheek fill: a swung thigh sinks its cheek top (the seat hold takes over in deep flexion)
     for (const m of H.seat) { m.morphTargetInfluences[side === 'L' ? 0 : 1] = st; m.morphTargetInfluences[side === 'L' ? 2 : 3] = sb; }
   }
 }

@@ -179,7 +179,7 @@ const LESSONS = [
   ['PROJECTILE', 'C, THEN TOWARD + J', 'DOWN, THEN TOWARD + Ⓧ', (a) => a.type === 'shoot'],
   ['RISING UPPERCUT', 'O (OR TOWARD, C + TOWARD + J)', 'TOWARD, DOWN-TOWARD + Ⓧ', (a) => a.type === 'rise'],
   ['SPECIAL', 'L', 'Ⓑ', (a) => a.type === 'flykick' || a.type === 'heat'],
-  ['AMPLIFY', 'PROJECTILE / RISING UPPERCUT, THEN TAP SHIFT', 'PROJECTILE / RISING UPPERCUT, THEN TAP LB', (a) => !!a.amp],
+  ['AMPLIFY', 'PRESS O (RISING UPPERCUT), THEN TAP SHIFT AT ONCE', 'RISING UPPERCUT (TOWARD, DOWN-TOWARD + Ⓧ), THEN TAP LB AT ONCE', (a) => !!a.amp],
   ['DRIVE IMPACT', 'H', 'LB + RB', (a) => a.type === 'impact'],
   ['SUPER', 'I (OR SHIFT + L)', 'HOLD LB + Ⓑ', (a) => a.type === 'super'],
   ['FATAL BLOW', 'F', 'LT + RT', (a) => a.type === 'blow'],
@@ -762,7 +762,7 @@ export class Game {
   // MK11 Amplify (see AMP): a block tap in a special's start-up spends meter on the enhanced version.
   amplify(f) {
     const a = f.act;
-    if (this.state !== 'fight' || !a || a.amp || a.done || a.t > AMP.win || f.meter < AMP.cost || f.stun > 0) return false;
+    if (this.state !== 'fight' || !a || a.amp || a.done || a.t > (this.train ? AMP.win * 2.5 : AMP.win) || f.meter < AMP.cost || f.stun > 0) return false;
     if (!(a.type === 'shoot' || a.type === 'rise' || a.type === 'flykick' && f.key === 'bat')) return false;
     const { fx } = this.ctx, c = f.H.chest.getWorldPosition(new THREE.Vector3()), col = f.key === 'bat' ? 0xffd23a : 0x6fa8ff;
     a.amp = true; f.meter -= AMP.cost; this.updateBars();
