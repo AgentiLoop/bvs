@@ -1510,6 +1510,23 @@ function footLock(l, o, T, up, r, mode, dt, far, c) {
 // ox, oz, oy, dy (this frame's output: spot, boot lift, heading offset), w }.
 const _ruQ = new THREE.Quaternion(), _ruV = new THREE.Vector3();
 const GLOCK = { g: [0.01, 0.05], max: 0.3, h: 0.06, yaw: 0.6, join: 0.15 };
+// Heel strike: a walking foot came down flat on its whole sole and stayed flat until toe-off. A real stride lands
+// heel first, toes up, then rolls down onto the sole (the heel rocker, foot flat ~10% into the cycle). Walking toward
+// the toes (fw: swing direction against the boot's heading, not backwards or sideways) the swing pitches the boot
+// toes-up HS.a (rad) over the end of its swing (HS.u) and it rolls flat over the first HS.p of the cycle, pivoting on
+// the heel (the ankle eases back so the heel stays on its spot; posePass's roof pass lifts the ankle onto the heel).
+// Scaled by the swing's length (HS.len: a shuffle lands flat). heelStrike -> toes-up angle, heelPivot -> ankle shift.
+const HS = { a: 0.24, u: [0.45, 0.9], p: 0.1, len: [0.08, 0.3], fw: [0.3, 0.8] }, _hsV = new THREE.Vector3(), _hsQ = new THREE.Quaternion();
+function heelStrike(gk, qF) {
+  if (!gk || !(gk.w > 0) || !gk.len) return 0;
+  const dx = gk.x - gk.sx, dz = gk.z - gk.sz, d = Math.hypot(dx, dz);
+  _hsV.set(0, 0, 1).applyQuaternion(qF);
+  const fh = Math.hypot(_hsV.x, _hsV.z), fw = d > 1e-3 && fh > 1e-3 ? (dx * _hsV.x + dz * _hsV.z) / (d * fh) : 0;
+  const ph = gk.sw ? blend(HS.u[0], HS.u[1], gk.u) : 1 - blend(0, HS.p, gk.p);
+  return HS.a * gk.w * blend(HS.fw[0], HS.fw[1], fw) * blend(HS.len[0], HS.len[1], gk.len) * ph;
+}
+// heel z shift (ankle frame, +forward) when the boot pitches toes-up by h about the ankle
+const heelPivot = (h) => -HEEL.y * Math.sin(h) - HEEL.z * (1 - Math.cos(h));
 const wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 // (from the spot the gait last put the foot (ox / oz), not its held spot: with the gait fading out those differ and
 // the foot snapped back 10-15 cm when the walk stopped)
@@ -2216,7 +2233,9 @@ function posePass(H, s, t, ground, raise) {
       if (up1 !== up0) _T.addScaledVector(_ruV.set(0, 1, 0).applyQuaternion(H.root.getWorldQuaternion(_ruQ)), (up1 - up0) * GAIT_LIFT * g);
     }
     if (l.gk && l.gk.sw) { clampBack(l, _T, _hbQ, _hbF, HIP_BACK[1]); clampIn(l, _T, _hbQ, _hbS); } // (a foot swinging off from behind / across trailed further as the body went on)
-    const gk = s.lock != null && l.gk, qF = gk && gk.dy ? _qs3.setFromAxisAngle(_Y, gk.dy).multiply(qP) : qP;
+    const gk = s.lock != null && l.gk, hs = l.lk ? 0 : heelStrike(gk, gk && gk.dy ? _qs3.setFromAxisAngle(_Y, gk.dy).multiply(qP) : qP);
+    let qF = gk && gk.dy ? _qs3.setFromAxisAngle(_Y, gk.dy).multiply(qP) : qP;
+    if (hs > 0) qF = _hsQ.setFromAxisAngle(_XA, -hs).premultiply(qF); // (heel strike: toes up in the boot's own frame)
     // foot lock (see LOCK): the planted foot stays on its floor spot, easing out of it as the foot rises; a step
     // lifts the whole boot (sl: the boot-corner pass below keeps it that far off the roof, toes included)
     let sl = gk ? gk.oy : 0, lw = 0;
@@ -2242,6 +2261,10 @@ function posePass(H, s, t, ground, raise) {
       }
     }
     _T.y -= raise; // body-lift pass: feet stay planted where the first pass put them
+    if (hs > 0) { // (heel strike: the boot pivots on its heel, so the ankle sits back of the flat foot's)
+      _hsV.set(0, 0, 1).applyQuaternion(qF); _hsV.y = 0; _hsV.normalize();
+      _T.addScaledVector(_hsV, -heelPivot(hs));
+    }
     // Keep the boot sole on top of the roof (ankle sits 7.4 cm above the sole) instead of sinking into it;
     // targets far below (falling off the roof) are left alone.
     if (_T.y < ground + SOLE && _T.y > ground - 0.6) _T.y = ground + SOLE;
@@ -2284,7 +2307,7 @@ function posePass(H, s, t, ground, raise) {
     const k = l.lk, pk = lw > 0 && k.st < 0 ? k : gk && !gk.sw ? gk : null; // (a planted walking foot rolls onto its ball too)
     if (pk) {
       _P.copy(BALL); l.an.localToWorld(_P); _LK.copy(HEEL); l.an.localToWorld(_LK);
-      if (pk.bx == null) { if (!raise && !s.again) { pk.bx = _P.x; pk.bz = _P.z; } }
+      if (pk.bx == null || hs > 0) { if (!raise && !s.again) { pk.bx = _P.x; pk.bz = _P.z; } } // (rolling down off the heel: the ball isn't down yet)
       else {
         const on = (pk === k ? lw : gk.w) * blend(0.01, 0.03, _LK.y - _P.y); // heel up: the ball holds its spot
         if (on > 0) {
