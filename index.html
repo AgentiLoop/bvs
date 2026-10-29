@@ -46,11 +46,19 @@
   #snd:hover { border-color: #f4f1ea; }
   #snd.off { background: rgba(194,26,26,.8); border-color: #f4f1ea; }
   #err { position: fixed; top: 0; left: 0; color: #f55; font: 12px monospace; white-space: pre; }
-  #play { position: fixed; top: 4vh; left: 0; right: 0; display: flex; justify-content: center; gap: 2vw; }
-  #play button { font: bold 1.3vw monospace; letter-spacing: .25em; padding: .8em 1.4em; color: #f4f1ea; background: rgba(10,12,18,.72);
-                 border: 2px solid #f4f1ea; cursor: pointer; text-shadow: 0 0 6px #000; animation: pulse 1.6s ease-in-out infinite; }
-  #play small { align-self: center; font: .9vw monospace; letter-spacing: .2em; color: #ccd; text-shadow: 0 0 6px #000; }
-  #play button:hover { background: #c21a1a; }
+  #play { position: fixed; top: 4vh; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: .7em;
+          font: bold clamp(11px, 1vw, 16px) monospace; letter-spacing: .2em; color: #f4f1ea; text-shadow: 0 0 6px #000; pointer-events: none; }
+  #play .grid { display: grid; grid-template-columns: repeat(2, 12em); gap: .5em .8em; padding: .9em 1em; pointer-events: auto;
+                background: rgba(6,8,14,.72); border: 1px solid rgba(244,241,234,.25); border-radius: 4px; }
+  #play h3 { margin: 0 0 .1em; font: inherit; font-size: 1.15em; letter-spacing: .3em; text-align: center; padding-bottom: .35em; border-bottom: 2px solid; }
+  #play h3.bat { color: #ffd23a; } #play h3.sup { color: #6f9bff; border-image: linear-gradient(90deg, #3a7bff, #c21a1a) 1; }
+  #play button { display: flex; align-items: center; gap: .8em; font: inherit; letter-spacing: inherit; padding: .55em .8em; color: #f4f1ea;
+                 background: rgba(255,255,255,.04); border: 1px solid rgba(244,241,234,.35); border-radius: 3px; cursor: pointer; text-shadow: inherit; }
+  #play button.fight { border-width: 2px; animation: pulse 1.6s ease-in-out infinite; }
+  #play button.bat:hover { background: #ffd23a; color: #111; text-shadow: none; }
+  #play button.sup:hover { background: #c21a1a; }
+  #play kbd { font: inherit; min-width: 1.6em; padding: .1em .35em; text-align: center; color: #111; background: #f4f1ea; border-radius: 2px; text-shadow: none; }
+  #play small { font: .8em monospace; letter-spacing: .2em; color: #aab; }
   @keyframes pulse { 50% { border-color: #c21a1a; } }
   #game { position: fixed; inset: 0; pointer-events: none; display: none; color: #f4f1ea; font: bold 1.1vw monospace; letter-spacing: .2em; text-shadow: 0 0 6px #000; }
   .hp { position: absolute; top: 3vh; width: 38vw; }
@@ -93,7 +101,11 @@
   <p>EVERY PIXEL FROM CODE · THREE.JS</p></div>
 <div id="sub"></div>
 <div id="hud">Models: "Batman" by Salstar123, "Superman" by shreyhaldkar0 (Sketchfab, CC-BY-4.0) · P pixel-art · [ ] pixel size · C free camera · SPACE pause · R restart</div>
-<div id="play"><button data-hero="bat">B · PLAY AS BATMAN</button><button data-hero="sup">S · PLAY AS SUPERMAN</button><button data-hero="bat" data-train="1">T · TRAIN AS BATMAN</button><button data-hero="sup" data-train="1">Y · TRAIN AS SUPERMAN</button><small>GAMEPAD: Ⓧ BATMAN · Ⓑ SUPERMAN</small></div>
+<div id="play"><div class="grid">
+  <h3 class="bat">BATMAN</h3><h3 class="sup">SUPERMAN</h3>
+  <button class="bat fight" data-hero="bat"><kbd>B</kbd>FIGHT</button><button class="sup fight" data-hero="sup"><kbd>S</kbd>FIGHT</button>
+  <button class="bat" data-hero="bat" data-train="1"><kbd>T</kbd>TRAIN</button><button class="sup" data-hero="sup" data-train="1"><kbd>Y</kbd>TRAIN</button>
+</div><small>GAMEPAD: Ⓧ BATMAN · Ⓑ SUPERMAN</small></div>
 <div id="game">
   <div class="hp" id="hpBatWrap"><span id="tagBat">BATMAN</span><b id="hpBat"><i></i></b><b class="mt" id="mtBat"><i></i></b></div>
   <div class="hp" id="hpSupWrap"><span id="tagSup">SUPERMAN</span><b id="hpSup"><i></i></b><b class="mt" id="mtSup"><i></i></b></div>
