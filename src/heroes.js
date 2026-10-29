@@ -1984,7 +1984,9 @@ function posePass(H, s, t, ground, raise) {
       _T.set(tg[0] + off * GAIT_A * g * gx, tg[1] + up * GAIT_LIFT * g, tg[2] + off * GAIT_A * g * gz);
     } else _T.set(tg[0], tg[1] + lift * 0.18 * g, tg[2] + dz * 0.32 * g);
     H.root.localToWorld(_T); if (l.lk) { _T.x -= _wsx; _T.z -= _wsz; } // (weightShift moves the body, not the held feet: a kick goes with it)
-    if (_T.y - raise - ground < SOLE + LOCK.up) clampBack(l, _T, _hbQ, _hbF); // a planted foot no further behind than the hip extends
+    // A foot no further behind than the hip extends: planted, and off the floor too (launched / juggled with the trunk
+    // jolted back, the trailing leg hung 47-61 deg behind the pelvis on a near-straight knee).
+    clampBack(l, _T, _hbQ, _hbF);
     const fy = ground + SOLE + raise;
     // (a walk setting off with a foot still planted in the foot lock (after a move, or stepping back under the stance)
     // lock-stepped it at LOCK.t a step while the body walked on at up to 3 m/s: the foot it left behind was dragged up
