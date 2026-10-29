@@ -521,7 +521,24 @@ export function makeHero(kind) {
   const brow = B ? dark : mat(0x241c1a, 0.9);
   for (const s of [-1, 1]) {
     const lid = new THREE.Group(); lid.position.set(s * 0.034, 0.143, faceZ(s * 0.034, 0.143) - 0.002); head.add(lid); lids.push(lid);
-    eyes.push(oval(lid, new THREE.MeshStandardMaterial({ color: B ? 0xe4ecf2 : 0xe1ddd4, roughness: 0.6, emissive: 0 }),
+    if (B) {
+      // Cowl lenses: angular almond slits (inner corner low by the nose, top edge slanting up to a sharp outer
+      // tip, the scowl built into the mask) instead of grey ovals. Self-lit pure white so they read white
+      // under the night lighting, and the slab is bent onto the sculpted face so it sits flush in the socket.
+      const pts = [[-0.017, -0.0015], [-0.006, 0.0042], [0.01, 0.0062], [0.022, 0.0042], [0.0235, 0.0005],
+        [0.012, -0.0048], [-0.002, -0.0058], [-0.013, -0.0042]].map(([x, y]) => new THREE.Vector2(s * x, y));
+      if (s < 0) pts.reverse();
+      const lens = new THREE.ExtrudeGeometry(new THREE.Shape(pts), { depth: 0.004, bevelEnabled: true,
+        bevelThickness: 0.0008, bevelSize: 0.0008, bevelSegments: 2, curveSegments: 4 });
+      const lp = lens.attributes.position, z0 = faceZ(lid.position.x, lid.position.y);
+      for (let i = 0; i < lp.count; i++) {
+        const x = lp.getX(i), y = lp.getY(i);
+        lp.setZ(i, lp.getZ(i) - 0.0035 + faceZ(lid.position.x + x, lid.position.y + y) - z0 + 0.002);
+      }
+      lens.computeVertexNormals();
+      eyes.push(part(lid, lens, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35,
+        emissive: 0xffffff, emissiveIntensity: 0.9 })));
+    } else eyes.push(oval(lid, new THREE.MeshStandardMaterial({ color: 0xe1ddd4, roughness: 0.6, emissive: 0 }),
       [0, 0, 0], [0.018, 0.006, 0.006])); // seated in the socket
     if (!B) {
       oval(lid, mat(0x416b88), [0, 0, 0.0045], [0.0045, 0.005, 0.002]);
