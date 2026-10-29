@@ -593,8 +593,10 @@ export function makeHero(kind) {
       // Short, sharp modern cowl ears (~7 cm above the crown), not tall devil horns. The base starts lower and wider
       // and, below ~2 cm up, is pressed onto the skull so the ear sweeps out of the cowl in a smooth fillet instead
       // of an open-bottomed cone stuck through the side of the head with a hard crease.
-      const ear = surface([[0.16, 0.034, 0.03], [0.19, 0.025, 0.022], [0.225, 0.017, 0.013], [0.27, 0.008, 0.006], [0.305, 0.0001, 0.0001]], p => {
-        p.x += s * (0.064 + (p.y - 0.19) * 0.045); p.z -= 0.017;
+      // In profile a comic cowl ear is a fin, not a round cone: a long base, a near-vertical front edge and the back
+      // edge raking down to the rear (the row offsets shift each section forward as it narrows).
+      const ear = surface([[0.16, 0.034, 0.036, 0], [0.19, 0.025, 0.028, 0.008], [0.225, 0.017, 0.018, 0.016], [0.27, 0.008, 0.008, 0.024], [0.305, 0.0001, 0.0001, 0.03]], p => {
+        p.x += s * (0.064 + (p.y - 0.19) * 0.045); p.z -= 0.026;
         const off = contour(faceRows, p.y)[2], dz = p.z - off, r = Math.hypot(p.x, dz), R = skullR(p.y, p.x, p.z) - 0.0008;
         const t = blend(0.165, 0.215, p.y);
         if (r > R) { const k = (R + (r - R) * t) / r; p.x *= k; p.z = off + dz * k; }
