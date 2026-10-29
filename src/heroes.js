@@ -474,7 +474,10 @@ export function makeHero(kind) {
     // Superman: a comic-book profile. A straight nose rises from a set-back nasion to a defined tip with
     // nostril wings and a crisp underside; a philtrum leads to two full lips that sit on the nose-chin line,
     // a groove under the lower lip, then a jutting square chin with a cleft. The brow overhangs the eyes.
-    const c = Math.cos(a), line = (c > 0 ? 0.122 + 0.08 * c ** 2 - 0.006 * c ** 8 : 0.122 + 0.045 * c) // high forehead, slight widow-peak-free arch
+    // Hairline: the forehead runs ~5.7 cm up from the brow (a third of the face), its corners square off
+    // above the outer brow ends, and the temples stay bare — the hair only drops to ear level as a short
+    // sideburn just in front of the ear (it used to frame the face like a helmet down to eye level).
+    const c = Math.cos(a), line = (c > 0 ? 0.122 + 0.064 * blend(0.1, 0.5, c) + 0.019 * blend(0.6, 1, c) : 0.122 + 0.045 * c)
       + 0.034 * bump(c, -0.17, 0.12); // barbered: the hairline arcs up over the ear (sideburn in front, taper behind)
     const hairT = blend(line - 0.004, line + 0.004, p.y), isHair = hairT > 0;
     hairMask.push(hairT); // soft 0..1 weight so the hairline is a clean gradient, not a stair-stepped edge
