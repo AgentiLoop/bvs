@@ -458,7 +458,8 @@ export function makeHero(kind) {
     // Superman: a comic-book profile. A straight nose rises from a set-back nasion to a defined tip with
     // nostril wings and a crisp underside; a philtrum leads to two full lips that sit on the nose-chin line,
     // a groove under the lower lip, then a jutting square chin with a cleft. The brow overhangs the eyes.
-    const c = Math.cos(a), line = c > 0 ? 0.122 + 0.08 * c ** 2 - 0.006 * c ** 8 : 0.122 + 0.045 * c; // high forehead, slight widow-peak-free arch
+    const c = Math.cos(a), line = (c > 0 ? 0.122 + 0.08 * c ** 2 - 0.006 * c ** 8 : 0.122 + 0.045 * c) // high forehead, slight widow-peak-free arch
+      + 0.034 * bump(c, -0.17, 0.12); // barbered: the hairline arcs up over the ear (sideburn in front, taper behind)
     const hairT = blend(line - 0.004, line + 0.004, p.y), isHair = hairT > 0;
     hairMask.push(hairT); // soft 0..1 weight so the hairline is a clean gradient, not a stair-stepped edge
     const ax = Math.abs(p.x), y = p.y;
@@ -480,15 +481,17 @@ export function makeHero(kind) {
     p.z -= front ** 2 * 0.004 * bump(ax, 0.056, 0.014) * bump(y, 0.082, 0.013); // flat cheek plane hollowing under them
     p.z -= front ** 3 * 0.0035 * bump(ax, 0.034, 0.016) * bump(y, 0.141, 0.01); // shallow eye sockets
     if (isHair) {
-      // Real hair volume instead of a painted cap: fuller on top, a swept-up pompadour at the front,
-      // a side part, and fine combed ridges so it catches light like slicked hair.
+      // Real hair volume instead of a painted cap: a barbered taper (short and tight to the scalp on the
+      // sides and nape, thickening toward the crown), a swept-up pompadour at the front, a side part, and
+      // fine combed ridges so it catches light like slicked hair.
       const up = blend(line, line + 0.05, p.y);
-      const comb = 0.0025 * Math.sin(a * 22 + p.y * 40) * up;
-      const k = 1 + hairT * (0.02 + 0.045 * up) + comb;
+      const crown = blend(0.17, 0.225, p.y);                                  // volume only above the temples
+      const comb = 0.0025 * Math.sin(a * 22 + p.y * 40) * up * (0.3 + 0.7 * crown);
+      const k = 1 + hairT * (0.01 + 0.055 * crown * (0.6 + 0.4 * front) + 0.008 * up) + comb;
       p.x *= k; p.z *= k;
       p.z += 0.016 * front ** 2 * bump(p.y, 0.228, 0.018);                 // pompadour pushed forward
       p.y += 0.014 * front ** 1.5 * bump(p.y, 0.232, 0.025) * hairT;        // ...and lifted
-      p.y += 0.008 * up;                                                     // fuller crown
+      p.y += 0.008 * up * crown;                                             // fuller crown
       p.y -= 0.004 * bump(p.x, -0.032, 0.005) * up;                          // side part groove
     }
     return p;
@@ -532,9 +535,27 @@ export function makeHero(kind) {
     for (const h of hairMask) { hc.copy(skin.color).lerp(hair.color, h); colors.push(hc.r, hc.g, hc.b); }
     faceGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     part(head, faceGeo, mat(0xffffff, 0.75, 0, { vertexColors: true }));
-    // Spit curl: each control point is dropped onto the sculpted forehead/pompadour surface (it used to
-    // float ~1 cm in front of the head after the hair gained volume).
-    line(head, [[-0.027, 0.21], [0.003, 0.2], [0.017, 0.184], [0.008, 0.169], [-0.002, 0.174]].map(onFace(0.0025)), 0.004, hair);
+    // Spit curl: a sculpted S-shaped lock instead of a uniform tube. It grows out of the pompadour thick
+    // (root buried in the hair), sweeps down and right onto the forehead, then hooks back left and curls in
+    // on itself, tapering to a point. Flattened against the skin (ribbon-like, wider than deep), and each
+    // control point is seated on the sculpted forehead / pompadour surface.
+    {
+      const curlR = t => 0.0045 * (1 - t) ** 0.75 + 0.0005, n = 64;
+      const pts = [[-0.022, 0.216], [-0.008, 0.205], [0.007, 0.196], [0.013, 0.188], [0.009, 0.18], [0.001, 0.177],
+        [-0.004, 0.18], [-0.003, 0.185], [0.001, 0.186]];
+      const curve = new THREE.CatmullRomCurve3(pts.map(([x, y], i) => new THREE.Vector3(x, y,
+        faceZ(x, y) + 0.6 * curlR(i / (pts.length - 1)) - 0.0005)));
+      const g = new THREE.TubeGeometry(curve, n, 1, 10, false), P = g.attributes.position, c = new THREE.Vector3(), v = new THREE.Vector3();
+      for (let j = 0; j <= n; j++) {
+        curve.getPointAt(j / n, c); const r = curlR(j / n);
+        for (let k = 0; k <= 10; k++) {
+          const i = j * 11 + k; v.fromBufferAttribute(P, i).sub(c);
+          P.setXYZ(i, c.x + v.x * r, c.y + v.y * r, c.z + v.z * r * 0.6);
+        }
+      }
+      g.computeVertexNormals();
+      part(head, g, hair);
+    }
     // Sculpted ears instead of flattened spheres: an ear-shaped plate (front edge on the cheek, lobe at the
     // bottom front) with a rolled helix rim around the top and back, the antihelix ridge inside it, a tragus
     // flap over the ear hole and a fleshy lobe. Ear-local frame: x = out from the skull, y = up, z = forward.
