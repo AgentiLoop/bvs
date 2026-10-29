@@ -55,7 +55,8 @@ export class Cape {
       if (j < rows - 2) link(idx(i, j), idx(i, j + 2));
       if (i < cols - 2) link(idx(i, j), idx(i + 2, j));
     }
-    this.colliders = COLLIDERS.map(([bone, off, r]) => ({ bone: hero[bone], off: new THREE.Vector3(...off), r, c: new THREE.Vector3() }));
+    this.colliders = COLLIDERS.map(([bone, off, r]) => (bone === 'head' && hero.capeHead && ([off, r] = hero.capeHead),
+      { bone: hero[bone], off: new THREE.Vector3(...off), r, c: new THREE.Vector3() }));
     this.capsules = CAPSULES.map(([group, side, a, b, r]) => ({ a: hero[group][side][a], b: hero[group][side][b], r,
       p: new THREE.Vector3(), q: new THREE.Vector3() }));
 
