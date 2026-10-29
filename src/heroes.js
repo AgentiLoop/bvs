@@ -811,7 +811,12 @@ export function makeHero(kind) {
       // Front of the upper thigh shares weight with the hips so a raised knee folds the hip crease instead
       // of pushing suit out through the front of the trunks.
       const lower = 1 - blend(-0.52, -0.40, p.y), pelvis = Math.max(blend(-0.015, 0.10, p.y) * 0.7, 0.6 * blend(-0.34, -0.04, p.y) * (Math.max(0, p.z) / Math.hypot(p.x, p.z)) ** 3); // front only, gentle falloff: no groin pinch
-      return [[kn, lower], [th, (1 - lower) * (1 - pelvis)], [hips, (1 - lower) * pelvis]];
+      // Ankle: the boot shaft's bottom (the 2 cm below the ankle that sits inside the boot foot) was rigid with the
+      // shin, so a pointed foot (flying, kicks, jumps) left it standing 2 cm out of the instep, and the shaft and the
+      // foot met in a hard intersection. It now follows the foot across the ankle, so the boot bends there. The back
+      // (Achilles side) hands over 2-3 cm lower: there the pointed heel folds the shaft, and the fold stays inside the heel.
+      const bk = Math.max(0, -p.z / (Math.hypot(p.x, p.z) || 1)) ** 2, ank = 1 - blend(ANKLE_W[0] - 0.02 * bk, ANKLE_W[1] - 0.03 * bk, p.y);
+      return [[kn, lower * (1 - ank)], [th, (1 - lower) * (1 - pelvis)], [hips, (1 - lower) * pelvis], [an, ank]];
     };
     // Hip-crease correctives: lifting the knee (front kicks, chambers, knees) or swinging it out (roundhouse)
     // rolled the bulked thigh's root up through the front / side of the trunks (blue suit up to 4 cm over the
@@ -1224,6 +1229,8 @@ const SOLE = 0.076;
 // Toe joint (ankle-local): at the ball, 4 mm above the sole, its axis turned TOE_YAW so the big toe side leads.
 // TOE_UP: how far the toes bend up (a loaded MTP joint dorsiflexes ~60-70 deg at toe-off; a boot a bit less).
 const TOE_Y = -0.07, TOE_Z = 0.15, TOE_YAW = 0.2, TOE_UP = 1.0;
+// Boot shaft skinned to the ankle below ANKLE_W[0] (thigh-local y; the ankle is at -0.92), to the shin above ANKLE_W[1].
+const ANKLE_W = [-0.925, -0.86];
 // Boot corners on the ankle (heel, ball, the sides of the arch, high front / back). The toe tip rides on the
 // toe joint (legs[s].toe.userData.tip) and is checked with them.
 // The outsole's flat tread adds its edges: either side of the heel block and of the ball.
