@@ -893,10 +893,36 @@ export function makeHero(kind) {
     // ball as the toes bend, so the roof check (bootLow) skins these the way the boot is skinned.
     const tInv = new THREE.Matrix4().compose(toe.position, toe.quaternion, new THREE.Vector3(1, 1, 1)).invert();
     toe.userData.sole = [];
-    for (const dz of [-0.008, 0, 0.008, 0.016, 0.024]) for (const x of [-0.03, 0, 0.03]) {
+    for (const dz of [-0.008, 0, 0.008, 0.016, 0.024]) for (const x of [-0.042, -0.021, 0, 0.021, 0.042]) {
       const a = new THREE.Vector3(x, -0.074, TOE_Z + dz);
       toe.userData.sole.push({ a, t: a.clone().applyMatrix4(tInv), w: toeW(a) });
     }
+    // Outsole: the upper's underside is rounded (only a 1-3 cm strip of it met the roof), so the boot stood on a
+    // keel instead of a planted, flat-bottomed sole. A separate sole slab now wraps it: a flat tread 3-5 mm wider than
+    // the upper (the welt ledge), a stacked heel block (Batman's taller) with a breast at the front of the heel, a
+    // narrower waist whose inner edge lifts under the arch, and toe spring curling the tip off the roof. It follows
+    // the upper's footprint (big toe leads, toe line slants back) and bends with the toe joint like the upper.
+    const soleRows = [[-0.069, 0.001], [-0.064, 0.026], [-0.05, 0.036], [-0.03, 0.038], [0.0, 0.036], [0.035, 0.035],
+      [0.07, 0.042], [0.11, 0.046], [0.15, 0.044], [0.185, 0.036], [0.212, 0.025], [0.226, 0.012], [0.23, 0.001]].map(r => [...r, 1]);
+    const heelT = B ? 0.024 : 0.018, sb = (x, k) => Math.sign(x) * Math.abs(x) ** k;
+    const soleGeo = surface(soleRows, (p, a) => {
+      const L = p.y, [rx] = contour(soleRows, L), c = Math.cos(a), sn = Math.sin(a);
+      const T = THREE.MathUtils.lerp(heelT, 0.01, blend(-0.006, 0.012, L));              // heel block, then forefoot
+      const inner = -s * sn > 0 ? 1 : 0;                                                 // inner edge
+      const zb = 0.0742 - 0.007 * blend(0.17, 0.23, L) - 0.005 * inner * bump(L, 0.045, 0.035) * Math.abs(sn); // toe spring, waist
+      const zt = 0.0742 - T, cz = sb(c, 0.35);
+      p.z = (zb + zt) / 2 + (zb - zt) / 2 * cz;
+      p.x = rx * sb(sn, 0.35) * (1 - 0.16 * Math.max(0, c) ** 2) * (1 - 0.06 * Math.max(0, -c) ** 2);
+      p.x -= s * 0.003 * bump(L, 0.145, 0.038) * blend(0, 0.038, -s * p.x);              // ball of the big toe
+      p.y -= 0.02 * blend(0.126, 0.226, L) * blend(-0.01, 0.033, s * p.x);               // toe line slants back
+      p.x -= s * 0.011 * blend(0.088, 0.226, L);                                         // big toe leads on the inside
+      return p;
+    }, 56, 24);
+    soleGeo.rotateX(Math.PI / 2);
+    skinSurface(an, soleGeo, B ? mat(0x07080a, 0.85) : mat(0x3a0a12, 0.7), p => { const w = toeW(p); return [[toe, w], [an, 1 - w]]; });
+    // Tread edges under the toes (the big toe's and little toe's side), checked against the roof with the toe tip:
+    // the oblique toe axis tips the big-toe edge down when the toes bend flat.
+    toe.userData.tread = [[-s * 0.041, -0.071, 0.19], [s * 0.022, -0.0732, 0.18]].map(p => new THREE.Vector3(...p).applyMatrix4(tInv));
     legs[side] = { th, kn, an, toe, s, crease: [] };
   }
   root.updateMatrixWorld(true);
@@ -1181,7 +1207,9 @@ const SOLE = 0.076;
 const TOE_Y = -0.07, TOE_Z = 0.15, TOE_YAW = 0.2, TOE_UP = 1.0;
 // Boot corners on the ankle (heel, ball, the sides of the arch, high front / back). The toe tip rides on the
 // toe joint (legs[s].toe.userData.tip) and is checked with them.
-const BOOT_CORNERS = [[0, -0.074, -0.066], [0, -0.074, TOE_Z], [0.046, -0.074, 0.06], [-0.046, -0.074, 0.06], [0, 0.021, TOE_Z], [0, 0.021, -0.066]]
+// The outsole's flat tread adds its edges: either side of the heel block and of the ball.
+const BOOT_CORNERS = [[0, -0.074, -0.066], [0, -0.074, TOE_Z], [0.046, -0.074, 0.06], [-0.046, -0.074, 0.06], [0, 0.021, TOE_Z], [0, 0.021, -0.066],
+  [0.031, -0.074, -0.04], [-0.031, -0.074, -0.04], [0.04, -0.074, 0.12], [-0.04, -0.074, 0.12]]
   .map(p => new THREE.Vector3(...p));
 // Toes bend up at the ball so they lie flat on the roof whenever the ball is down and the foot pitches toes-down
 // (heel lifted: walking toe-off, up on the toes past the ankle's dorsiflexion cap, a rear foot rolled onto its
@@ -1207,7 +1235,7 @@ function bootLow(l) { // lowest boot point, world y
   let low = Infinity;
   for (const c of BOOT_CORNERS) { _btP.copy(c); l.an.localToWorld(_btP); low = Math.min(low, _btP.y); }
   if (l.toe) {
-    _btP.copy(l.toe.userData.tip); l.toe.localToWorld(_btP); low = Math.min(low, _btP.y);
+    for (const c of [l.toe.userData.tip, ...l.toe.userData.tread]) { _btP.copy(c); l.toe.localToWorld(_btP); low = Math.min(low, _btP.y); }
     for (const c of l.toe.userData.sole) { _btP.copy(c.a); l.an.localToWorld(_btP); _btQ.copy(c.t); l.toe.localToWorld(_btQ); low = Math.min(low, _btP.lerp(_btQ, c.w).y); }
   }
   return low;
