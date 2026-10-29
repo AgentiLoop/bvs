@@ -496,7 +496,8 @@ export function makeHero(kind) {
       + 0.012 * bump(y, 0.082, 0.014) * bump(p.x, 0, 0.02)                  // philtrum rising into the nose base
       + 0.0165 * bump(y + mouthDip(p.x), 0.0675, 0.0075) * bump(p.x, 0, 0.022) // upper lip (wide: corners below the inner iris edge)
       + 0.016 * bump(y + mouthDip(p.x), 0.053, 0.0075) * bump(p.x, 0, 0.02)    // fuller lower lip
-      + 0.016 * bump(y, 0.028, 0.016) * bump(p.x, 0, 0.04)                  // jutting chin
+      + 0.018 * bump(y, 0.029, 0.016) * bump(p.x, 0, 0.04)                  // jutting chin
+      + 0.006 * bump(y, 0.014, 0.007) * bump(p.x, 0, 0.035)                 // square chin: flat front down to a crisp underside
       - 0.003 * bump(p.x, 0, 0.005) * bump(y, 0.022, 0.012));               // chin cleft
     p.z += front ** 2 * 0.012 * bump(y, 0.178, 0.022) * bump(p.x, 0, 0.05);  // full forehead: no shelf above the brow
     // Upright comic-book forehead: the upper forehead (and the hairline riding on it) fills forward so it
