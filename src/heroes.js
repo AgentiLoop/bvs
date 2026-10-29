@@ -499,6 +499,10 @@ export function makeHero(kind) {
     p.z += front ** 2 * 0.007 * bump(ax, 0.052, 0.018) * bump(y, 0.112, 0.016); // cheekbones
     p.z -= front ** 2 * 0.004 * bump(ax, 0.056, 0.014) * bump(y, 0.082, 0.013); // flat cheek plane hollowing under them
     p.z -= front ** 3 * 0.0035 * bump(ax, 0.034, 0.016) * bump(y, 0.141, 0.01); // shallow eye sockets
+    // Orbital fold: the skin under the brow bulges forward over the lid instead of a 5 mm shelf facing
+    // 35-40 deg down, which the high night key light left as a dark band between brow and lash line. It
+    // starts above y 0.147 so faceZ (which seats the lid + eyeball at y 0.143) is unchanged.
+    p.z += front ** 3 * 0.005 * bump(ax, 0.028, 0.02) * bump(y, 0.1505, 0.005) * blend(0.1468, 0.1505, y);
     if (isHair) {
       // Real hair volume instead of a painted cap: a barbered taper (short and tight to the scalp on the
       // sides and nape, thickening toward the crown), a swept-up pompadour at the front, a side part, and
@@ -614,6 +618,18 @@ export function makeHero(kind) {
   // Superman's upper eyelid: the top cap of an ellipsoid a little larger than the eyeball, its lower edge
   // level at y +2.5 mm (theta 1.272 rad of a 8.5 mm-tall cap), plus a near-black lash line along that edge.
   const upperLid = new THREE.SphereGeometry(1, 32, 12, 0, Math.PI * 2, 0, 1.272), lash = new THREE.MeshBasicMaterial({ color: 0x140e0c });
+  // The cap's own normals face up into the key light, so its outer end showed as a paler patch than the
+  // surrounding skin. Bend them toward the face's forward normal so the
+  // lid shades like the socket skin it sits in; the geometry is scaled by LID, so pre-multiply for the
+  // normal matrix (inverse scale) to land on the wanted world direction.
+  const LID = [0.0188, 0.0085, 0.0075], LID_FACE = 0.8;
+  {
+    const N = upperLid.attributes.normal, P = upperLid.attributes.position, t = new THREE.Vector3(), f = new THREE.Vector3(0, 0.12, 1).normalize();
+    for (let i = 0; i < N.count; i++) {
+      t.set(P.getX(i) / LID[0], P.getY(i) / LID[1], P.getZ(i) / LID[2]).normalize().lerp(f, LID_FACE).normalize();
+      N.setXYZ(i, t.x * LID[0], t.y * LID[1], t.z * LID[2]);
+    }
+  }
   for (const s of [-1, 1]) {
     const lid = new THREE.Group(); lid.position.set(s * 0.034, 0.143, faceZ(s * 0.034, 0.143) - 0.002); head.add(lid); lids.push(lid);
     eyes.push(oval(lid, new THREE.MeshStandardMaterial({ color: B ? 0xe4ecf2 : 0xe1ddd4, roughness: 0.6, emissive: 0 }),
@@ -628,7 +644,7 @@ export function makeHero(kind) {
       white.userData.rest = [0xe1ddd4, 0.3]; white.emissive.setHex(0xe1ddd4); white.emissiveIntensity = 0.3;
       oval(lid, mat(0x3f6f96, 0.5, 0, { emissive: 0x3f6f96, emissiveIntensity: 0.25 }), [0, -0.0003, 0.0054], [0.006, 0.0049, 0.0008]);
       oval(lid, new THREE.MeshBasicMaterial({ color: 0x0a0a0c }), [0, -0.0003, 0.0062], [0.0021, 0.0025, 0.0005]);
-      part(lid, upperLid, skin, [0, 0, 0], [0.0188, 0.0085, 0.0075]);
+      part(lid, upperLid, skin, [0, 0, 0], LID);
       line(lid, Array.from({ length: 9 }, (_, i) => { const f = -1.25 + i * 2.5 / 8;
         return [0.0181 * Math.sin(f), 0.0025 - 0.0006 * f * f, 0.0076 * Math.cos(f)]; }), 0.0005, lash);
     }
