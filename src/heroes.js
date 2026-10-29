@@ -1533,10 +1533,22 @@ function kneePole(H, l, tg, a = 0) {
 // Dorsiflexion is capped at MAX_DF too: the rear boot of the guard was held flat with the shin 61 deg past
 // square (crouch 87, landing kneel 82; a loaded ankle manages ~35-40). Past the cap the heel lifts and the
 // boot pivots onto its toes; posePass then raises the ankle until the toes rest on the roof.
+// Ankle roll (subtalar joint, about the foot's long axis): a planted foot (lv 0..1) used to keep the body's roll
+// and tilt with the shin, so the roundhouse's support boot stood 29 deg on its outer edge and a flinch / windup /
+// uppercut tipped both boots 7-15 deg. It now lies level across the roof, and the roll against the shin is held
+// to SUBTALAR (eversion, inversion: a real foot ~15 / ~30 deg, a boot's stiff upper less); past that the boot
+// rolls onto its edge instead.
 const MAX_PF = 0.9, MAX_DF = 0.65, AIR_PF = 0.8, _toe = new THREE.Vector3(), _qf = new THREE.Quaternion(), _XA = new THREE.Vector3(1, 0, 0),
   _DN = new THREE.Vector3(0, -1, 0), _ax = new THREE.Vector3(), _YA = new THREE.Vector3(0, 1, 0),
-  KNEE_TOE = 35 * Math.PI / 180, _kA = new THREE.Vector3(), _kB = new THREE.Vector3(), _kC = new THREE.Vector3();
-function orientFoot(l, qRoot, air = 0) {
+  KNEE_TOE = 35 * Math.PI / 180, _kA = new THREE.Vector3(), _kB = new THREE.Vector3(), _kC = new THREE.Vector3(),
+  SUBTALAR = [12 * Math.PI / 180, 25 * Math.PI / 180], LEVEL_H = [0.12, 0.3], _stQ = new THREE.Quaternion(), _stX = new THREE.Vector3(), _stU = new THREE.Vector3();
+// roll of the foot q (shin frame) about its long axis: 0 with its lateral axis square to the shin, or with frame
+// (shin -> world) level across the world's up
+const footRoll = (q, frame) => {
+  _stX.set(1, 0, 0).applyQuaternion(q); _stU.set(0, 1, 0).applyQuaternion(q); if (frame) { _stX.applyQuaternion(frame); _stU.applyQuaternion(frame); }
+  return Math.atan2(_stX.y, _stU.y);
+};
+function orientFoot(l, qRoot, air = 0, lv = 0) {
   l.kn.getWorldQuaternion(_qa).invert();
   l.an.quaternion.copy(_qa).multiply(qRoot);
   _toe.set(0, 0, 1).applyQuaternion(l.an.quaternion); // toes in the shin's frame
@@ -1565,6 +1577,12 @@ function orientFoot(l, qRoot, air = 0) {
     dt = Math.atan2(Math.sin(dt), Math.cos(dt));
     if (Math.abs(dt) > KNEE_TOE) l.an.quaternion.premultiply(_qf.setFromAxisAngle(_YA, kw * (dt - Math.sign(dt) * KNEE_TOE)));
   }
+  // Ankle roll (SUBTALAR): level across the roof when planted, then within the joint's range against the shin
+  // (inversion = lateral edge down; l.s turns it into the roll's sign for each side).
+  _toe.set(0, 0, 1).applyQuaternion(l.an.quaternion);
+  if (lv > 0) l.an.quaternion.premultiply(_qf.setFromAxisAngle(_toe, -lv * footRoll(l.an.quaternion, _stQ.copy(_qa).invert())));
+  const inv = -footRoll(l.an.quaternion) * l.s, lim = Math.max(-SUBTALAR[0], Math.min(SUBTALAR[1], inv));
+  if (lim !== inv) l.an.quaternion.premultiply(_qf.setFromAxisAngle(_toe, (inv - lim) * l.s));
   l.an.updateMatrixWorld(true);
 }
 // Wrist: the fist used to keep whatever twist the IK's shortest-arc rotation left it, so jabs and crosses
@@ -2169,9 +2187,10 @@ function posePass(H, s, t, ground, raise) {
     // kicks, stances and landings keep the old flat foot.
     const air = blend(1.15, 1.5, s.p[1] + raise - ground) * blend(0.1, 0.35, _T.y - ground - SOLE);
     const kMin = 0.01 + (KNEE_MIN - 0.01) * blend(KNEE_UP[0], KNEE_UP[1], _T.y - ground - SOLE);
+    const lv = 1 - blend(LEVEL_H[0], LEVEL_H[1], _T.y - ground - SOLE); // planted: the sole lies level across (orientFoot)
     kneePole(H, l, tgP, ex);
     solveIK(l.th, l.kn, 0.46, 0.46, _T, _P, false, kMin);
-    orientFoot(l, qF, air);
+    orientFoot(l, qF, air, lv);
     // When the body is pitched (rolls, tumbles) the boot's toe/heel can still dip through the roof even
     // with the ankle above it: lift the ankle by the deficit of the lowest boot corner and re-solve.
     // Repeated: a heel lifted by the dorsiflexion cap changes the shin angle as the ankle rises.
@@ -2183,7 +2202,7 @@ function posePass(H, s, t, ground, raise) {
       _T.y += ground + sl - low;
       kneePole(H, l, tgP, ex);
       solveIK(l.th, l.kn, 0.46, 0.46, _T, _P, false, kMin);
-      orientFoot(l, qF);
+      orientFoot(l, qF, 0, lv);
     }
     const k = l.lk, pk = lw > 0 && k.st < 0 ? k : gk && !gk.sw ? gk : null; // (a planted walking foot rolls onto its ball too)
     if (pk) {
@@ -2198,7 +2217,7 @@ function posePass(H, s, t, ground, raise) {
           clampBack(l, _T, _hbQ, _hbF, HIP_BACK[2]);
           kneePole(H, l, tgP, ex);
           solveIK(l.th, l.kn, 0.46, 0.46, _T, _P, false, kMin);
-          orientFoot(l, qF);
+          orientFoot(l, qF, 0, lv);
         }
       }
     }
