@@ -443,20 +443,29 @@ export function makeHero(kind) {
       p.z -= 0.008 * bump(Math.abs(p.x), 0.034, 0.021) * bump(p.y, 0.144, 0.014) * front;
       return p;
     }
-    // Superman: everything on the face projects forward (no dents). Strong brow ridge, straight
-    // nose bridge, high cheekbones, full lips and a jutting square chin with a cleft.
+    // Superman: a comic-book profile. A straight nose rises from a set-back nasion to a defined tip with
+    // nostril wings and a crisp underside; a philtrum leads to two full lips that sit on the nose-chin line,
+    // a groove under the lower lip, then a jutting square chin with a cleft. The brow overhangs the eyes.
     const c = Math.cos(a), line = c > 0 ? 0.122 + 0.08 * c ** 2 - 0.006 * c ** 8 : 0.122 + 0.045 * c; // high forehead, slight widow-peak-free arch
     const hairT = blend(line - 0.004, line + 0.004, p.y), isHair = hairT > 0;
     hairMask.push(hairT); // soft 0..1 weight so the hairline is a clean gradient, not a stair-stepped edge
-    const ax = Math.abs(p.x);
+    const ax = Math.abs(p.x), y = p.y;
+    const tipT = THREE.MathUtils.clamp((0.145 - y) / 0.045, 0, 1);         // 0 at the nasion .. 1 at the tip
+    const under = blend(0.086, 0.094, y), top = 1 - blend(0.148, 0.162, y);  // crisp nose base; bridge fades into the glabella
     p.z += f5 * (
-      0.024 * bump(p.x, 0, 0.012) * bump(p.y, 0.118, 0.03)                 // nose
-      + 0.009 * bump(p.y, 0.157, 0.012) * bump(ax, 0.03, 0.045)            // brow ridge
-      + 0.016 * bump(p.y, 0.028, 0.02) * bump(p.x, 0, 0.04)                 // jutting chin
-      - 0.003 * bump(p.x, 0, 0.005) * bump(p.y, 0.022, 0.012)               // chin cleft
-      + 0.004 * bump(p.y, 0.062, 0.012) * bump(p.x, 0, 0.022));             // lips
-    p.z += front ** 2 * 0.007 * bump(ax, 0.052, 0.018) * bump(p.y, 0.112, 0.016); // cheekbones
-    p.z -= front ** 3 * 0.0035 * bump(ax, 0.034, 0.016) * bump(p.y, 0.141, 0.01); // shallow eye sockets
+      under * top * (0.009 + 0.014 * tipT) * bump(p.x, 0, 0.007 + 0.004 * tipT) // straight nose bridge
+      + under * 0.004 * bump(p.x, 0, 0.01) * bump(y, 0.099, 0.008)          // nose tip
+      + blend(0.087, 0.092, y) * 0.011 * bump(ax, 0.013, 0.006) * bump(y, 0.095, 0.007) // nostril wings
+      + 0.006 * bump(y, 0.157, 0.008) * bump(p.x, 0, 0.012)                 // glabella
+      + 0.008 * bump(y, 0.159, 0.009) * bump(ax, 0.03, 0.03)                // brow ridge
+      + 0.012 * bump(y, 0.082, 0.014) * bump(p.x, 0, 0.02)                  // philtrum rising into the nose base
+      + 0.0165 * bump(y, 0.0675, 0.0075) * bump(p.x, 0, 0.018)              // upper lip
+      + 0.016 * bump(y, 0.053, 0.0075) * bump(p.x, 0, 0.016)                // fuller lower lip
+      + 0.016 * bump(y, 0.028, 0.016) * bump(p.x, 0, 0.04)                  // jutting chin
+      - 0.003 * bump(p.x, 0, 0.005) * bump(y, 0.022, 0.012));               // chin cleft
+    p.z += front ** 2 * 0.012 * bump(y, 0.178, 0.022) * bump(p.x, 0, 0.05);  // full forehead: no shelf above the brow
+    p.z += front ** 2 * 0.007 * bump(ax, 0.052, 0.018) * bump(y, 0.112, 0.016); // cheekbones
+    p.z -= front ** 3 * 0.0035 * bump(ax, 0.034, 0.016) * bump(y, 0.141, 0.01); // shallow eye sockets
     if (isHair) {
       // Real hair volume instead of a painted cap: fuller on top, a swept-up pompadour at the front,
       // a side part, and fine combed ridges so it catches light like slicked hair.
@@ -472,7 +481,8 @@ export function makeHero(kind) {
     return p;
     return p;
   };
-  const faceGeo = surface(faceRows, faceSculpt, 72);
+  // Superman's face is denser (x spacing ~4 mm instead of ~1 cm) so the nose, lips and chin read as sculpted forms.
+  const faceGeo = surface(faceRows, faceSculpt, B ? 72 : 144, B ? 48 : 128);
   // Front-surface depth of the sculpted face at (x, y): facial features are seated on it rather than
   // placed at fixed depths that leave them floating in front of (or buried in) the face.
   const fp = faceGeo.attributes.position;
