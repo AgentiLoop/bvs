@@ -375,7 +375,7 @@ export function makeHero(kind) {
   // triangles (a jagged scar at the top of the cheek on the kicking side). Front and inner thigh unchanged.
   const trunkLower = p => {
     const r = Math.hypot(p.x, p.z), sf = blend(0.5, 0.9, Math.abs(p.x) / r) * blend(-0.3, 0.3, -p.z / r);
-    return (1 - blend(-0.075 - 0.025 * sf, 0.05 - 0.07 * sf, p.y)) * (1 - seatBack(p));
+    return (1 - blend(-0.075 - 0.08 * sf, 0.05 - 0.11 * sf, p.y)) * (1 - seatBack(p));
   };
   {
     const P0 = trunkGeo.attributes.position, n = P0.count, dL = new Float32Array(n * 3), dR = new Float32Array(n * 3), p = new THREE.Vector3();
