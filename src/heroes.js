@@ -438,9 +438,24 @@ export function makeHero(kind) {
     const front = Math.max(0, Math.cos(a)), f5 = front ** 5;
     p.x = Math.sign(p.x) * Math.pow(Math.abs(Math.sin(a)), 0.83) * contour(faceRows, p.y)[0];
     if (B) {
-      p.z += f5 * (0.025 * bump(p.x, 0, 0.014) * bump(p.y, 0.112, 0.032)
-        + 0.012 * bump(p.y, 0.032, 0.023) - 0.008 * bump(p.y, 0.068, 0.012));
-      p.z -= 0.008 * bump(Math.abs(p.x), 0.034, 0.021) * bump(p.y, 0.144, 0.014) * front;
+      // Batman: hard cowl plates above, a lean square-jawed face below. A sharp cowl nose ridge, angled brow
+      // plates hooding the lenses, cheekbones over hollow cheeks, defined lips, a cleft square chin and a
+      // slight cowl overhang where the mask edge meets the skin.
+      const ax = Math.abs(p.x);
+      p.z += f5 * (
+        0.024 * bump(p.x, 0, 0.013) * bump(p.y, 0.112, 0.03)                 // cowl nose
+        + 0.004 * bump(p.x, 0, 0.004) * bump(p.y, 0.128, 0.02)               // sharp nose ridge
+        + 0.015 * bump(p.y, 0.03, 0.019) * bump(p.x, 0, 0.036)               // square chin
+        - 0.0028 * bump(p.x, 0, 0.0045) * bump(p.y, 0.026, 0.01)             // chin cleft
+        + 0.0042 * bump(p.y, 0.064, 0.007) * bump(p.x, 0, 0.019)             // upper lip
+        + 0.0035 * bump(p.y, 0.052, 0.007) * bump(p.x, 0, 0.016)             // lower lip
+        - 0.0022 * bump(p.y, 0.044, 0.005) * bump(p.x, 0, 0.02)              // groove under the lip
+        + 0.003 * bump(p.y, 0.085, 0.004) * (1 - bump(p.x, 0, 0.012)));      // cowl edge overhang
+      p.z += front ** 2 * (0.009 * bump(p.y, 0.157 - 0.12 * Math.max(0, 0.03 - ax), 0.009) * bump(ax, 0.032, 0.026) // brow plates, inner ends low
+        + 0.006 * bump(ax, 0.054, 0.016) * bump(p.y, 0.106, 0.013)            // cheekbones
+        - 0.005 * bump(ax, 0.05, 0.014) * bump(p.y, 0.072, 0.012));           // hollow cheeks
+      p.z -= 0.008 * bump(ax, 0.034, 0.021) * bump(p.y, 0.144, 0.014) * front; // lens sockets
+      p.x *= 1 + 0.06 * bump(p.y, 0.035, 0.022) * (1 - front);                  // squared jaw corners
       return p;
     }
     // Superman: everything on the face projects forward (no dents). Strong brow ridge, straight
@@ -488,12 +503,16 @@ export function makeHero(kind) {
   if (B) {
     // Color the exposed jaw on the cowl surface; there is no overlapping mouth patch.
     const colors = [], pos = faceGeo.attributes.position;
-    const cowlColor = dark.color, skinColor = skin.color;
+    const cowlColor = dark.color, skinColor = skin.color, stubble = new THREE.Color(0x5a5560), lipColor = new THREE.Color(0xa8645a);
     for (let i = 0; i < pos.count; i++) {
       // Soft-edged jaw opening (smooth 0..1 mask) so the cowl edge is a clean line, not stair-stepped facets.
       const x = Math.abs(pos.getX(i)), y = pos.getY(i), z = pos.getZ(i);
       const jaw = (1 - blend(0.077, 0.087, y)) * blend(0.04, 0.05, z) * (1 - blend(0.056, 0.068, x));
-      const c = cowlColor.clone().lerp(skinColor, jaw); colors.push(c.r, c.g, c.b);
+      // Skin shading: rosier lips, a faint blue-grey five-o'clock shadow on the jaw and chin (not the lips).
+      const lip = bump(x, 0, 0.017) * Math.max(bump(y, 0.064, 0.006), bump(y, 0.052, 0.006));
+      const beard = (1 - blend(0.05, 0.068, y)) * (1 - lip) * 0.22;
+      const sk = skinColor.clone().lerp(stubble, beard).lerp(lipColor, lip * 0.45);
+      const c = cowlColor.clone().lerp(sk, jaw); colors.push(c.r, c.g, c.b);
     }
     faceGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     part(head, faceGeo, mat(0xffffff, 0.7, 0, { vertexColors: true }));
