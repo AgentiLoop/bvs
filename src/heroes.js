@@ -438,8 +438,10 @@ export function makeHero(kind) {
 
   // Planar jaw, cheekbones, recessed temples and an integrated nose replace the egg head.
   // Superman's face has a broad, square jaw rather than an egg-shaped head.
-  const faceRows = B ? [[0.002, 0.024, 0.026, 0.032], [0.019, 0.052, 0.052, 0.023],
-    [0.047, 0.071, 0.066, 0.01], [0.082, 0.079, 0.071, 0.003],
+  // Comic Batman's jaw is just as heavy: the lower face no longer tapers to a narrow V chin (it was ~1.5 cm
+  // narrower than Superman's from the mouth down), the jaw angle stays wide and the chin is broad and flat.
+  const faceRows = B ? [[0.002, 0.034, 0.026, 0.032], [0.019, 0.064, 0.052, 0.023],
+    [0.047, 0.08, 0.066, 0.01], [0.082, 0.083, 0.071, 0.003],
     [0.115, 0.087, 0.077, 0], [0.149, 0.083, 0.077, -0.002],
     [0.182, 0.084, 0.077, -0.006], [0.214, 0.071, 0.065, -0.009],
     [0.237, 0.037, 0.036, -0.009], [0.245, 0.0001, 0.0001, -0.009]]
