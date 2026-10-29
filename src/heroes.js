@@ -1381,6 +1381,20 @@ function clampBack(l, T, qh, fwd, lim = HIP_BACK[0]) {
   for (let i = 0; i < 12; i++) { const m = (lo + hi) / 2; if (thighBack(l, T.x + fwd.x * m, T.y, T.z + fwd.z * m, qh) > lim) lo = m; else hi = m; }
   T.x += fwd.x * hi; T.z += fwd.z * hi;
 }
+// The same across the body: a foot held while the body slid sideways away from it (a sidestep with the other foot
+// mid-step) left the leg straight and crossed 45 deg in toward the other one for 0.1 s (a hip adducts ~30). thighIn =
+// the hip->ankle line's angle in across the pelvis; a held foot past HIP_IN slides out under the hip (lat = hips +x).
+const HIP_IN = 0.5, _hbS = new THREE.Vector3();
+function thighIn(l, x, y, z, qh) {
+  l.th.getWorldPosition(_hbH); _hbv.set(x - _hbH.x, y - _hbH.y, z - _hbH.z).applyQuaternion(qh);
+  return Math.atan2(-_hbv.x * l.s, Math.hypot(_hbv.y, _hbv.z));
+}
+function clampIn(l, T, qh, lat, lim = HIP_IN) {
+  if (thighIn(l, T.x, T.y, T.z, qh) <= lim) return;
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 12; i++) { const m = (lo + hi) / 2; if (thighIn(l, T.x + lat.x * l.s * m, T.y, T.z + lat.z * l.s * m, qh) > lim) lo = m; else hi = m; }
+  T.x += lat.x * l.s * hi; T.z += lat.z * l.s * hi;
+}
 function gaitLock(l, T, p, w, keep, yaw, far, o) {
   let k = l.gk;
   if (!keep) {
@@ -1988,7 +2002,7 @@ function posePass(H, s, t, ground, raise) {
   // Knees and boots aim from the pelvis (root turned back by ex), not the root: from the root they twisted the
   // thighs ex in the hip sockets.
   const q = -tq, qp = q + ex, qP = ex ? _qs1.copy(_qb).multiply(_qs2.setFromAxisAngle(_Y, -ex)) : _qb;
-  H.hips.getWorldQuaternion(_hbQ); _hbF.set(0, 0, 1).applyQuaternion(_hbQ).setY(0).normalize(); _hbQ.invert(); // (HIP_BACK)
+  H.hips.getWorldQuaternion(_hbQ); _hbF.set(0, 0, 1).applyQuaternion(_hbQ).setY(0).normalize(); _hbS.set(1, 0, 0).applyQuaternion(_hbQ).setY(0).normalize(); _hbQ.invert(); // (HIP_BACK, HIP_IN)
   for (const [side, tg0, lift, dz, p] of [['L', s.lf, Math.max(0, cw), sw, 0], ['R', s.rf, Math.max(0, -cw), -sw, 0.5]]) {
     const l = H.legs[side];
     let tg = q ? [tg0[0] * Math.cos(q) + tg0[2] * Math.sin(q), tg0[1], tg0[2] * Math.cos(q) - tg0[0] * Math.sin(q)] : tg0;
@@ -2021,7 +2035,7 @@ function posePass(H, s, t, ground, raise) {
       const up0 = gaitStep(s.gph / (Math.PI * 2) + p)[1], up1 = !l.gk ? up0 : l.gk.sw ? Math.sin(Math.PI * l.gk.u) : 0;
       if (up1 !== up0) _T.addScaledVector(_ruV.set(0, 1, 0).applyQuaternion(H.root.getWorldQuaternion(_ruQ)), (up1 - up0) * GAIT_LIFT * g);
     }
-    if (l.gk && l.gk.sw) clampBack(l, _T, _hbQ, _hbF, HIP_BACK[1]); // (a foot swinging off from behind trailed further back as the body went on)
+    if (l.gk && l.gk.sw) { clampBack(l, _T, _hbQ, _hbF, HIP_BACK[1]); clampIn(l, _T, _hbQ, _hbS); } // (a foot swinging off from behind / across trailed further as the body went on)
     const gk = s.lock != null && l.gk, qF = gk && gk.dy ? _qs3.setFromAxisAngle(_Y, gk.dy).multiply(qP) : qP;
     // foot lock (see LOCK): the planted foot stays on its floor spot, easing out of it as the foot rises; a step
     // lifts the whole boot (sl: the boot-corner pass below keeps it that far off the roof, toes included)
@@ -2032,7 +2046,7 @@ function posePass(H, s, t, ground, raise) {
         !!l.lk && l.lk.st < 0 && thighBack(l, l.lk.ax, fy, l.lk.az, _hbQ) > HIP_BACK[1], H.cm && _cmP.set(H.root.position.x + H.cm.x, 0, H.root.position.z + H.cm.z));
       const k = l.lk;
       if (k && k.st < 0 && k.w >= 1 && !raise && !s.again) {
-        _LK.set(k.ax, fy, k.az); clampBack(l, _LK, _hbQ, _hbF, HIP_BACK[2]); // (from where the ankle is: up on the ball it sits behind k)
+        _LK.set(k.ax, fy, k.az); clampBack(l, _LK, _hbQ, _hbF, HIP_BACK[2]); clampIn(l, _LK, _hbQ, _hbS); // (from where the ankle is: up on the ball it sits behind k)
         const dx = _LK.x - k.ax, dz = _LK.z - k.az;
         if (dx || dz) { k.x += dx; k.z += dz; if (k.bx != null) { k.bx += dx; k.bz += dz; } }
       }
@@ -2042,7 +2056,7 @@ function posePass(H, s, t, ground, raise) {
         // (a step from far behind in a dash or walk: the body ran on faster than the step brought the foot up, which
         // trailed 38-40 deg behind the pelvis on a straight knee as it lifted; a foot easing out of its spot (drive
         // impact's rear leg reaching out) blended from that spot left it 37-38 deg behind)
-        if (k.st >= 0 || w < 1) clampBack(l, _T, _hbQ, _hbF, HIP_BACK[1]);
+        if (k.st >= 0 || w < 1) { clampBack(l, _T, _hbQ, _hbF, HIP_BACK[1]); clampIn(l, _T, _hbQ, _hbS); }
         _LK.copy(_T); _LK.y -= raise; H.root.worldToLocal(_LK);
         tg = [_LK.x, _LK.y, _LK.z]; tgP = ex ? [...yawXZ(_LK, ex).toArray()] : tg;
       }
