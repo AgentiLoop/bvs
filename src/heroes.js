@@ -449,7 +449,7 @@ export function makeHero(kind) {
       [0.115, 0.085, 0.076, 0], [0.149, 0.081, 0.077, -0.002],
       [0.182, 0.079, 0.076, -0.006], [0.214, 0.068, 0.064, -0.009],
       [0.237, 0.036, 0.035, -0.009], [0.245, 0.0001, 0.0001, -0.009]];
-  const hairMask = [], foldMask = [];
+  const hairMask = [], foldMask = [], cheekMask = [];
   // Superman's mouth corners turn down: the head's fighting chin-tuck sets the receding corners higher than the
   // middle on screen, so a level lip seam read as a smile; the lips and the mouth line follow this dip instead.
   const mouthDip = x => 0.004 * Math.min(1.5, (x / 0.023) ** 2);
@@ -519,6 +519,16 @@ export function makeHero(kind) {
         - 0.002 * Math.exp(-(((g + 0.0005) / 0.003) ** 2)));
       foldMask.push(front ** 2 * Math.max(0, wt) * Math.exp(-(((g + 0.0005) / 0.003) ** 2))); // inked crease
     }
+    // Comic cheek line: a short inked stroke under each cheekbone, from below the outer eye down toward the
+    // jaw, that marks the hollow cheek plane (the 4 mm hollow alone vanishes in comic mode's cel bands).
+    {
+      let dm = 1, wt = 0;
+      for (let i = 0; i <= 12; i++) {
+        const t = i / 12, d = Math.hypot(ax - (0.047 - 0.004 * t - 0.002 * Math.sin(Math.PI * t)), y - (0.103 - 0.033 * t));
+        if (d < dm) { dm = d; wt = Math.min(1, t / 0.2, (1 - t) / 0.3); }
+      }
+      cheekMask.push(front ** 2 * Math.max(0, wt) * Math.exp(-((dm / 0.003) ** 2)));
+    }
     p.z -= front ** 3 * 0.0035 * bump(ax, 0.034, 0.016) * bump(y, 0.141, 0.01); // shallow eye sockets
     // Orbital fold: the skin under the brow bulges forward over the lid instead of a 5 mm shelf facing
     // 35-40 deg down, which the high night key light left as a dark band between brow and lash line. It
@@ -582,7 +592,7 @@ export function makeHero(kind) {
     const hDir = new THREE.Vector3(0, 0.75, 0.66).normalize(), hv = new THREE.Vector3();
     const foldInk = new THREE.Color(0x4a2420); // nasolabial creases, the mouth line's brown
     hairMask.forEach((h, i) => {
-      hc.copy(skin.color).lerp(foldInk, 0.75 * foldMask[i]).lerp(hairDark, h);
+      hc.copy(skin.color).lerp(foldInk, 0.75 * foldMask[i] + cheekMask[i]).lerp(hairDark, h);
       if (h > 0) {
         const a = (i % 129) / 128 * Math.PI * 2, y = fp.getY(i);
         const streak = 0.15 + 0.85 * blend(0.1, 0.8, Math.sin(a * 11 + y * 70));
