@@ -14,6 +14,15 @@ const HAND_RATE = 12;
 // A clean hit's snap back of the trunk (lean / twist, game.js hurt) eases in at this rate (1/s, real time): applied in
 // one frame, the 0.6 rad heavy-hit jolt threw the arms 40-53 cm in that frame.
 const JOLT = 25;
+// The jolt bends the spine (heroes.js posePass: spine 0.6 x lean at hips + 0.08, chest 0.75 x lean at + 0.36), but the
+// hand targets are hip-relative: the chest snapped back 0.8 rad and left the hands hanging in front of it (rising
+// uppercut hit mid-air: hands 50 cm in a frame, chest frame). They now ride the same rotation; the pose spring brings
+// both back together.
+const jolt = (p, l) => {
+  let [x, y, z] = p;
+  for (const [py, a] of [[0.36, 0.75 * l], [0.08, 0.6 * l]]) { const c = Math.cos(a), s = Math.sin(a), dy = y - py; [y, z] = [py + dy * c - z * s, dy * s + z * c]; }
+  return [x, y, z];
+};
 // A clean hit's reaction pose (target(), stun) eases in from the pose he was hit in over this long (s, game time).
 const REACT_IN = 0.08, RISE_IN = 0.1;
 // A new action, or the next stage of one (a super's next blow, a fatality's next pose, landing from the rising uppercut),
@@ -2046,7 +2055,7 @@ export class Game {
         const k0 = f.segK; f.segA = a0; f.segK = sk; f.s0 = sk && sk !== 'stun' && k0 !== '' ? { ...c0, lh: [...c0.lh], rh: [...c0.rh], lf: [...c0.lf], rf: [...c0.rf] } : null; f.segT = this.t; f.segD = clamp(D / ACT_V, ACT_IN, ACT_MAX);
       }
       if (f.s0) { const u = clamp((this.t - f.segT) / f.segD, 0, 1); if (u < 1) tg = mixPose(f.s0, tg, u * u * (3 - 2 * u)); }
-      if (f.jl || f.jt) { const l = (f.jl || 0) * jk, t = (f.jt || 0) * jk; c.lean += l; c.tw += t; f.jl -= l; f.jt -= t; } // a hit's snap back reaches the body over a few frames (in real time, so it plays through hitstop), not in one
+      if (f.jl || f.jt) { const l = (f.jl || 0) * jk, t = (f.jt || 0) * jk; c.lean += l; c.tw += t; f.jl -= l; f.jt -= t; if (l) { c.lh = jolt(c.lh, l); c.rh = jolt(c.rh, l); } } // a hit's snap back reaches the body over a few frames (in real time, so it plays through hitstop), not in one
       for (const n of NUM) {
         const d = (tg[n] - c[n]) * k;
         c[n] += dt && !gr && (n === 'lo' || n === 'ro') ? clamp(d, -HAND_RATE * dt, HAND_RATE * dt) : d; // (a gripping hand's fingers follow the body: heroes.js wrapFingers)
