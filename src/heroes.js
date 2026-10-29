@@ -555,7 +555,19 @@ export function makeHero(kind) {
     const hair = mat(0x0c1018, 0.5);
     const colors = [];
     const hc = new THREE.Color();
-    for (const h of hairMask) { hc.copy(skin.color).lerp(hair.color, h); colors.push(hc.r, hc.g, hc.b); }
+    // Comic-book hair: blue-black with blue highlight streaks where the swept hair faces up and forward
+    // (it rendered as a flat neutral grey mass): a few broad strokes swept back and to the side.
+    const hairDark = new THREE.Color(0x05070d), hairBlue = new THREE.Color(0x30508f), HN = faceGeo.attributes.normal;
+    const hDir = new THREE.Vector3(0, 0.75, 0.66).normalize(), hv = new THREE.Vector3();
+    hairMask.forEach((h, i) => {
+      hc.copy(skin.color).lerp(hairDark, h);
+      if (h > 0) {
+        const a = (i % 129) / 128 * Math.PI * 2, y = fp.getY(i);
+        const streak = 0.15 + 0.85 * blend(0.1, 0.8, Math.sin(a * 11 + y * 70));
+        hc.lerp(hairBlue, h * streak * blend(0.4, 0.85, hv.fromBufferAttribute(HN, i).dot(hDir)));
+      }
+      colors.push(hc.r, hc.g, hc.b);
+    });
     faceGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     part(head, faceGeo, mat(0xffffff, 0.75, 0, { vertexColors: true }));
     // Spit curl: a sculpted S-shaped lock instead of a uniform tube. It grows out of the pompadour thick
