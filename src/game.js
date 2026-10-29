@@ -1987,13 +1987,16 @@ export class Game {
       if (gb && gb.at === 'head') return T(MP.hitBody, { lean: 0.5 }); // bent at the waist, head held at the knee's height
       // (eased in from the pose he was hit in, f.p0 at f.hitA, over REACT_IN s: switched in one frame, the pose spring
       // threw the guard fists 35-44 cm in the hit's first 30 fps frame)
-      const ein = (p) => { const k = f.p0 ? clamp((this.t - f.hitA) / REACT_IN, 0, 1) : 1; return k < 1 ? mixPose(f.p0, p, k * k * (3 - 2 * k)) : p; };
+      // (via: a pose the ease-in passes through on the way, so the hands swing round the shoulders, not past them)
+      const ein = (p, via) => { const k = f.p0 ? clamp((this.t - f.hitA) / (REACT_IN * (via ? 1.5 : 1)), 0, 1) : 1, sm = (x) => x * x * (3 - 2 * x); return k >= 1 ? p : !via ? mixPose(f.p0, p, sm(k)) : k < 0.5 ? mixPose(f.p0, via, sm(k * 2)) : mixPose(via, p, sm(k * 2 - 1)); };
       if (f.heldBy || !f.zone) return ein(T(POSES[f.heavy ? 'hit' : 'flinch']));
       const u = 1 - f.stun / (f.stunMax || 1);
       // crumple: doubled over clutching the gut, then the knees give and he sinks onto them; back to the guard at the end
       if (f.zone === 'crumple') return ein(u < 0.3 ? T(MP.hitBody) : u < 0.85 ? mixPose(T(MP.hitBody), T(POSES.kneel, { lean: 0.7 }), clamp((u - 0.3) / 0.25, 0, 1)) : mixPose(T(POSES.kneel, { lean: 0.7 }), T(G), (u - 0.85) / 0.15));
       // wall splat: flat against the wall, then sliding down it with the arms swinging down to his sides (MP.splatArc / splatDrop)
-      if (f.zone === 'splat') { const w = clamp((u - 0.35) / 0.5, 0, 1) * 0.8; return ein(w < 0.2 ? mixPose(T(MP.splat), T(MP.splatArc), w / 0.2) : w < 0.4 ? mixPose(T(MP.splatArc), T(MP.splatDrop), (w - 0.2) / 0.2) : mixPose(T(MP.splatDrop), T(POSES.kneel, { lean: -0.2 }), (w - 0.4) / 0.6)); }
+      // (slammed onto it, the hands fling up by way of splatArc, out to the sides: blended straight from a low guard
+      // they passed beside the shoulders, upper arms 57 deg behind the chest)
+      if (f.zone === 'splat') { const w = clamp((u - 0.35) / 0.5, 0, 1) * 0.8; return ein(w < 0.2 ? mixPose(T(MP.splat), T(MP.splatArc), w / 0.2) : w < 0.4 ? mixPose(T(MP.splatArc), T(MP.splatDrop), (w - 0.2) / 0.2) : mixPose(T(MP.splatDrop), T(POSES.kneel, { lean: -0.2 }), (w - 0.4) / 0.6), T(MP.splatArc)); }
       const R = f.zone === 'head' && f.heavy ? POSES.hit : REACT[f.zone], s = f.hitSide || 1;
       const r = T(R, { tw: (R.tw || 0) * s, roll: (R.roll || 0) * s, h: R.h - (f.heavy && f.zone !== 'head' ? 0.06 : 0) });
       return ein(mixPose(T(G), r, clamp(f.stun / (0.4 * (f.stunMax || 0.3)), 0, 1)));
