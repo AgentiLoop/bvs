@@ -256,7 +256,7 @@ const PARRY = { win: 0.15, lock: 0.4, frz: 0.3, pose: 0.22, meter: 6, cpu: 0.1 }
 // MK11 Fatal Blow: once per match (spent only when it lands), at `hp` HP or less, F / LT+RT = an armoured lunge that
 // becomes a close-up cinematic string. steps: [time after contact, pose, hit (null = none), victim lift]; the last hit
 // launches. Blocked or whiffed = `rec` s of recovery, still available. pause: freeze per blow (slow-mo crunch).
-const BLOW = { hp: 30, lunge: 8, reach: 1.15, win: 0.5, rec: 0.9, pause: 0.16, chip: { dmg: 6, kb: 2, stun: 0.3, at: 'rh', blast: 0.5 },
+const BLOW = { hp: 30, lunge: 8, pull: 3, reach: 1.15, win: 0.5, rec: 0.9, pause: 0.16, chip: { dmg: 6, kb: 2, stun: 0.3, at: 'rh', blast: 0.5 },
   bat: { name: 'FATAL BLOW · BREAKING POINT', end: 1.55, col: 0xffd23a, steps: [
     [0, 'kneeHold', null, 0], [0.18, 'knee', { dmg: 8, kb: 0.2, stun: 0.6, at: 'rf', blast: 0.8, heavy: true }, 0],
     [0.5, 'elbowUp', null, 0], [0.62, 'elbow', { dmg: 9, kb: 0.2, stun: 0.6, hi: true, at: 'rh', blast: 0.9, heavy: true }, 0],
@@ -995,7 +995,7 @@ export class Game {
         if (o.block && !o.act && o.stun <= 0 && o.y <= 0.001) { // blocked: chip and recovery, still available
           this.hurt(o, f, BLOW.chip, this.contact(f, o, BLOW.chip)); a.phase = 'rec'; a.t0 = a.t; return true;
         }
-        a.phase = 'seq'; a.t0 = a.t; f.blowUsed = true; o.act = null; o.buf = null; o.block = o.crouch = false; o.frz = 0;
+        a.phase = 'seq'; a.t0 = a.t; a.pd = d; a.ly = o.y; f.blowUsed = true; o.act = null; o.buf = null; o.block = o.crouch = false; o.frz = 0;
         const c = o.H.chest.getWorldPosition(new THREE.Vector3());
         fx.flash(0.5); fx.impact(c.x, c.y, c.z, 0.4); fx.waves.spawn(c.x, c.y, c.z, 3, B.col, 0.6);
         this.hitstop = Math.max(this.hitstop, 0.25);
@@ -1012,7 +1012,12 @@ export class Game {
     const [, pose, hit, lift] = B.steps[k];
     a.pose = pose; a.beam = !!(hit && hit.beam);
     const pd = lift > 0 && B.pin || 0.9; // a victim held up by the throat hangs within reach of the hand
-    const pin = () => { o.x = f.x + sx * pd; o.z = f.z + sz * pd; o.y = lift; o.vy = 0; o.kx = o.kz = 0; o.act = null; o.launched = false; o.block = false; o.stun = Math.max(o.stun, 0.5); };
+    // (pulled in at BLOW.pull m/s of sim time, so it waits out the contact hitstop with the poses: snapped from the
+    // lunge's 0.95 m to 0.5 m in one frame, both still leaning in, the victim's head went through the attacker's chest;
+    // pushed out at once, as before. The lift eases both ways.)
+    const pv = BLOW.pull * dt, ease = (v, to) => v + Math.max(-pv, Math.min(pv, to - v));
+    a.pd = Math.max(pd, (a.pd ?? pd) - pv); a.ly = ease(a.ly ?? lift, lift);
+    const pin = () => { o.x = f.x + sx * a.pd; o.z = f.z + sz * a.pd; o.y = a.ly; o.vy = 0; o.kx = o.kz = 0; o.act = null; o.launched = false; o.block = false; o.stun = Math.max(o.stun, 0.5); };
     const fin = hit && hit.last;
     if (!(fin && k === a.k)) pin();
     if (a.beam) {

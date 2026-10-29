@@ -1624,6 +1624,11 @@ const GRIP_Y = [0.28, 0.6], GRIP_TOP = 0.66, PALM_C = new THREE.Vector3(0, -0.05
 const NECK_Y = [0.745, 0.8], NECK_TOP = 0.835, HEAD_GRIP = new THREE.Vector3(0.8, 0.15, -0.55).normalize();
 let _gBand = GRIP_Y, _gTop = GRIP_TOP, _gHead = false, _gLoop = false;
 const GRIP_ACROSS = [0.05, 0.15], GRIP_FRONT = [0.15, 0.28], REL_V = 3;
+// ...nor one behind the shoulder (GRIP_BEHIND: azimuth of shoulder -> spot in the chest frame, deg, lateral 0, forward
+// 90, behind < 0) unless it hangs low (GRIP_LOW: its down share; an arm reaching down behind the hip is fine). A fatal
+// blow's clinch at contact, both still leaning in, put the foe's head beside / behind the shoulder: reaching for it
+// drove the upper arm 53-57 deg behind the body and wrung it 147-166 deg.
+const GRIP_BEHIND = [-55, -40], GRIP_LOW = [-0.75, -0.6];
 const _gS = new THREE.Vector3(), _gN = new THREE.Vector3(), _gL = new THREE.Vector3(), _gW = new THREE.Vector3(), _gP = new THREE.Vector3(), _gT = new THREE.Vector3(), _gm = new THREE.Matrix4();
 function torsoSurface(O, w, S, N, sh) {
   if (_gHead) { // back of the head, on the side of the holder's shoulder (so the hand never flips across)
@@ -1859,7 +1864,9 @@ function posePass(H, s, t, ground, raise) {
       // (a spot across the midline and not out in front of the chest is reached only through the own torso)
       _gL.copy(_gS); H.chest.worldToLocal(_gL);
       const r = (1 - blend(GRIP_REACH[0], GRIP_REACH[1], _A.distanceTo(_gS))) * (1 - blend(GRIP_ACROSS[0], GRIP_ACROSS[1], -_gL.x * a.s) * (1 - blend(GRIP_FRONT[0], GRIP_FRONT[1], _gL.z)));
-      a.grip.rw = a.grip.rw == null ? r : a.grip.rw + (r - a.grip.rw) * GRIP_EASE;
+      H.chest.worldToLocal(_gW.copy(_A)); _gW.subVectors(_gL, _gW);
+      const gb = 1 - (1 - blend(GRIP_BEHIND[0], GRIP_BEHIND[1], Math.atan2(_gW.z, _gW.x * a.s) * 180 / Math.PI)) * blend(GRIP_LOW[0], GRIP_LOW[1], _gW.y / (_gW.length() || 1));
+      a.grip.rw = a.grip.rw == null ? r * gb : a.grip.rw + (r * gb - a.grip.rw) * GRIP_EASE;
       hw *= a.grip.rw;
     } else if (a.grip) a.grip.rw = null;
     if (hw > 0.01) {
