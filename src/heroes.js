@@ -1102,8 +1102,9 @@ export function makeHero(kind) {
   // Batman's long cowl skull (batOcc) reaches ~2 cm further back than the shared head ellipsoid / cape sphere:
   // headBack = its back z radius (head frame), capeHead = [offset (head frame), world r] of the cape's head sphere
   // (r 0.12 at head scale 1.24 -> 0.1065 at Batman's 1.1, the same head-frame radius).
+  // headTop = the ellipsoid's upper y radius: Batman's raised cowl crown (0.265 head-local) sat 2 cm above 0.12 + 0.125.
   return { kind, root, hips, spine, chest, head, arms, legs, seat, eyes, face: faceRig, torsoSection, chestDepth, dmg,
-    headBack: B ? 0.1 : 0.08, capeHead: B ? [[0, 0.12, -0.012], 0.1065] : null };
+    headBack: B ? 0.1 : 0.08, headTop: B ? 0.145 : 0.125, capeHead: B ? [[0, 0.12, -0.012], 0.1065] : null };
 }
 
 // ---------- IK ----------
@@ -1299,7 +1300,7 @@ const FOE_OUT = [0.75, 1], _C2 = new THREE.Vector3(), _C3 = new THREE.Vector3(),
 const HEAD_C = new THREE.Vector3(0, 0.12, 0), HEAD_R = [0.085, 0.125, 0.08];
 function pushOutOfHead(H, w, margin) {
   H.head.worldToLocal(_C2.copy(w)).sub(HEAD_C);
-  const m = margin / H.head.scale.x, e = Math.hypot(_C2.x / (HEAD_R[0] + m), _C2.y / (HEAD_R[1] + m), _C2.z / ((_C2.z < 0 ? H.headBack : HEAD_R[2]) + m));
+  const m = margin / H.head.scale.x, e = Math.hypot(_C2.x / (HEAD_R[0] + m), _C2.y / ((_C2.y > 0 ? H.headTop : HEAD_R[1]) + m), _C2.z / ((_C2.z < 0 ? H.headBack : HEAD_R[2]) + m));
   if (e >= 1 || e < 1e-6) return false;
   w.copy(H.head.localToWorld(_C2.multiplyScalar(1 / e).add(HEAD_C)));
   return true;
@@ -1801,8 +1802,8 @@ function torsoSurface(O, w, S, N, sh) {
   if (_gHead) { // back of the head, on the side of the holder's shoulder (so the hand never flips across)
     _gL.copy(sh); O.head.worldToLocal(_gL);
     const u = HEAD_GRIP, x = _gL.x < 0 ? -u.x : u.x;
-    S.set(x * HEAD_R[0], u.y * HEAD_R[1], u.z * O.headBack).add(HEAD_C);
-    N.set(x / HEAD_R[0], u.y / HEAD_R[1], u.z / O.headBack);
+    S.set(x * HEAD_R[0], u.y * O.headTop, u.z * O.headBack).add(HEAD_C);
+    N.set(x / HEAD_R[0], u.y / O.headTop, u.z / O.headBack);
     O.head.localToWorld(S); N.transformDirection(O.head.matrixWorld);
     return;
   }
