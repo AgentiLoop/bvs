@@ -502,7 +502,7 @@ export function makeHero(kind) {
   const onFace = (lift) => ([x, y]) => [x, y, faceZ(x, y) + lift];
   if (B) {
     // Color the exposed jaw on the cowl surface; there is no overlapping mouth patch.
-    const colors = [], pos = faceGeo.attributes.position;
+    const colors = [], skinW = [], pos = faceGeo.attributes.position;
     const cowlColor = dark.color, skinColor = skin.color, stubble = new THREE.Color(0x5a5560), lipColor = new THREE.Color(0xa8645a);
     for (let i = 0; i < pos.count; i++) {
       // Soft-edged jaw opening (smooth 0..1 mask) so the cowl edge is a clean line, not stair-stepped facets.
@@ -518,9 +518,22 @@ export function makeHero(kind) {
         * (1 - 0.14 * bump(y, 0.045, 0.005) * bump(x, 0, 0.02)) * (1 - 0.32 * (1 - blend(0.004, 0.026, y)));
       const sk = skinColor.clone().lerp(stubble, beard).lerp(lipColor, lip * 0.45).multiplyScalar(ao);
       const c = cowlColor.clone().lerp(sk, jaw); colors.push(c.r, c.g, c.b);
+      skinW.push(jaw * (1 - lip * 0.5));
     }
     faceGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    part(head, faceGeo, mat(0xffffff, 0.7, 0, { vertexColors: true }));
+    faceGeo.setAttribute('skinW', new THREE.Float32BufferAttribute(skinW, 1));
+    // Two surfaces on one mesh: the cowl is semi-gloss moulded armour (tight, slightly metallic sheen on the
+    // nose ridge, brow plates and ears), the jaw is matte skin with moister, slightly glossier lips.
+    const headMat = mat(0xffffff, 0.7, 0, { vertexColors: true }), rimCompile = headMat.onBeforeCompile;
+    headMat.onBeforeCompile = (sh, r) => {
+      rimCompile.call(headMat, sh, r);
+      sh.vertexShader = 'attribute float skinW;\nvarying float vSkinW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vSkinW = skinW;');
+      sh.fragmentShader = 'varying float vSkinW;\n' + sh.fragmentShader
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor += mix(0.42, 0.82, vSkinW) - roughness;') // offset, so battle-damage roughness still applies
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n  metalnessFactor = 0.12 * (1.0 - vSkinW);');
+    };
+    headMat.customProgramCacheKey = () => 'hero-rim|batcowl';
+    part(head, faceGeo, headMat);
     // Skull radius along a direction (head-local x, z - axis) at height y: the cowl ears are filleted onto it.
     const skullR = (y, dx, dz) => {
       const [rx, rz, off] = contour(faceRows, y), th = Math.atan2(Math.abs(dx), dz - off);
