@@ -1280,7 +1280,8 @@ const BOOT_CORNERS = [[0, -0.074, -0.066], [0, -0.074, TOE_Z], [0.046, -0.074, 0
 // TOE_REL: how fast (rad/s, game) bent toes straighten. A foot lifting off its ball rises 3 cm a frame, through all of
 // TOE_H at once, and the toes sprang from 26 deg to flat in one frame; a real toe joint takes ~0.1 s to come back.
 // (bendToes(lo): the bend doesn't drop below lo this frame; held higher it only lifts the toe tip off the roof)
-const TOE_H = [0.015, 0.05], TOE_AIR = [0.08, 0.2], TOE_CURL = 0.35, TOE_BACK = 1.0, TOE_FLEX = 0.7, STEP_TOE = 0.7, TOE_REL = 8, STEP_LAND = [0.4, 0.7],
+// THROAT_DF: ankle dorsiflexion (rad, shin over the foot) over which the shaft's throat crease forms (legs[s].crease w[4]).
+const THROAT_DF = [0.2, 0.55], TOE_H = [0.015, 0.05], TOE_AIR = [0.08, 0.2], TOE_CURL = 0.35, TOE_BACK = 1.0, TOE_FLEX = 0.7, STEP_TOE = 0.7, TOE_REL = 8, STEP_LAND = [0.4, 0.7],
   _tbV = new THREE.Vector3(), _tbP = new THREE.Vector3(), _tbQ = new THREE.Quaternion();
 function bendToes(l, ground, tb = 0, lo = -Infinity) {
   const t = l.toe; if (!t) return 0;
@@ -1294,6 +1295,7 @@ function bendToes(l, ground, tb = 0, lo = -Infinity) {
     + (tb * TOE_BACK - (1 - tb) * TOE_CURL * Math.min(1, Math.max(0, pf) / AIR_PF)) * blend(TOE_AIR[0], TOE_AIR[1], h));
   if (Math.abs(a) > 1e-4) { t.quaternion.multiply(_tbQ.setFromAxisAngle(_XA, -a)); t.updateMatrixWorld(true); }
   if (l.flex) for (const m of l.flex) { const w = m.morphTargetInfluences; w[0] = Math.min(1, Math.max(0, a) / TOE_FLEX); w[1] = Math.min(1, Math.max(0, -a) / TOE_CURL); }
+  if (l.crease) { const d = blend(THROAT_DF[0], THROAT_DF[1], -pf); for (const m of l.crease) m.morphTargetInfluences[4] = d; }
   return a;
 }
 const _btP = new THREE.Vector3(), _btQ = new THREE.Vector3();
