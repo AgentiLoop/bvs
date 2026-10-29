@@ -172,7 +172,8 @@ resize();
 
 // ---------- world & actors ----------
 const world = buildWorld(scene);
-for (const k of (qs.get('off') || '').split(',')) { // debug: ?off=rain,spot,fog,hemi
+const OFF_FLASH = (qs.get('off') || '').split(',').includes('flash');
+for (const k of (qs.get('off') || '').split(',')) { // debug: ?off=rain,spot,fog,emis,flash
   if (k === 'rain') world.rain.visible = false;
   if (k === 'spot') { world.heli.spot.visible = false; world.heli.beam.visible = false; }
   if (k === 'fog') scene.fog = null;
@@ -541,10 +542,11 @@ const title = document.getElementById('title'), sub = document.getElementById('s
 function updateVisuals() {
   batCape.updateMesh(); supCape.updateMesh();
   debris.update(); water.update(); sparks.update(); dust.update();
-  flashLight.intensity = flashI;
-  world.lights.hemi.intensity = 0.35 + lightning * 5;
-  world.sky.material.uniforms.flash.value = lightning;
-  post.uniforms.flash.value = Math.min(1, postFlash * 0.8 + lightning * 0.15);
+  const fl = OFF_FLASH ? 0 : 1; // debug ?off=flash: stills without the intro's white screen flash / lightning wash
+  flashLight.intensity = flashI * fl;
+  world.lights.hemi.intensity = 0.35 + lightning * 5 * fl;
+  world.sky.material.uniforms.flash.value = lightning * fl;
+  post.uniforms.flash.value = Math.min(1, postFlash * 0.8 + lightning * 0.15) * fl;
   // Krushing Blow x-ray: fades in fast, holds, fades out; cracks race out from the impact's screen position
   const X = game.active && game.xray, XD = 1.25;
   post.uniforms.xray.value = X ? Math.min(1, X.t / 0.08) * Math.min(1, (XD - X.t) / 0.25) : 0;
