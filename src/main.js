@@ -180,7 +180,6 @@ for (const k of (qs.get('off') || '').split(',')) { // debug: ?off=rain,spot,fog
 const bat = makeHero('batman'), sup = makeHero('superman');
 scene.add(bat.root, sup.root);
 // Clean procedural heroes by default; imported models remain available through explicit URLs.
-document.getElementById('hud').textContent = 'Procedural Batman & Superman · B / S play as Batman / Superman · P pixel-art / comic · - + pixel size · C free camera · SPACE pause · R restart · M sound · v' + VERSION;
 window.__fan = {};
 const DEFAULT_CAPE = { bat: 'Cube_2', sup: null }; // Batman's cape shares a shell with the cowl, so name it
 const DEFAULT_YAW = { bat: 0, sup: -Math.PI / 2 }; // verified facing for the bundled models (auto-detect is fooled by capes)
