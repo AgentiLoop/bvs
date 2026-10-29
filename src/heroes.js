@@ -983,12 +983,16 @@ function updateBones(b) {
 // further out along the same line.
 const _qh = new THREE.Quaternion(), _Y = new THREE.Vector3(0, 1, 0), ELBOW_MAX = 145 * Math.PI / 180;
 const reachMin = (L1, L2, hinge) => hinge ? Math.sqrt(L1 * L1 + L2 * L2 + 2 * L1 * L2 * Math.cos(ELBOW_MAX)) : Math.abs(L1 - L2) + 0.01;
-function solveIK(upper, lower, L1, L2, target, pole, hinge) {
+// The knee stops at KNEE_MAX flexion once the foot is off the floor (blend over KNEE_UP above the sole): front-kick
+// chambers and tucked legs folded the shin 159-161 deg into the hamstring. Planted feet (deep squats) are left free
+// so the cap never pushes a sole through the floor.
+const KNEE_MAX = 150 * Math.PI / 180, KNEE_UP = [0.08, 0.25], KNEE_MIN = 0.46 * Math.sqrt(2 + 2 * Math.cos(KNEE_MAX));
+function solveIK(upper, lower, L1, L2, target, pole, hinge, dMin) {
   upper.getWorldPosition(_A);
   _D.subVectors(target, _A);
   let d = _D.length();
   if (d < 1e-5) _D.set(0, -1, 0); else _D.multiplyScalar(1 / d);
-  d = Math.min(Math.max(d, reachMin(L1, L2, hinge)), L1 + L2 - 0.001);
+  d = Math.min(Math.max(d, dMin || reachMin(L1, L2, hinge)), L1 + L2 - 0.001);
   const cosA = Math.min(1, Math.max(-1, (L1 * L1 + d * d - L2 * L2) / (2 * L1 * d)));
   const sinA = Math.sqrt(1 - cosA * cosA);
   _B.subVectors(pole, _A).addScaledVector(_D, -_B.dot(_D));
@@ -2042,8 +2046,9 @@ function posePass(H, s, t, ground, raise) {
     // Airborne = hips well above standing height (flying, jumps) and this ankle clear of the roof; ground
     // kicks, stances and landings keep the old flat foot.
     const air = blend(1.15, 1.5, s.p[1] + raise - ground) * blend(0.1, 0.35, _T.y - ground - SOLE);
+    const kMin = 0.01 + (KNEE_MIN - 0.01) * blend(KNEE_UP[0], KNEE_UP[1], _T.y - ground - SOLE);
     kneePole(H, l, tgP, ex);
-    solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
+    solveIK(l.th, l.kn, 0.46, 0.46, _T, _P, false, kMin);
     orientFoot(l, qF, air);
     // When the body is pitched (rolls, tumbles) the boot's toe/heel can still dip through the roof even
     // with the ankle above it: lift the ankle by the deficit of the lowest boot corner and re-solve.
@@ -2054,7 +2059,7 @@ function posePass(H, s, t, ground, raise) {
       if (low >= ground + sl - 0.002) break;
       _T.y += ground + sl - low;
       kneePole(H, l, tgP, ex);
-      solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
+      solveIK(l.th, l.kn, 0.46, 0.46, _T, _P, false, kMin);
       orientFoot(l, qF);
     }
     const k = l.lk, pk = lw > 0 && k.st < 0 ? k : gk && !gk.sw ? gk : null; // (a planted walking foot rolls onto its ball too)
@@ -2066,7 +2071,7 @@ function posePass(H, s, t, ground, raise) {
         if (on > 0) {
           _T.x += (pk.bx - _P.x) * on; _T.z += (pk.bz - _P.z) * on;
           kneePole(H, l, tgP, ex);
-          solveIK(l.th, l.kn, 0.46, 0.46, _T, _P);
+          solveIK(l.th, l.kn, 0.46, 0.46, _T, _P, false, kMin);
           orientFoot(l, qF);
         }
       }
