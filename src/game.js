@@ -2015,9 +2015,13 @@ export class Game {
     const shift = Math.sin(t * 0.55) * (1 - f.moving);
     const fist = (p, ph) => [p[0] + Math.cos(w + ph) * S.fist * 0.5,
       p[1] + br * 0.012 - drop * 0.4 - tired * 0.07 + Math.sin(w + ph) * S.fist, p[2] + Math.cos(w + ph) * S.fist * 0.6];
-    const foot = (p, s) => [p[0], p[1] - S.dh + drop + s * shift * 0.025, p[2]];
-    return T(g, { h: g.h + S.dh - drop, lean: g.lean + S.dl + br * 0.015 + tired * 0.12, roll: shift * 0.045,
-      lh: fist(g.lh, 0), rh: fist(g.rh, 1.9), lf: foot(g.lf, 1), rf: foot(g.rf, -1), gait: f.moving });
+    // (the weight shift is the hips rolling over the planted feet: the feet are counter-rotated by the roll so both soles
+    // stay on the roof where they stand. The shift used to lift the unweighted foot 2.5 cm on top of the roll, and the
+    // roll swung it up and out another 1 cm / 3 cm: one boot hovered up to 4 cm off the roof through the idle.)
+    const roll = shift * 0.045, cr = Math.cos(roll), sr = Math.sin(roll);
+    const foot = (p) => { const y = p[1] - S.dh + drop; return [p[0] * cr + y * sr, y * cr - p[0] * sr, p[2]]; };
+    return T(g, { h: g.h + S.dh - drop, lean: g.lean + S.dl + br * 0.015 + tired * 0.12, roll,
+      lh: fist(g.lh, 0), rh: fist(g.rh, 1.9), lf: foot(g.lf), rf: foot(g.rf), gait: f.moving });
   }
 
   // what f's hands are gripping on o this frame (heroes.js s.holdAt / s.holdSide), or null: throws, the fatal-blow
