@@ -207,6 +207,14 @@ function surface(rows, sculpt = (p) => p, rings = 64, sides = 48) {
   }
   return geo;
 }
+// Splits the index range [i0, i0 + n) of a surface into two material groups by a per-vertex mask (0..1, in sculpt
+// call order): triangles whose mean mask is >= 0.5 go to mB, the rest to mA.
+function maskGroups(geo, mask, i0, n, mA, mB) {
+  const I = geo.index.array, a = [], b = [];
+  for (let k = i0; k < i0 + n; k += 3) (mask[I[k]] + mask[I[k + 1]] + mask[I[k + 2]] >= 1.5 ? b : a).push(I[k], I[k + 1], I[k + 2]);
+  I.set(a.concat(b), i0);
+  geo.addGroup(i0, a.length, mA); geo.addGroup(i0 + a.length, b.length, mB);
+}
 
 export function makeHero(kind) {
   const B = kind === 'batman';
@@ -216,6 +224,9 @@ export function makeHero(kind) {
   const skin = mat(0xdca784, 0.84);
   const yellow = mat(0xd9ac38, 0.48, 0.24);
   const boot = B ? dark : red;
+  // Batman's boot armour (toe cap, instep plate, heel counter, shin guard) is a harder, glossier shell than the matte
+  // flexible boot it is strapped over, a shade lighter: the plates were the boot's own material and only read by shading.
+  const plateMat = mat(0x1d2430, 0.3, 0.35);
   const root = new THREE.Group();
   const hips = joint(root, [0, 0, 0]);
   const spine = joint(hips, [0, 0.08, 0]);
@@ -736,6 +747,7 @@ export function makeHero(kind) {
     // of the IT band, that rounds the corner from the hip line into the quads (normal displacement, metres).
     const tfl = (y, a) => bulk * 0.005 * bump(y, -0.13, 0.05) * bump(Math.atan2(Math.sin(a - s * 1.15), Math.cos(a - s * 1.15)), 0, 0.35);
     const hipFill = (y, a) => bulk * HF.o * bump(y, HF.yo, HF.wo) * Math.max(0, s * Math.sin(a)) ** HF.po;
+    const guardM = [];
     const legGeo = surface(legRows, (p, a) => {
       p.x += s * 0.008 * bump(p.y, -0.2, 0.15);
       p.x += s * 0.014 * bump(p.y, -0.26, 0.09) * Math.max(0, s * Math.sin(a)) ** 1.5; // outer-quad sweep below the hip
@@ -800,8 +812,9 @@ export function makeHero(kind) {
       // Batman's shin guard: a hard plate down the front of the boot shaft from below the cuff to above the ankle,
       // 3.5 mm proud with a raised centre ridge over the tibia, wrapping ~100 deg of the shin.
       if (B) {
-        const g = (0.0035 + 0.0015 * bump(Math.sin(a), 0, 0.15)) * blend(-0.86, -0.84, p.y) * (1 - blend(-0.645, -0.63, p.y)) * blend(0.25, 0.45, Math.cos(a));
+        const m = blend(-0.86, -0.84, p.y) * (1 - blend(-0.645, -0.63, p.y)) * blend(0.25, 0.45, Math.cos(a)), g = (0.0035 + 0.0015 * bump(Math.sin(a), 0, 0.15)) * m;
         p.x += g * Math.sin(a); p.z += g * Math.cos(a);
+        guardM.push(m); // (plate material: maskGroups)
       }
       // Superman's classic boot top dips into a V at the front of the shin. Rings near the boot line are
       // pulled down at the front (smooth falloff, slope < 1 so rings never cross), moving the colour edge.
@@ -874,13 +887,13 @@ export function makeHero(kind) {
     }
     legGeo.clearGroups();
     const bootRing = Math.floor((-0.6 + 0.94) / 1.03 * 112);
-    legGeo.addGroup(0, bootRing * 40 * 6, 1);
+    if (B) maskGroups(legGeo, guardM, 0, bootRing * 40 * 6, 1, 3); else legGeo.addGroup(0, bootRing * 40 * 6, 1);
     // The top of the thigh bulges up to ~5 cm out through the sides of the trunks (blue/grey patches
     // poking through them). Colouring it as the trunks' leg band turns that into a clean brief line.
     const briefRing = Math.floor((-0.12 + 0.94) / 1.03 * 112);
     legGeo.addGroup(bootRing * 40 * 6, (briefRing - bootRing) * 40 * 6, 0);
     legGeo.addGroup(briefRing * 40 * 6, (112 - briefRing) * 40 * 6, 2);
-    skinSurface(th, legGeo, [suit, boot, B ? dark : red], legW);
+    skinSurface(th, legGeo, [suit, boot, B ? dark : red, plateMat], legW);
     // Boot foot: heel, high instep and a tapered toe on a flat sole, built along its length
     // ([length, halfWidth, halfHeight, -centreY]) and turned to point forward.
     // Before the turn: p.y runs heel -> toe, the sole is p.z = 0.074 (up is -z), the inside is -s * x.
@@ -893,6 +906,7 @@ export function makeHero(kind) {
       [0.0, 0.044, 0.046, 0.026], [0.05, 0.046, 0.036, 0.04], [0.113, 0.045, 0.024, 0.052],
       [0.17, 0.036, 0.018, 0.057], [0.208, 0.021, 0.013, 0.06], [0.224, 0.001, 0.001, 0.062]];
     // fx = [flex, curl]: the toe-joint correctives' full shapes (see below), [0, 0] = the rest sculpt.
+    const plateM = [];
     const footSculpt = fx => (p, a) => {
       p.z = Math.min(p.z, 0.074);
       const L = p.y, inn = blend(0, 0.038, -s * p.x), out = blend(0, 0.038, s * p.x), low = blend(0.035, 0.074, p.z), top = 1 - blend(0.03, 0.06, p.z);
@@ -909,6 +923,7 @@ export function makeHero(kind) {
         const heel = 0.002 * blend(-0.064, -0.054, L) * (1 - blend(-0.04, -0.032, L)) * blend(-0.55, -0.35, up) * (1 - blend(0.25, 0.4, up));
         const g = cap + inst + heel;
         p.x += g * Math.sin(a); p.z += g * Math.cos(a);
+        if (!fx[0] && !fx[1]) plateM.push(Math.min(1, cap / 0.0025 + inst / 0.003 + heel / 0.002)); // (plate material: maskGroups)
       }
       // Toe-joint correctives. Flex (toes bent up: toe-off, up on the ball, a ball-of-foot kick): the vamp over the
       // joint buckles the way a worn boot creases, a deep crease on the joint line with a ridge either side and
@@ -943,7 +958,8 @@ export function makeHero(kind) {
     toe.quaternion.setFromAxisAngle(_YA, s * TOE_YAW); toe.userData.q0 = toe.quaternion.clone();
     toe.userData.tip = new THREE.Vector3(0, -0.074 - TOE_Y, 0.224 - TOE_Z).applyQuaternion(toe.quaternion.clone().invert());
     const toeW = p => blend(TOE_Z - 0.014, TOE_Z + 0.02, p.z + s * TOE_YAW * p.x);
-    skinSurface(an, footGeo, boot, p => { const w = toeW(p); return [[toe, w], [an, 1 - w]]; });
+    if (B) maskGroups(footGeo, plateM, 0, footGeo.index.count, 0, 1);
+    skinSurface(an, footGeo, B ? [boot, plateMat] : boot, p => { const w = toeW(p); return [[toe, w], [an, 1 - w]]; });
     // Sole points across the crease (ankle-local a, toe-local t, toe weight w): the soft blend there sags below the
     // ball as the toes bend, so the roof check (bootLow) skins these the way the boot is skinned.
     const tInv = new THREE.Matrix4().compose(toe.position, toe.quaternion, new THREE.Vector3(1, 1, 1)).invert();
