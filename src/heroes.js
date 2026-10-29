@@ -237,8 +237,10 @@ export function makeHero(kind) {
   const spine = joint(hips, [0, 0.08, 0]);
   const chest = joint(spine, [0, 0.28, 0]);
   // Head sits low on a short, thick neck (jaw overlaps the neck) at a heroic ~1:3 head-to-shoulder ratio.
+  // Comic Batman's head is small on a massive neck and shoulders: at 1.24 he stood only ~6.8 heads tall with
+  // shoulders ~2.4 head-heights wide (a bobble-headed toy); comic heroes are ~7.5-8 heads, shoulders ~3 heads.
   const head = joint(chest, [0, B ? 0.415 : 0.41, B ? 0.005 : 0.008]);
-  head.scale.setScalar(1.24);
+  head.scale.setScalar(B ? 1.1 : 1.24);
   const sphere = new THREE.SphereGeometry(1, 32, 24);
   const oval = (parent, material, pos, scale) => part(parent, sphere, material, pos, scale);
   const skins = [];
@@ -1098,9 +1100,10 @@ export function makeHero(kind) {
   const patched = new Set();
   root.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) if (m.isMeshStandardMaterial && !patched.has(m)) { patched.add(m); battleDamage(m, dmg); } });
   // Batman's long cowl skull (batOcc) reaches ~2 cm further back than the shared head ellipsoid / cape sphere:
-  // headBack = its back z radius (head frame), capeHead = [offset, r] of the cape's head sphere.
+  // headBack = its back z radius (head frame), capeHead = [offset (head frame), world r] of the cape's head sphere
+  // (r 0.12 at head scale 1.24 -> 0.1065 at Batman's 1.1, the same head-frame radius).
   return { kind, root, hips, spine, chest, head, arms, legs, seat, eyes, face: faceRig, torsoSection, chestDepth, dmg,
-    headBack: B ? 0.1 : 0.08, capeHead: B ? [[0, 0.12, -0.012], 0.12] : null };
+    headBack: B ? 0.1 : 0.08, capeHead: B ? [[0, 0.12, -0.012], 0.1065] : null };
 }
 
 // ---------- IK ----------
