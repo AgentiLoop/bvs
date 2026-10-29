@@ -286,7 +286,8 @@ let blastN = 2;
 function blast(x, y, z, size = 1, life = 0.45, tint = 0xffffff) {
   const b = blasts[blastN]; blastN = blastN + 1 < blasts.length ? blastN + 1 : 2;
   b.position.set(x, y, z); b.material.color.set(tint); b.material.rotation = 0; sound.note('blast', size);
-  Object.assign(b.userData, { age: 0, size, life }); b.visible = true;
+  // big special blasts (supers / fatalities, size 2-3.2) were filling the screen: past 1 they grow at 40%
+  Object.assign(b.userData, { age: 0, size: size > 1 ? 1 + (size - 1) * 0.4 : size, life }); b.visible = true;
 }
 
 // ---------- sim state ----------
