@@ -1294,11 +1294,14 @@ const yawXZ = (v, a) => { const c = Math.cos(a), s = Math.sin(a), x = v.x; v.x =
 // l.lk = { x, z (world), y (step lift), st (step progress, -1 planted), fx, fz, len (step start / length), bx, bz (ball
 // of the foot, world: a planted foot up on its toes pivots on it as the body turns, instead of on the ankle), ax, az
 // (where the ankle really ended up last frame: a step starts from there), w (1 held .. 0 let go) }.
-const LOCK = { d: 0.15, rest: 0.015, max: 0.35, t: 0.16, tq: 0.08, h: 0.07, up: 0.12, ease: 0.08, air: 0.03, bal: 0.3, toe: 0.15 };
+// s.lock 3 = skid (grounded, dragged: reeled in by the grapnel line at 7 m/s): no new locks, a held foot lets go over
+// LOCK.skid s and the feet slide with the body. Held planted, the rear leg trailed 40-54 deg behind the pelvis.
+const LOCK = { d: 0.15, rest: 0.015, max: 0.35, t: 0.16, tq: 0.08, h: 0.07, up: 0.12, ease: 0.08, skid: 0.04, air: 0.03, bal: 0.3, toe: 0.15 };
 const _LK = new THREE.Vector3(), BALL = new THREE.Vector3(0, -0.074, 0.15), HEEL = new THREE.Vector3(0, -0.074, -0.058);
 function footLock(l, o, T, up, r, mode, dt, far, c) {
   const k = l.lk, planted = up < LOCK.up && r < 0.575;
   if (!mode) { l.lk = null; return; }
+  if (mode === 3) { if (k) { k.w = Math.max(0, k.w - dt / LOCK.skid); k.y *= k.w; if (k.w <= 0) l.lk = null; } return; }
   if (!k) { if (mode === 2 && planted) l.lk = { x: T.x, z: T.z, y: 0, st: -1, fx: 0, fz: 0, len: 0, bx: null, bz: 0, ax: T.x, az: T.z, w: 1 }; return; }
   // lifting off (a kick) or reaching out (sweep): the foot lets go of its spot over LOCK.ease s, then the lock ends
   if (k.w < 1 || !planted) { k.w = Math.max(0, k.w - dt / LOCK.ease); k.y *= k.w; if (k.w <= 0) l.lk = null; return; }

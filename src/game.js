@@ -2112,8 +2112,10 @@ export class Game {
       const gnd = groundAt(f.x, f.z), a = f.act;
       // planted feet hold their floor spot through strikes, throws and specials and step back after (heroes.js LOCK);
       // dashes and sidesteps keep their sliding footwork. Knocked back (hit / block stun, pushback) they hold too and
-      // stumble back in steps: both feet skated 5-6 m per 90 s CPU fight under the pushback.
-      s.lock = !this.active || f.y > gnd + 0.01 || f.ko || f.down > 0 || f.launched || f.heldBy ? 0
+      // stumble back in steps: both feet skated 5-6 m per 90 s CPU fight under the pushback. Reeled in by the grapnel
+      // line (7 m/s) they skid along (3): held, the rear leg trailed 40-54 deg behind the pelvis.
+      const reel = o.act && o.act.type === 'grapnel' && o.act.phase === 'latch';
+      s.lock = !this.active || f.y > gnd + 0.01 || f.ko || f.down > 0 || f.launched || f.heldBy ? 0 : reel ? 3
         : a ? (a.type !== 'dash' && a.type !== 'side' ? 2 : 1) : f.stun > 0 || Math.hypot(f.kx, f.kz) > 0.3 ? 2 : 1;
       s.dt = dt;
       const P = { ...s, p: [f.x, base + s.h, f.z], yaw: f.yaw + c.tw };
