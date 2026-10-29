@@ -511,7 +511,12 @@ export function makeHero(kind) {
       // Skin shading: rosier lips, a faint blue-grey five-o'clock shadow on the jaw and chin (not the lips).
       const lip = bump(x, 0, 0.017) * Math.max(bump(y, 0.064, 0.006), bump(y, 0.052, 0.006));
       const beard = (1 - blend(0.05, 0.068, y)) * (1 - lip) * 0.22;
-      const sk = skinColor.clone().lerp(stubble, beard).lerp(lipColor, lip * 0.45);
+      // Baked occlusion so the jaw sits under the mask instead of reading as a flat pasted-on patch: a contact
+      // shadow under the cowl's overhanging edge (top and sides), the groove under the lower lip, and the
+      // underside of the chin / jaw turning away into the neck.
+      const ao = (1 - 0.38 * blend(0.06, 0.08, y)) * (1 - 0.28 * blend(0.042, 0.064, x))
+        * (1 - 0.14 * bump(y, 0.045, 0.005) * bump(x, 0, 0.02)) * (1 - 0.32 * (1 - blend(0.004, 0.026, y)));
+      const sk = skinColor.clone().lerp(stubble, beard).lerp(lipColor, lip * 0.45).multiplyScalar(ao);
       const c = cowlColor.clone().lerp(sk, jaw); colors.push(c.r, c.g, c.b);
     }
     faceGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
