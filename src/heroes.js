@@ -658,6 +658,13 @@ export function makeHero(kind) {
       [-0.0158, 0.009], [-0.015, -0.004], [-0.011, -0.014]], 0.0024, 0.0026);
     // antihelix: a softer inner ridge forking up under the helix and running down to the antitragus
     const antihelix = earTube([[-0.001, 0.017, -0.001], [-0.006, 0.014], [-0.0095, 0.006], [-0.0095, -0.003], [-0.005, -0.009]], 0.0017, 0.0024);
+    // Comic ear ink: the rolled forms alone read as a flat skin blob in game (one cel band, featureless on
+    // the shadow side), so ink the two lines a comic artist draws inside the ear — the helix's inner edge
+    // (in the scapha, from the crus round to above the lobe) and the concha's C in front of the antihelix.
+    const earInkGeo = [
+      earTube([[0.003, 0.012], [0.0005, 0.0205], [-0.006, 0.0225], [-0.0105, 0.0185], [-0.013, 0.009], [-0.0125, -0.003], [-0.009, -0.011]], 0.0006, 0.0037),
+      earTube([[0.0005, 0.0115], [-0.0035, 0.0095], [-0.0066, 0.005], [-0.0066, -0.003], [-0.003, -0.0065]], 0.0006, 0.0037)];
+    const earInk = new THREE.MeshBasicMaterial({ color: 0x2a1612 });
     const earFlesh = (s) => {
       const g = new THREE.Group();
       g.position.set(s * 0.0865, 0.12, -0.011);
@@ -667,6 +674,7 @@ export function makeHero(kind) {
       part(g, earPlate, skin);
       part(g, helix, skin);
       part(g, antihelix, skin);
+      for (const ink of earInkGeo) part(g, ink, earInk);
       oval(g, skin, [0.0045, -0.002, 0.0055], [0.0022, 0.0042, 0.003]);   // tragus
       oval(g, skin, [0.0022, -0.019, -0.003], [0.0034, 0.0075, 0.0068]); // lobe
     };
