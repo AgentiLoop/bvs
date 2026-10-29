@@ -158,8 +158,9 @@ const EASY = { cpuDmg: 0.8, meDmg: 1.1, think: [0.28, 0.35] };
 const TRAIN = { dmg: 0.35, block: 0.4, read: 0.8, side: 0.1, back: 0.05, near: 2.4, far: 0.9, next: 1 };
 const LESSONS = [
   ['PUNCH', 'J', 'Ⓧ', (a) => a.type === 'jab'],
+  ['LEFT JAB · RIGHT JAB', 'J', 'LT · RT', (a) => a.type === 'cross' && !a.ch],
   ['KICK', 'K', 'Ⓨ', (a) => a.type === 'front'],
-  ['2-HIT PUNCH CHAIN', 'J J', 'Ⓧ Ⓧ', (a) => a.type === 'cross'],
+  ['2-HIT PUNCH CHAIN', 'J J', 'Ⓧ Ⓧ', (a) => a.type === 'cross' && a.ch],
   ['3-HIT PUNCH CHAIN', 'J J J', 'Ⓧ Ⓧ Ⓧ', (a) => a.type === 'hook'],
   ['4-HIT PUNCH CHAIN', 'J J J J', 'Ⓧ Ⓧ Ⓧ Ⓧ', (a) => a.type === 'upper' && a.ch],
   ['ROUNDHOUSE', 'K K (OR J J K)', 'Ⓨ Ⓨ (OR Ⓧ Ⓧ Ⓨ)', (a) => a.type === 'round'],
@@ -577,7 +578,7 @@ export class Game {
     if (this.padHit(1) || this.padHit(15)) return 'sup';
     return null;
   }
-  // In game (standard mapping): X punch, Y kick, B special, A jump, LB/RB/LT/RT block, L3 crouch, R3 prop / grapnel, Start pause, Back menu.
+  // In game (standard mapping): X punch, Y kick, B special, A jump, LT left jab, RT right jab, LB/RB block, L3 crouch, R3 prop / grapnel, Start pause, Back menu.
   gamePad() {
     this.readPad();
     if (!this.pad) return true;
@@ -587,12 +588,20 @@ export class Game {
     if (this.matchOver && this.overT > 1.5 && (this.padHit(9) || this.padHit(0))) { this.ctx.restart(this.choice); return true; }
     if (this.padHit(9) && !this.matchOver) { this.ctx.pause(); return false; }
     if (this.padHit(2)) this.press(this.me, 'J', this.blockHeld());
+    // LT = left (lead) jab, RT = right (rear) jab: a punch, but from neutral RT throws the right cross straight away
+    const both = this.padNow[6] && this.padNow[7] && (this.padHit(6) || this.padHit(7));
+    if (!both && this.padHit(6)) this.press(this.me, 'J', this.blockHeld());
+    if (!both && this.padHit(7)) this.press(this.me, 'J', this.blockHeld(), true);
     if (this.padHit(3)) this.press(this.me, 'K', this.blockHeld());
     if (this.padHit(1)) this.press(this.me, 'S', this.blockHeld());
     if (this.padHit(0)) this.press(this.me, 'A');
-    if ([4, 5, 6, 7].some((i) => this.padHit(i))) this.amplify(this.me); // a block tap during a special's start-up
+    if ([4, 5].some((i) => this.padHit(i))) this.amplify(this.me); // a block tap during a special's start-up
     if (this.padHit(11) && !this.interact(this.me)) this.grapnelIn(this.me); // R3 = stage interactable, else Batman's grapnel
-    if (this.padNow[6] && this.padNow[7] && (this.padHit(6) || this.padHit(7))) this.blow(this.me); // both triggers = fatal blow
+    if (both) { // both triggers = fatal blow (the second trigger cancels the jab the first one just started)
+      const a = this.me.act;
+      if (a && (a.type === 'jab' || a.type === 'cross') && !a.done && a.t < 0.12) this.me.act = null;
+      if (!this.blow(this.me)) this.me.act = a;
+    }
     if (this.padNow[4] && this.padNow[5] && (this.padHit(4) || this.padHit(5))) this.impact(this.me); // both bumpers = drive impact
     return true;
   }
@@ -604,7 +613,7 @@ export class Game {
   }
   // Controls panel: shown during the entrance and whenever the game is paused.
   help(show, paused = false) { this.ui.help.style.display = show ? 'grid' : 'none'; this.ui.help.classList.toggle('paused', paused); }
-  blockHeld() { return this.keys.has('shift') || [4, 5, 6, 7].some((i) => this.padNow[i]); }
+  blockHeld() { return this.keys.has('shift') || [4, 5].some((i) => this.padNow[i]); }
   // Crouch: C, left stick pulled down, right stick down or L3 (d-pad up / down still walks in depth).
   crouchHeld() { return this.keys.has('c') || !!this.padNow[10] || !!(this.pad && (this.pad.rs > 0.5 || this.pad.axes[1] > STICK_CROUCH)); }
   canCrouch(f) {
@@ -634,7 +643,7 @@ export class Game {
     f.buf = null; f.cancels = (f.cancels || 0) + 1;
     return true;
   }
-  press(f, btn, mod = false) {
+  press(f, btn, mod = false, rear = false) {
     if (this.state !== 'fight' || f.ko || f.dazed) return;
     if (f.dizzy > 0) { f.dizzy -= DIZZY.mash; return; } // mash out of the dizzy
     if (btn === 'S') return this.canFatal(f) ? this.fatality(f) : mod && f.meter >= 100 ? this.superMove(f) : this.special(f);
@@ -645,7 +654,7 @@ export class Game {
     // punch + kick together = throw (SF style)
     if (f.lastBtn === (btn === 'J' ? 'K' : 'J') && this.fightT - f.lastBtnT < 0.1) { f.lastBtn = null; return this.throwStart(f); }
     f.lastBtn = btn; f.lastBtnT = this.fightT;
-    f.buf = btn; f.bufT = 0.3; f.bufMod = mod;
+    f.buf = btn; f.bufT = 0.3; f.bufMod = mod; f.bufR = rear;
     this.tryStart(f);
   }
   // Consume the buffered button: fresh move when idle (air attack if airborne, block+J uppercut, block+K sweep),
@@ -660,7 +669,7 @@ export class Game {
     if (!a) {
       if (f.stun > 0 || f.down > 0 || f.launched) return;
       if (f.y > 0.3) name = f.buf === 'J' ? 'dive' : 'airkick';
-      else if (f.y <= 0.001) name = f.bufMod ? (f.buf === 'J' ? 'upper' : 'sweep') : f.crouch ? (f.buf === 'J' ? 'cjab' : 'ckick') : (f.buf === 'J' ? 'jab' : 'front');
+      else if (f.y <= 0.001) name = f.bufMod ? (f.buf === 'J' ? 'upper' : 'sweep') : f.crouch ? (f.buf === 'J' ? 'cjab' : 'ckick') : (f.buf === 'J' ? (f.bufR ? 'cross' : 'jab') : 'front');
     } else if (M && M.next && a.done && !a.parried && a.t >= M.cancel) name = M.next[f.buf];
     if (name) { f.buf = null; this.begin(f, name); if (a) f.act.ch = true; } // ch: chained off the last move (training lessons)
   }
