@@ -863,21 +863,41 @@ export function makeHero(kind) {
     // A real (and comic-book) foot isn't a symmetric flat wedge: the inner sole arches up between heel and
     // ball (the outer edge barely), the big toe leads on the inside so the toe line slants back to the little
     // toe, and the ball of the foot swells out on the inside.
-    const footGeo = surface([[-0.058, 0.001, 0.001, 0.04], [-0.05, 0.03, 0.03, 0.04], [-0.03, 0.038, 0.042, 0.03],
-      [0.0, 0.04, 0.046, 0.026], [0.04, 0.042, 0.036, 0.04], [0.09, 0.041, 0.024, 0.052],
-      [0.135, 0.033, 0.017, 0.058], [0.165, 0.019, 0.012, 0.061], [0.178, 0.001, 0.001, 0.063]],
+    // Size: the boot was 23.6 cm long on a 2.1 m hero (11% of height; a real foot is ~15%, and comic heroes
+    // stand on big, planted boots). Now 29 cm heel to toe (forefoot x1.26, heel x1.14) and 10% wider.
+    const footGeo = surface([[-0.066, 0.001, 0.001, 0.04], [-0.057, 0.033, 0.03, 0.04], [-0.034, 0.042, 0.042, 0.03],
+      [0.0, 0.044, 0.046, 0.026], [0.05, 0.046, 0.036, 0.04], [0.113, 0.045, 0.024, 0.052],
+      [0.17, 0.036, 0.018, 0.057], [0.208, 0.021, 0.013, 0.06], [0.224, 0.001, 0.001, 0.062]],
     p => {
       p.z = Math.min(p.z, 0.074);
-      const L = p.y, inn = blend(0, 0.035, -s * p.x), out = blend(0, 0.035, s * p.x), low = blend(0.035, 0.074, p.z);
-      p.z -= (0.013 * inn + 0.003 * out) * bump(L, 0.035, 0.042) * low;           // medial (high) / lateral (low) arches
-      p.x -= s * 0.004 * bump(L, 0.115, 0.03) * inn;                              // ball of the big toe
-      p.y -= 0.016 * blend(0.1, 0.178, L) * blend(-0.01, 0.03, s * p.x);           // toe line slants back to the little toe
-      p.x -= s * 0.009 * blend(0.07, 0.178, L);                                   // big toe leads on the inside
+      const L = p.y, inn = blend(0, 0.038, -s * p.x), out = blend(0, 0.038, s * p.x), low = blend(0.035, 0.074, p.z), top = 1 - blend(0.03, 0.06, p.z);
+      p.z -= (0.014 * inn + 0.003 * out) * bump(L, 0.044, 0.053) * low;           // medial (high) / lateral (low) arches
+      p.x -= s * 0.0045 * bump(L, 0.145, 0.038) * inn;                            // ball of the big toe
+      p.z += 0.0018 * bump(L, TOE_Z + 0.004, 0.006) * top;                         // flex crease across the toe box, over the toe joint
+      p.z -= 0.003 * bump(L, 0.19, 0.022) * bump(p.x, -s * 0.018, 0.012) * top;    // big toe rides higher in the toe box
+      p.y -= 0.02 * blend(0.126, 0.224, L) * blend(-0.01, 0.033, s * p.x);         // toe line slants back to the little toe
+      p.x -= s * 0.011 * blend(0.088, 0.224, L);                                  // big toe leads on the inside
       return p;
-    }, 48, 32);
+    }, 56, 32);
     footGeo.rotateX(Math.PI / 2);
-    footGeo.computeVertexNormals(); part(an, footGeo, boot);
-    legs[side] = { th, kn, an, s, crease: [] };
+    // Toe joint: the forefoot bends at the ball (metatarsophalangeal joints) instead of the boot staying a rigid
+    // block, so a planted foot rolls up onto its ball with the toes flat on the roof (toe-off in the walk, up on
+    // the toes in a crouch or lunge). The joint's axis is oblique like a real foot's (big toe ahead of the
+    // little one, TOE_YAW), and the boot is skinned to it across a soft crease so it bends rather than hinges.
+    const toe = joint(an, [0, TOE_Y, TOE_Z]);
+    toe.quaternion.setFromAxisAngle(_YA, s * TOE_YAW); toe.userData.q0 = toe.quaternion.clone();
+    toe.userData.tip = new THREE.Vector3(0, -0.074 - TOE_Y, 0.224 - TOE_Z).applyQuaternion(toe.quaternion.clone().invert());
+    const toeW = p => blend(TOE_Z - 0.014, TOE_Z + 0.02, p.z + s * TOE_YAW * p.x);
+    skinSurface(an, footGeo, boot, p => { const w = toeW(p); return [[toe, w], [an, 1 - w]]; });
+    // Sole points across the crease (ankle-local a, toe-local t, toe weight w): the soft blend there sags below the
+    // ball as the toes bend, so the roof check (bootLow) skins these the way the boot is skinned.
+    const tInv = new THREE.Matrix4().compose(toe.position, toe.quaternion, new THREE.Vector3(1, 1, 1)).invert();
+    toe.userData.sole = [];
+    for (const dz of [-0.008, 0, 0.008, 0.016, 0.024]) for (const x of [-0.03, 0, 0.03]) {
+      const a = new THREE.Vector3(x, -0.074, TOE_Z + dz);
+      toe.userData.sole.push({ a, t: a.clone().applyMatrix4(tInv), w: toeW(a) });
+    }
+    legs[side] = { th, kn, an, toe, s, crease: [] };
   }
   root.updateMatrixWorld(true);
   const bones = [];
@@ -1156,8 +1176,36 @@ function pushOutOfHead(H, w, margin) {
 }
 // pose: { p:[x,y,z] hips world, yaw, pitch, roll, lean, gait, lh, rh, lf, rf (hip-relative targets) }
 const SOLE = 0.076;
-const BOOT_CORNERS = [[0, -0.074, -0.058], [0, -0.074, 0.178], [0.042, -0.074, 0.06], [-0.042, -0.074, 0.06], [0, 0.021, 0.178], [0, 0.021, -0.058]]
+// Toe joint (ankle-local): at the ball, 4 mm above the sole, its axis turned TOE_YAW so the big toe side leads.
+// TOE_UP: how far the toes bend up (a loaded MTP joint dorsiflexes ~60-70 deg at toe-off; a boot a bit less).
+const TOE_Y = -0.07, TOE_Z = 0.15, TOE_YAW = 0.2, TOE_UP = 1.0;
+// Boot corners on the ankle (heel, ball, the sides of the arch, high front / back). The toe tip rides on the
+// toe joint (legs[s].toe.userData.tip) and is checked with them.
+const BOOT_CORNERS = [[0, -0.074, -0.066], [0, -0.074, TOE_Z], [0.046, -0.074, 0.06], [-0.046, -0.074, 0.06], [0, 0.021, TOE_Z], [0, 0.021, -0.066]]
   .map(p => new THREE.Vector3(...p));
+// Toes bend up at the ball so they lie flat on the roof whenever the ball is down and the foot pitches toes-down
+// (heel lifted: walking toe-off, up on the toes past the ankle's dorsiflexion cap, a rear foot rolled onto its
+// ball). Off the floor (TOE_H above it at the joint) the boot's forefoot stays straight.
+const TOE_H = [0.015, 0.05], _tbV = new THREE.Vector3(), _tbP = new THREE.Vector3(), _tbQ = new THREE.Quaternion();
+function bendToes(l, ground) {
+  const t = l.toe; if (!t) return;
+  t.quaternion.copy(t.userData.q0); t.updateMatrixWorld(true);
+  _tbV.set(0, 0, 1).transformDirection(l.an.matrixWorld);
+  const pitch = Math.asin(Math.max(-1, Math.min(1, -_tbV.y))); // toes-down pitch of the rear foot
+  const h = t.getWorldPosition(_tbP).y - ground;
+  const a = Math.min(TOE_UP, Math.max(0, pitch)) * (1 - blend(TOE_H[0], TOE_H[1], h));
+  if (a > 1e-4) { t.quaternion.multiply(_tbQ.setFromAxisAngle(_XA, -a)); t.updateMatrixWorld(true); }
+}
+const _btP = new THREE.Vector3(), _btQ = new THREE.Vector3();
+function bootLow(l) { // lowest boot point, world y
+  let low = Infinity;
+  for (const c of BOOT_CORNERS) { _btP.copy(c); l.an.localToWorld(_btP); low = Math.min(low, _btP.y); }
+  if (l.toe) {
+    _btP.copy(l.toe.userData.tip); l.toe.localToWorld(_btP); low = Math.min(low, _btP.y);
+    for (const c of l.toe.userData.sole) { _btP.copy(c.a); l.an.localToWorld(_btP); _btQ.copy(c.t); l.toe.localToWorld(_btQ); low = Math.min(low, _btP.lerp(_btQ, c.w).y); }
+  }
+  return low;
+}
 // Contact radii of the joints that touch the roof in kneels, landings and lying poses.
 const CONTACT = [['legs', 'kn', 0.062], ['arms', 'el', 0.055], ['arms', 'hand', 0.07]];
 // Facial expression: e.eye = lid openness (1 open .. 0 shut; Batman's white lenses only narrow to a slit),
@@ -1304,7 +1352,7 @@ const yawXZ = (v, a) => { const c = Math.cos(a), s = Math.sin(a), x = v.x; v.x =
 // s.lock 3 = skid (grounded, dragged: reeled in by the grapnel line at 7 m/s): no new locks, a held foot lets go over
 // LOCK.skid s and the feet slide with the body. Held planted, the rear leg trailed 40-54 deg behind the pelvis.
 const LOCK = { d: 0.15, rest: 0.015, max: 0.35, t: 0.16, tq: 0.08, h: 0.07, up: 0.12, ease: 0.08, skid: 0.04, air: 0.03, bal: 0.3, toe: 0.15 };
-const _LK = new THREE.Vector3(), BALL = new THREE.Vector3(0, -0.074, 0.15), HEEL = new THREE.Vector3(0, -0.074, -0.058);
+const _LK = new THREE.Vector3(), BALL = new THREE.Vector3(0, -0.074, TOE_Z), HEEL = new THREE.Vector3(0, -0.074, -0.066);
 function footLock(l, o, T, up, r, mode, dt, far, c) {
   const k = l.lk, planted = up < LOCK.up && r < 0.575;
   if (!mode) { l.lk = null; return; }
@@ -2090,9 +2138,10 @@ function posePass(H, s, t, ground, raise) {
     // When the body is pitched (rolls, tumbles) the boot's toe/heel can still dip through the roof even
     // with the ankle above it: lift the ankle by the deficit of the lowest boot corner and re-solve.
     // Repeated: a heel lifted by the dorsiflexion cap changes the shin angle as the ankle rises.
+    // (the toes bend flat first: up on the ball, the boot rests on it instead of on its stiff toe tip)
     for (let it = 0; it < 4 && _T.y > ground - 0.6; it++) {
-      let low = Infinity;
-      for (const c of BOOT_CORNERS) { _P.copy(c); l.an.localToWorld(_P); low = Math.min(low, _P.y); }
+      bendToes(l, ground + sl);
+      const low = bootLow(l);
       if (low >= ground + sl - 0.002) break;
       _T.y += ground + sl - low;
       kneePole(H, l, tgP, ex);
@@ -2116,6 +2165,7 @@ function posePass(H, s, t, ground, raise) {
         }
       }
     }
+    bendToes(l, ground + sl);
     if (k && !s.again) { l.an.getWorldPosition(_P); k.ax = _P.x; k.az = _P.z; }
     if (!s.again) { _P.copy(BALL); l.an.localToWorld(_P); _LK.copy(HEEL); l.an.localToWorld(_LK); l.gy = Math.min(_P.y, _LK.y) - ground; } // (footLock: busy)
     if (!s.again) l.an.getWorldPosition(l.ga ||= new THREE.Vector3()); // (gait lock: where a newly held foot starts)
