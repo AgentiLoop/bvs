@@ -1018,7 +1018,10 @@ function solveIK(upper, lower, L1, L2, target, pole, hinge, dMin) {
 // zone behind the shoulder (az: lateral 0, forward 90, across 180) and whose humerus rotation (forearm about the
 // upper arm, measured from the arm swung up from hanging with the forearm forward; + = external) is in range.
 // Poses that were already inside the limits keep their elbow exactly.
-const SWIVEL = { n: 36, az: [-55, 150], rot: [-80, 95], w: 12, wl: 4, rate: 0.25, esc: 1.5 }, _qs = new THREE.Quaternion(), _sw = new THREE.Quaternion(),
+// az[0] -45 (was -55): the pole (out-down-BACK in the body frame) parked the elbow at the limit, so a falling or
+// lying body with the hands out at shoulder depth (knockdown landing, KO launch) braced its upper arms 50-55 deg
+// behind the chest (sagittal shoulder extension ~55 deg, the end of its range).
+const SWIVEL = { n: 36, az: [-45, 150], rot: [-80, 95], w: 12, wl: 4, rate: 0.25, esc: 1.5 }, _qs = new THREE.Quaternion(), _sw = new THREE.Quaternion(),
   _su = new THREE.Vector3(), _sf = new THREE.Vector3(), _sr = new THREE.Vector3(), _sx = new THREE.Vector3(), _sZ = new THREE.Vector3(0, 0, 1);
 function swivelPole(H, a, target, pole, L1, L2, local) {
   a.sh.getWorldPosition(_A);
