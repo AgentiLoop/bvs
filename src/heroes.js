@@ -454,6 +454,9 @@ export function makeHero(kind) {
   // Superman's mouth corners turn down: the head's fighting chin-tuck sets the receding corners higher than the
   // middle on screen, so a level lip seam read as a smile; the lips and the mouth line follow this dip instead.
   const mouthDip = x => 0.004 * Math.min(1.5, (x / 0.023) ** 2);
+  // Comic pompadour: the hair's crest sits just behind the hairline and the top slopes back from it (the old
+  // angle-weighted lift peaked in a spike at the crown pole, so the profile read as a dome highest at the back).
+  const POMP = 0.015;
   const FLAT_N = 0.7; // front-plane superellipse exponent (1 = the old ellipse front, lower = flatter)
   const faceSculpt = (p, a) => {
     const front = Math.max(0, Math.cos(a)), f5 = front ** 5;
@@ -555,12 +558,14 @@ export function makeHero(kind) {
       const up = blend(line, line + 0.05, p.y);
       const crown = blend(0.17, 0.225, p.y);                                  // volume only above the temples
       const comb = 0.0025 * Math.sin(a * 22 + p.y * 40) * up * (0.3 + 0.7 * crown);
+      const F = THREE.MathUtils.clamp((p.z - contour(faceRows, p.y)[2]) / 0.065, 0, 1) * front; // front weight, 0 at the crown pole
       const k = 1 + hairT * (0.01 + 0.055 * crown * (0.6 + 0.4 * front) + 0.008 * up) + comb;
       p.x *= k; p.z *= k;
-      p.z += 0.016 * front ** 2 * bump(p.y, 0.228, 0.018);                 // pompadour pushed forward
-      p.y += 0.014 * front ** 1.5 * bump(p.y, 0.232, 0.025) * hairT;        // ...and lifted
+      p.z += 0.016 * F ** 2 * bump(p.y, 0.228, 0.018);                     // pompadour pushed forward
+      p.y += 0.014 * F ** 1.5 * bump(p.y, 0.232, 0.025) * hairT;            // ...and lifted
       p.y += 0.008 * up * crown;                                             // fuller crown
       p.y -= 0.004 * bump(p.x, -0.032, 0.005) * up;                          // side part groove
+      p.y += POMP * hairT * bump(p.z, 0.035, 0.045) * bump(p.x, 0, 0.045) * blend(0.205, 0.235, p.y); // comic pompadour crest
     }
     return p;
     return p;
