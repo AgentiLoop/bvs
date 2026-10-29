@@ -153,6 +153,8 @@ const blend = (a, b, x) => THREE.MathUtils.smoothstep(x, a, b);
 // Hip-crease corrective: how deep (d) the thigh's root compresses around thigh-local height y (width w), fading in
 // as the thigh swings a0..a1 rad away from hanging straight down in the hips' frame.
 const CREASE = { d: 0.045, y: -0.17, w: 0.11, a0: 1.0, a1: 1.6, k: 1, ki: 1.6 };
+// Superman's boot-top V: [half-width (rad round the shin), sides' power (> 1: concave, a sharper point)].
+const BOOT_V = [0.85, 1.6];
 // Hip fill (o, thigh) and trochanter (t, trunks) trimmed 0.022 -> 0.008 / 0.012: the hip-to-thigh join bulged out like saddlebags.
 const HF = { o: 0.008, yo: -0.13, wo: 0.08, po: 1.2, t: 0.012, ty: -0.01, tw: 0.045, tp: 3 };
 // Gluteus maximus cheek (hips space): depth a (x bulk) at |x| = x (width w), peak height y, rising over u, tucking
@@ -803,7 +805,8 @@ export function makeHero(kind) {
       }
       // Superman's classic boot top dips into a V at the front of the shin. Rings near the boot line are
       // pulled down at the front (smooth falloff, slope < 1 so rings never cross), moving the colour edge.
-      if (!B) p.y -= 0.03 * bump(p.y, -0.6, 0.04) * Math.max(0, Math.cos(a)) ** 3;
+      // Pointed (BOOT_V: tent across the shin, concave sides) like the comics' notch; cos^3 drew a rounded U scallop.
+      if (!B) p.y -= 0.03 * bump(p.y, -0.6, 0.04) * Math.max(0, 1 - Math.abs(wrapA(a)) / BOOT_V[0]) ** BOOT_V[1];
       return p;
     }, 112, 40);
     legGeo.userData.limb = true;
