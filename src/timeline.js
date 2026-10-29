@@ -4,6 +4,7 @@ export const face = (a, b) => Math.atan2(b[0] - a[0], b[2] - a[2]);
 
 // Limb targets are relative to the hips (root). +Z forward, +X = hero's left, +Y up.
 // lo / ro: hand openness (0 = clenched fist .. 0.4 relaxed curl .. 1 flat); omitted = fist.
+// lt / rt: toes pulled back off the floor (0..1, a front kick's ball-of-foot strike: heroes.js bendToes); omitted = 0.
 export const POSES = {
   stand:   { h: 0.88, lean: 0.3, roll: 0, lh: [0.26, 0.14, 0.2], rh: [-0.26, 0.12, 0.18], lf: [0.17, -0.82, 0.1], rf: [-0.17, -0.82, -0.12], lo: 0.4, ro: 0.4 },
   brood:   { h: 0.9, lean: 0.24, roll: 0, lh: [0.12, 0.12, 0.3], rh: [-0.12, 0.1, 0.3], lf: [0.18, -0.82, 0.1], rf: [-0.18, -0.82, -0.1], lo: 0.35, ro: 0.35 },
@@ -13,7 +14,7 @@ export const POSES = {
   punchR:  { h: 0.76, lean: 0.5, roll: 0, lh: [0.14, 0.45, 0.3], rh: [-0.04, 0.55, 1.0], lf: [0.2, -0.68, 0.42], rf: [-0.18, -0.68, -0.42] },
   clash:   { h: 0.76, lean: 0.52, roll: 0, lh: [0.24, 0.32, 0.1], rh: [0, 0.56, 1.0], lf: [0.2, -0.68, 0.45], rf: [-0.18, -0.68, -0.46] },
   dodge:   { h: 0.84, lean: -0.42, roll: 0.1, lh: [0.14, 0.38, 0.18], rh: [-0.12, 0.36, 0.16], lf: [0.17, -0.8, 0.3], rf: [-0.17, -0.8, -0.2] },
-  kickR:   { h: 0.95, lean: -0.38, roll: 0, lh: [0.36, 0.22, 0.16], rh: [-0.14, 0.4, 0.22], lf: [0.12, -0.88, -0.1], rf: [-0.3, 0.42, 0.74], lo: 0.6 },
+  kickR:   { h: 0.95, lean: -0.38, roll: 0, lh: [0.36, 0.22, 0.16], rh: [-0.14, 0.4, 0.22], lf: [0.12, -0.88, -0.1], rf: [-0.3, 0.42, 0.74], lo: 0.6, rt: 1 },
   windup:  { h: 0.74, lean: 0.38, roll: -0.2, lh: [0.14, 0.44, 0.38], rh: [-0.3, -0.02, -0.16], lf: [0.18, -0.66, 0.26], rf: [-0.18, -0.66, -0.3] },
   upper:   { h: 0.9, lean: 0.22, roll: 0.12, lh: [0.22, 0.34, 0.25], rh: [-0.08, 0.8, 0.5], lf: [0.17, -0.83, 0.24], rf: [-0.17, -0.83, -0.22] },
   flinch:  { h: 0.9, lean: -0.28, roll: 0.25, lh: [0.15, 0.4, 0.2], rh: [-0.25, 0.2, 0.1], lf: [0.17, -0.83, 0.2], rf: [-0.17, -0.83, -0.25], ro: 0.5 },
@@ -27,14 +28,14 @@ export const POSES = {
   heat:    { h: 0.86, lean: 0.34, roll: 0, lh: [0.3, 0.04, 0.12], rh: [-0.3, 0.0, 0.12], lf: [0.24, -0.8, 0.12], rf: [-0.22, -0.8, -0.12] },
 };
 
-const NUM = ['h', 'lean', 'roll', 'pitch', 'yaw', 'gait', 'lo', 'ro'];
+const NUM = ['h', 'lean', 'roll', 'pitch', 'yaw', 'gait', 'lo', 'ro', 'lt', 'rt'];
 const ARR = ['p', 'lh', 'rh', 'lf', 'rf'];
 
 export function buildTrack(kfs) {
   const out = [];
   let prev = { h: 0.97, lean: 0, roll: 0, pitch: 0, yaw: 0, g: [0, 0, 0] };
   for (const k of kfs) {
-    const f = { ...prev, lo: 0, ro: 0, ...(k.pose ? POSES[k.pose] : {}), ...k };
+    const f = { ...prev, lo: 0, ro: 0, lt: 0, rt: 0, ...(k.pose ? POSES[k.pose] : {}), ...k };
 
     f.gait = k.gait ?? 0;
     f.e = k.e || 'smooth';

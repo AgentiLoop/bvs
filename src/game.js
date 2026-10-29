@@ -6,7 +6,7 @@ import { applyPose, setFace, GAIT_A, GAIT_SIDE, GAIT_D, DMG_N } from './heroes.j
 import { POSES, face } from './timeline.js';
 import { groundAt, camHit } from './world.js';
 
-const NUM = ['h', 'lean', 'roll', 'pitch', 'gait', 'tw', 'lo', 'ro', 'lw', 'rw', 'limp']; // lo/ro hand open 0 fist..1 flat, lw/rw wrist, limp slack wrists (heroes.js)
+const NUM = ['h', 'lean', 'roll', 'pitch', 'gait', 'tw', 'lo', 'ro', 'lw', 'rw', 'limp', 'lt', 'rt']; // lo/ro hand open 0 fist..1 flat, lw/rw wrist, limp slack wrists, lt/rt toes pulled back (heroes.js)
 const ARR = ['lh', 'rh', 'lf', 'rf'];
 // Hand open / close speed cap (per s): the pose spring's first frame moved openness by up to 0.35, so a hand
 // snapped from flat to a hooked grip in one frame (fingertips 9 cm); now flat -> fist takes ~0.08 s.
@@ -61,13 +61,13 @@ const MP = {
   hook:    { ...G, lean: 0.5, tw: 0.55, roll: 0.08, lh: [0.16, 0.44, 0.26], rh: [-0.45, 0.54, 0.65] },
   dip:     { ...G, h: 0.6, lean: 0.5, tw: -0.2, rh: [-0.14, 0.05, 0.3] },
   upper:   { ...P.upper, tw: 0.25 },
-  chamber: { ...G, h: 0.84, lean: 0.1, rf: [-0.18, -0.2, 0.42] },
+  chamber: { ...G, h: 0.84, lean: 0.1, rf: [-0.18, -0.2, 0.42], rt: 1 },
   front:   { ...P.kickR },
   roundUp: { ...G, h: 0.86, lean: -0.1, tw: 0.4, rh: [-0.12, 0.48, 0.42], rf: [-0.3, -0.15, 0.3] },
   round:   { h: 1.04, lean: -0.2, roll: -0.5, tw: 0.9, lh: [0.14, 0.5, 0.36], rh: [-0.5, 0.14, 0.04], lf: [0.51, -0.81, 0.08], rf: [-0.83, -0.13, 0.56] },
   sweep:   { h: 0.44, lean: 0.6, roll: 0, tw: 0.5, lh: [0.48, -0.3, 0.3], rh: [-0.1, -0.36, 0.42], lf: [0.22, -0.4, 0.3], rf: [-0.72, -0.4, 0.42] },
   dive:    { ...P.tuck, h: 0.55, lean: 0.75, lh: [0.3, 0.3, 0.25], rh: [-0.04, 0.12, 0.95] },
-  airkick: { h: 0.62, lean: -0.3, roll: 0, lh: [0.3, 0.4, 0.12], rh: [-0.25, 0.35, 0.1], lf: [0.14, -0.4, 0.2], rf: [-0.06, -0.3, 0.82] },
+  airkick: { h: 0.62, lean: -0.3, roll: 0, lh: [0.3, 0.4, 0.12], rh: [-0.25, 0.35, 0.1], lf: [0.14, -0.4, 0.2], rf: [-0.06, -0.3, 0.82], rt: 1 },
   air:     { ...P.hit, h: 0.6, lh: [0.52, 0.64, 0.05], rh: [-0.5, 0.72, 0.08], lo: 0.5, ro: 0.5 },
   rush:    { ...P.charge, lean: 0.75, gait: 1 },
   side:    { ...G, h: 0.72, lean: 0.3 },
@@ -397,7 +397,7 @@ const _rv = new THREE.Vector3(), _rd = new THREE.Vector3();
 const LIMB = { lh: (H) => H.arms.L.hand, rh: (H) => H.arms.R.hand, lf: (H) => H.legs.L.an, rf: (H) => H.legs.R.an };
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-const T = (p, x) => ({ tw: 0, pitch: 0, gait: 0, lo: 0, ro: 0, lw: 0, rw: 0, limp: 0, ...p, ...x });
+const T = (p, x) => ({ tw: 0, pitch: 0, gait: 0, lo: 0, ro: 0, lw: 0, rw: 0, limp: 0, lt: 0, rt: 0, ...p, ...x });
 // Lying knocked down / out: arms resting on the roof beside the body (they used to hover at hip height, the
 // wrists 23-27 cm up) with slack wrists, so the half-curled hands droop onto the floor (heroes.js s.limp).
 // lean 0: POSES.down's lean 0.15 curled the chest up and the hands reached back under the shoulders, so an out-cold

@@ -1216,9 +1216,12 @@ const BOOT_CORNERS = [[0, -0.074, -0.066], [0, -0.074, TOE_Z], [0.046, -0.074, 0
 // ball). Off the floor (TOE_H above it at the joint) the boot's forefoot stays straight.
 // Higher up (TOE_AIR) a pointed foot curls its toes down with the ankle (flexor pull: flying, a jump's tucked
 // legs, a trailing kick leg), up to TOE_CURL at the airborne point AIR_PF; a boot lets them curl ~20 deg.
-const TOE_H = [0.015, 0.05], TOE_AIR = [0.08, 0.2], TOE_CURL = 0.35,
+// A front kick strikes with the ball of the foot, toes pulled back out of the way (pose s.lt / s.rt 0..1): the
+// curl gives way to TOE_BACK up there (the boot stiffens the ~60-70 deg a bare foot manages), so the ball leads
+// instead of the curled toe tip (front kick: the tip led the ball by 6 cm).
+const TOE_H = [0.015, 0.05], TOE_AIR = [0.08, 0.2], TOE_CURL = 0.35, TOE_BACK = 1.0,
   _tbV = new THREE.Vector3(), _tbP = new THREE.Vector3(), _tbQ = new THREE.Quaternion();
-function bendToes(l, ground) {
+function bendToes(l, ground, tb = 0) {
   const t = l.toe; if (!t) return;
   t.quaternion.copy(t.userData.q0); t.updateMatrixWorld(true);
   _tbV.set(0, 0, 1).transformDirection(l.an.matrixWorld);
@@ -1227,7 +1230,7 @@ function bendToes(l, ground) {
   _tbV.set(0, 0, 1).applyQuaternion(l.an.quaternion); // toes in the shin's frame: ankle plantarflexion
   const pf = Math.atan2(-_tbV.y, _tbV.z);
   const a = Math.min(TOE_UP, Math.max(0, pitch)) * (1 - blend(TOE_H[0], TOE_H[1], h))
-    - TOE_CURL * Math.min(1, Math.max(0, pf) / AIR_PF) * blend(TOE_AIR[0], TOE_AIR[1], h);
+    + (tb * TOE_BACK - (1 - tb) * TOE_CURL * Math.min(1, Math.max(0, pf) / AIR_PF)) * blend(TOE_AIR[0], TOE_AIR[1], h);
   if (Math.abs(a) > 1e-4) { t.quaternion.multiply(_tbQ.setFromAxisAngle(_XA, -a)); t.updateMatrixWorld(true); }
 }
 const _btP = new THREE.Vector3(), _btQ = new THREE.Vector3();
@@ -2174,7 +2177,7 @@ function posePass(H, s, t, ground, raise) {
     // Repeated: a heel lifted by the dorsiflexion cap changes the shin angle as the ankle rises.
     // (the toes bend flat first: up on the ball, the boot rests on it instead of on its stiff toe tip)
     for (let it = 0; it < 4 && _T.y > ground - 0.6; it++) {
-      bendToes(l, ground + sl);
+      bendToes(l, ground + sl, (side === 'L' ? s.lt : s.rt) || 0);
       const low = bootLow(l);
       if (low >= ground + sl - 0.002) break;
       _T.y += ground + sl - low;
@@ -2199,7 +2202,7 @@ function posePass(H, s, t, ground, raise) {
         }
       }
     }
-    bendToes(l, ground + sl);
+    bendToes(l, ground + sl, (side === 'L' ? s.lt : s.rt) || 0);
     if (k && !s.again) { l.an.getWorldPosition(_P); k.ax = _P.x; k.az = _P.z; }
     if (!s.again) { _P.copy(BALL); l.an.localToWorld(_P); _LK.copy(HEEL); l.an.localToWorld(_LK); l.gy = Math.min(_P.y, _LK.y) - ground; } // (footLock: busy)
     if (!s.again) l.an.getWorldPosition(l.ga ||= new THREE.Vector3()); // (gait lock: where a newly held foot starts)
