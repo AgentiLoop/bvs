@@ -361,7 +361,10 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const T = (p, x) => ({ tw: 0, pitch: 0, gait: 0, lo: 0, ro: 0, lw: 0, rw: 0, limp: 0, ...p, ...x });
 // Lying knocked down / out: arms resting on the roof beside the body (they used to hover at hip height, the
 // wrists 23-27 cm up) with slack wrists, so the half-curled hands droop onto the floor (heroes.js s.limp).
-const SPRAWL = { pitch: -1.5, lo: 0.55, ro: 0.55, limp: 1, lh: [0.6, 0.3, -0.11], rh: [-0.58, 0.25, -0.11] };
+// lean 0: POSES.down's lean 0.15 curled the chest up and the hands reached back under the shoulders, so an out-cold
+// body was propped on its elbows (torso 9 cm off the roof, upper arms 60-73 deg behind the chest). Now the back lies
+// flat and the arms rest beside it.
+const SPRAWL = { lean: 0, pitch: -1.5, lo: 0.55, ro: 0.55, limp: 1, lh: [0.6, 0.1, -0.05], rh: [-0.58, 0.08, -0.05] };
 const mixPose = (a, b, k) => {
   const o = { ...b };
   for (const n of NUM) o[n] = a[n] + (b[n] - a[n]) * k;
