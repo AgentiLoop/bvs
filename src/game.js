@@ -1109,7 +1109,8 @@ export class Game {
     f.meter -= BREAK.cost; f.stun = 0; f.act = null; f.buf = null; f.brk = BREAK.inv; f.launched = false; f.kx = -nx * 1.5; f.kz = -nz * 1.5;
     if (f.y > 0.05) f.vy = Math.max(f.vy, 2); // flips out of the juggle and drops to his feet
     o.act = null; o.buf = null; o.hits = 0; o.stun = o.stunMax = BREAK.stun; o.heavy = true; o.zone = 'body'; o.hitSide = 1;
-    o.kx = nx * BREAK.kb; o.kz = nz * BREAK.kb; o.cur.lean -= 0.5; if (o.y > 0.05) o.launched = true;
+    o.kx = nx * BREAK.kb; o.kz = nz * BREAK.kb; o.jl = (o.jl || 0) - 0.5; // (eased in by pose(), JOLT, hands carried with the chest)
+    if (o.y > 0.05) o.launched = true;
     const c = f.H.chest.getWorldPosition(new THREE.Vector3()), col = f.key === 'bat' ? 0xffd23a : 0x6fa8ff;
     fx.waves.spawn(c.x, c.y, c.z, 3, col, 0.6); fx.waves.spawn(f.x, 0.05, f.z, 4, 0xffffff, 0.7);
     fx.sparkBurst(c.x, c.y, c.z, 80, 6, col); fx.blast(c.x, c.y, c.z, 1.6, 0.6, col); fx.dustBurst(f.x, 0, f.z, 50, 3);
@@ -1231,7 +1232,7 @@ export class Game {
       def.hp = Math.max(1, def.hp - M.dmg * 0.15 * rage);
       att.meter = Math.min(100, att.meter + 2); def.meter = Math.min(100, def.meter + 4);
       def.kx += nx * M.kb * 0.45; def.kz += nz * M.kb * 0.45; att.kx -= nx * 0.6; att.kz -= nz * 0.6;
-      def.cur.lean -= M.heavy ? 0.22 : 0.12; def.hx -= 0.12; // the guard absorbs the blow: a small jolt back
+      def.jl = (def.jl || 0) - (M.heavy ? 0.22 : 0.12); def.hx -= 0.12; // the guard absorbs the blow: a small jolt back
       fx.sparkBurst(at.x, at.y, at.z, 14, 3, 0xbfd8ff);
       fx.blast(at.x, at.y, at.z, 0.3, 0.3, 0x6fa8ff);
       fx.impact(at.x, at.y, at.z, 0.06);
@@ -1872,7 +1873,11 @@ export class Game {
     if ((f.dazed || f.dizzy > 0) && f.stun <= 0) return 'dazed';
     if (f.brk > BREAK.inv - BREAK.pose) return 'burst';
     if (f.parryT > 0 && f.stun <= 0) return f.parLow ? 'parryL' : 'parry';
-    if (f.stun > 0) return 'stun';
+    if (f.stun > 0) { // (target()'s grip poses: hoisted / clinched, else the hit reaction)
+      const g = f === this.F.bat ? this.F.sup : this.F.bat, gb = this.gripOf(g, f);
+      if (f.heldBy && (f.y > 0.2 || TOSS[f.heldBy.key].lift) || gb && gb.at !== 'head' && (f.y > 0.2 || g.act?.type === 'fatal')) return 'held';
+      return gb && gb.at === 'head' ? 'clinch' : 'stun';
+    }
     if (f.y > 0.05) return 'tuck';
     if (f.crouch) return f.block ? 'cblock' : 'crouch';
     return f.block ? 'block' : 'idle';
@@ -2052,7 +2057,7 @@ export class Game {
       let tg = this.target(f); const c = f.cur, gr = this.gripOf(f, o);
       if (a0 !== f.segA || sk !== f.segK) {
         const c0 = f.cur, D = Math.max(...ARR.map((n) => Math.hypot(...tg[n].map((v, j) => v - c0[n][j]))));
-        const k0 = f.segK; f.segA = a0; f.segK = sk; f.s0 = sk && sk !== 'stun' && k0 !== '' ? { ...c0, lh: [...c0.lh], rh: [...c0.rh], lf: [...c0.lf], rf: [...c0.rf] } : null; f.segT = this.t; f.segD = clamp(D / ACT_V, ACT_IN, ACT_MAX);
+        const k0 = f.segK; f.segA = a0; f.segK = sk; f.s0 = sk && !(sk === 'stun' && f.hitA === this.t) && k0 !== '' ? { ...c0, lh: [...c0.lh], rh: [...c0.rh], lf: [...c0.lf], rf: [...c0.rf] } : null; f.segT = this.t; f.segD = clamp(D / ACT_V, ACT_IN, ACT_MAX);
       }
       if (f.s0) { const u = clamp((this.t - f.segT) / f.segD, 0, 1); if (u < 1) tg = mixPose(f.s0, tg, u * u * (3 - 2 * u)); }
       if (f.jl || f.jt) { const l = (f.jl || 0) * jk, t = (f.jt || 0) * jk; c.lean += l; c.tw += t; f.jl -= l; f.jt -= t; if (l) { c.lh = jolt(c.lh, l); c.rh = jolt(c.rh, l); } } // a hit's snap back reaches the body over a few frames (in real time, so it plays through hitstop), not in one
