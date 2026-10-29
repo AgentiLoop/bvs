@@ -1845,7 +1845,7 @@ export class Game {
     a.x -= dx / d * p; a.z -= dz / d * p; b.x += dx / d * p; b.z += dz / d * p;
   }
 
-  // which of target()'s no-action poses f is in ('' = not blended: the entrance and the round-start stance)
+  // which of target()'s no-action poses f is in ('' = the entrance: neither eased into nor out of)
   stateKey(f) {
     if (this.state === 'enter') return '';
     if (this.state === 'ready') return 'idle';
