@@ -1266,27 +1266,32 @@ const BOOT_CORNERS = [[0, -0.074, -0.066], [0, -0.074, TOE_Z], [0.046, -0.074, 0
 // curl gives way to TOE_BACK up there (the boot stiffens the ~60-70 deg a bare foot manages), so the ball leads
 // instead of the curled toe tip (front kick: the tip led the ball by 6 cm).
 // TOE_FLEX: toe bend (rad) at which the boot's flex creases are fully formed (bendToes drives legs[s].flex).
-const TOE_H = [0.015, 0.05], TOE_AIR = [0.08, 0.2], TOE_CURL = 0.35, TOE_BACK = 1.0, TOE_FLEX = 0.7,
+// STEP_TOE: share of a step's lift (sl) the toe tip is spared (posePass): it swings 30% of the step over the roof.
+// TOE_REL: how fast (rad/s, game) bent toes straighten. A foot lifting off its ball rises 3 cm a frame, through all of
+// TOE_H at once, and the toes sprang from 26 deg to flat in one frame; a real toe joint takes ~0.1 s to come back.
+// (bendToes(lo): the bend doesn't drop below lo this frame; held higher it only lifts the toe tip off the roof)
+const TOE_H = [0.015, 0.05], TOE_AIR = [0.08, 0.2], TOE_CURL = 0.35, TOE_BACK = 1.0, TOE_FLEX = 0.7, STEP_TOE = 0.7, TOE_REL = 8, STEP_LAND = [0.4, 0.7],
   _tbV = new THREE.Vector3(), _tbP = new THREE.Vector3(), _tbQ = new THREE.Quaternion();
-function bendToes(l, ground, tb = 0) {
-  const t = l.toe; if (!t) return;
+function bendToes(l, ground, tb = 0, lo = -Infinity) {
+  const t = l.toe; if (!t) return 0;
   t.quaternion.copy(t.userData.q0); t.updateMatrixWorld(true);
   _tbV.set(0, 0, 1).transformDirection(l.an.matrixWorld);
   const pitch = Math.asin(Math.max(-1, Math.min(1, -_tbV.y))); // toes-down pitch of the rear foot
   const h = t.getWorldPosition(_tbP).y - ground;
   _tbV.set(0, 0, 1).applyQuaternion(l.an.quaternion); // toes in the shin's frame: ankle plantarflexion
   const pf = Math.atan2(-_tbV.y, _tbV.z);
-  const a = Math.min(TOE_UP, Math.max(0, pitch)) * (1 - blend(TOE_H[0], TOE_H[1], h))
-    + (tb * TOE_BACK - (1 - tb) * TOE_CURL * Math.min(1, Math.max(0, pf) / AIR_PF)) * blend(TOE_AIR[0], TOE_AIR[1], h);
+  const a = Math.max(lo, Math.min(TOE_UP, Math.max(0, pitch)) * (1 - blend(TOE_H[0], TOE_H[1], h))
+    + (tb * TOE_BACK - (1 - tb) * TOE_CURL * Math.min(1, Math.max(0, pf) / AIR_PF)) * blend(TOE_AIR[0], TOE_AIR[1], h));
   if (Math.abs(a) > 1e-4) { t.quaternion.multiply(_tbQ.setFromAxisAngle(_XA, -a)); t.updateMatrixWorld(true); }
   if (l.flex) for (const m of l.flex) { const w = m.morphTargetInfluences; w[0] = Math.min(1, Math.max(0, a) / TOE_FLEX); w[1] = Math.min(1, Math.max(0, -a) / TOE_CURL); }
+  return a;
 }
 const _btP = new THREE.Vector3(), _btQ = new THREE.Vector3();
-function bootLow(l) { // lowest boot point, world y
+function bootLow(l, ts = 0) { // lowest boot point, world y (the toes' points count ts higher: a step's toe clearance, posePass)
   let low = Infinity;
   for (const c of BOOT_CORNERS) { _btP.copy(c); l.an.localToWorld(_btP); low = Math.min(low, _btP.y); }
   if (l.toe) {
-    for (const c of [l.toe.userData.tip, ...l.toe.userData.tread]) { _btP.copy(c); l.toe.localToWorld(_btP); low = Math.min(low, _btP.y); }
+    for (const c of [l.toe.userData.tip, ...l.toe.userData.tread]) { _btP.copy(c); l.toe.localToWorld(_btP); low = Math.min(low, _btP.y + ts); }
     for (const c of l.toe.userData.sole) { _btP.copy(c.a); l.an.localToWorld(_btP); _btQ.copy(c.t); l.toe.localToWorld(_btQ); low = Math.min(low, _btP.lerp(_btQ, c.w).y); }
   }
   return low;
@@ -2243,9 +2248,21 @@ function posePass(H, s, t, ground, raise) {
     // with the ankle above it: lift the ankle by the deficit of the lowest boot corner and re-solve.
     // Repeated: a heel lifted by the dorsiflexion cap changes the shin angle as the ankle rises.
     // (the toes bend flat first: up on the ball, the boot rests on it instead of on its stiff toe tip)
+    // A step (sl: the boot lifted off the roof) bent the toes against that lifted floor, so a foot rolled onto its
+    // ball swung forward still on tiptoe in the air, toes bent up to 41 deg (the guard walk's rear foot, every step).
+    // The toes bend against the real roof: off it they straighten as a foot does once it leaves the floor (toe-off),
+    // bending again as a pitched foot comes down onto its ball. Straight toes on a foot pitched toes-down reach lower,
+    // so the step lifts the toe tip STEP_TOE less than the heel and ball (still clear of the roof) instead of hoisting
+    // the ankle another 4-5 cm. (tlo: TOE_REL, from last frame's bend l.taP)
+    // Coming down (STEP_LAND of the step's progress su) they bend against the lifted floor again, so a foot reaching
+    // back onto its ball (walking backwards) has its toes up before it lands instead of bending 27 deg on the frame
+    // it touches.
+    if (!raise && !s.again) l.taP = l.ta || 0;
+    const tb = (side === 'L' ? s.lt : s.rt) || 0, tlo = s.dt && l.taP > 0 ? l.taP - TOE_REL * s.dt : -Infinity;
+    const su = gk && gk.sw ? gk.u : l.lk && l.lk.st >= 0 ? l.lk.st : 0, tf = ground + sl * blend(STEP_LAND[0], STEP_LAND[1], su);
     for (let it = 0; it < 4 && _T.y > ground - 0.6; it++) {
-      bendToes(l, ground + sl, (side === 'L' ? s.lt : s.rt) || 0);
-      const low = bootLow(l);
+      bendToes(l, tf, tb, tlo);
+      const low = bootLow(l, sl * STEP_TOE);
       if (low >= ground + sl - 0.002) break;
       _T.y += ground + sl - low;
       kneePole(H, l, tgP, ex);
@@ -2269,7 +2286,8 @@ function posePass(H, s, t, ground, raise) {
         }
       }
     }
-    bendToes(l, ground + sl, (side === 'L' ? s.lt : s.rt) || 0);
+    const ta = bendToes(l, tf, tb, tlo);
+    if (!s.again) l.ta = ta;
     if (k && !s.again) { l.an.getWorldPosition(_P); k.ax = _P.x; k.az = _P.z; }
     if (!s.again) { _P.copy(BALL); l.an.localToWorld(_P); _LK.copy(HEEL); l.an.localToWorld(_LK); l.gy = Math.min(_P.y, _LK.y) - ground; } // (footLock: busy)
     if (!s.again) l.an.getWorldPosition(l.ga ||= new THREE.Vector3()); // (gait lock: where a newly held foot starts)
