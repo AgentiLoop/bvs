@@ -1845,6 +1845,24 @@ export class Game {
     a.x -= dx / d * p; a.z -= dz / d * p; b.x += dx / d * p; b.z += dz / d * p;
   }
 
+  // which of target()'s no-action poses f is in ('' = not blended: the entrance and the round-start stance)
+  stateKey(f) {
+    if (this.state === 'enter') return '';
+    if (this.state === 'ready') return 'idle';
+    if (f.ko) return 'ko';
+    if (this.state === 'over' && f === this.winner && this.overT > 1.4) return 'hero';
+    if (f.rollA) return 'roll';
+    if (f.down > 0) return f.down > 0.3 ? 'down' : 'kneel';
+    if (f.launched && f.y > 0.05) return 'air';
+    if ((f.dazed || f.dizzy > 0) && f.stun <= 0) return 'dazed';
+    if (f.brk > BREAK.inv - BREAK.pose) return 'burst';
+    if (f.parryT > 0 && f.stun <= 0) return f.parLow ? 'parryL' : 'parry';
+    if (f.stun > 0) return 'stun';
+    if (f.y > 0.05) return 'tuck';
+    if (f.crouch) return f.block ? 'cblock' : 'crouch';
+    return f.block ? 'block' : 'idle';
+  }
+
   target(f) {
     if (this.state === 'enter' && f.key === 'sup') {
       if (f.y > 1.5) return T(POSES.fly, { pitch: 0.35, rh: [-0.12, 0.6, 0.45], base: f.y });
@@ -2012,11 +2030,14 @@ export class Game {
       const a0 = f.act, kn = (keys) => keys.filter(([t]) => a0.t >= t).length;
       const stg = !a0 ? '' : a0.type === 'rise' ? a0.landT != null : a0.type === 'shoot' ? kn(SHOT[f.key].keys)
         : a0.type === 'prop' ? kn(PROP.keys) : a0.type === 'throw' ? `${a0.grab}${a0.checked}${a0.grab ? kn(TOSS[f.key].keys) : ''}` : a0.type === 'flykick' ? a0.t < 0.1125 : '';
-      const sk = a0 && `${a0.type}|${a0.phase ?? ''}|${a0.k ?? ''}|${a0.name ?? ''}|${a0.pose ?? ''}|${stg}`;
+      // (with no action, the state target() picks: knocked down / kneeling up / launched / K.O. / burst / parry /
+      // block / crouch / airborne tuck / guard ease in the same way; stun keeps its own ease-in, f.p0 / REACT_IN)
+      // (switched in one frame, being launched threw the hands 52 cm, the knockdown sprawl 49.5 cm per 30 fps frame)
+      const sk = a0 ? `${a0.type}|${a0.phase ?? ''}|${a0.k ?? ''}|${a0.name ?? ''}|${a0.pose ?? ''}|${stg}` : this.stateKey(f);
       let tg = this.target(f); const c = f.cur, gr = this.gripOf(f, o);
       if (a0 !== f.segA || sk !== f.segK) {
         const c0 = f.cur, D = Math.max(...ARR.map((n) => Math.hypot(...tg[n].map((v, j) => v - c0[n][j]))));
-        f.segA = a0; f.segK = sk; f.s0 = a0 ? { ...c0, lh: [...c0.lh], rh: [...c0.rh], lf: [...c0.lf], rf: [...c0.rf] } : null; f.segT = this.t; f.segD = clamp(D / ACT_V, ACT_IN, ACT_MAX);
+        const k0 = f.segK; f.segA = a0; f.segK = sk; f.s0 = sk && sk !== 'stun' && k0 !== '' ? { ...c0, lh: [...c0.lh], rh: [...c0.rh], lf: [...c0.lf], rf: [...c0.rf] } : null; f.segT = this.t; f.segD = clamp(D / ACT_V, ACT_IN, ACT_MAX);
       }
       if (f.s0) { const u = clamp((this.t - f.segT) / f.segD, 0, 1); if (u < 1) tg = mixPose(f.s0, tg, u * u * (3 - 2 * u)); }
       if (f.jl || f.jt) { const l = (f.jl || 0) * jk, t = (f.jt || 0) * jk; c.lean += l; c.tw += t; f.jl -= l; f.jt -= t; } // a hit's snap back reaches the body over a few frames (in real time, so it plays through hitstop), not in one
