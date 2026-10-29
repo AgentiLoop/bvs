@@ -184,13 +184,14 @@ const seatHold = (y, z, w, m) => {
 };
 const seatMask = (x, z) => blend(0.1, 0.5, -z / (Math.hypot(x, z) || 1)); // the back only: the front still folds with the thigh
 
-function surface(rows, sculpt = (p) => p, rings = 64, sides = 48) {
+// warp (0..1): bunches the sides toward the front (a = 0) and spreads them at the back (a = u - warp sin u).
+function surface(rows, sculpt = (p) => p, rings = 64, sides = 48, warp = 0) {
   const positions = [], uv = [], indices = [];
   for (let j = 0; j <= rings; j++) {
     const y = THREE.MathUtils.lerp(rows[0][0], rows[rows.length - 1][0], j / rings);
     const [rx, rz, offset = 0] = contour(rows, y);
     for (let i = 0; i <= sides; i++) {
-      const a = i / sides * Math.PI * 2;
+      const u = i / sides * Math.PI * 2, a = u - warp * Math.sin(u);
       const p = sculpt(new THREE.Vector3(Math.max(0.0001, rx) * Math.sin(a), y, Math.max(0.0001, rz) * Math.cos(a) + offset), a);
       positions.push(p.x, p.y, p.z); uv.push(i / sides, j / rings);
       if (j < rings && i < sides) {
@@ -501,7 +502,10 @@ export function makeHero(kind) {
     return p;
     return p;
   };
-  const faceGeo = surface(faceRows, faceSculpt, 72);
+  // Batman's face is denser and front-weighted: at 48 sides |sin a|^0.83 put the columns at 0 / 15 / 26 mm off
+  // the midline, so the 4 mm nose ridge, chin cleft, lips and the inked mouth creases fell between vertices
+  // (aliased away or broken into gaps). 128 sides warped toward the front: ~3-4 mm across the face.
+  const faceGeo = B ? surface(faceRows, faceSculpt, 144, 128, 0.6) : surface(faceRows, faceSculpt, 72);
   // Front-surface depth of the sculpted face at (x, y): facial features are seated on it rather than
   // placed at fixed depths that leave them floating in front of (or buried in) the face.
   const fp = faceGeo.attributes.position;
