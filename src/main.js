@@ -663,7 +663,8 @@ addEventListener('keydown', (e) => {
   }
   if (e.key === 'b' || e.key === 'B' || e.key === '1') startGame('bat');
   else if (e.key === 's' || e.key === 'S' || e.key === '2') startGame('sup');
-  else if (e.key === 't' || e.key === 'T') startGame('bat', false, true); // training (T in a match toggles it, either hero)
+  else if (e.key === 't' || e.key === 'T') startGame('bat', false, true); // training as Batman (T in a match toggles it, either hero)
+  else if (e.key === 'y' || e.key === 'Y') startGame('sup', false, true); // training as Superman
   else if (e.code === 'Space') { paused = !paused; sound.pause(paused); }
   else if (e.key === 'p' || e.key === 'P') cycleMode();
   else if (e.key === '-' || e.key === '_') pixStep(-1);
