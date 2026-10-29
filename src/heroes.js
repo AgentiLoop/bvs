@@ -178,13 +178,14 @@ const seatHold = (y, z, w, m) => {
 };
 const seatMask = (x, z) => blend(0.1, 0.5, -z / (Math.hypot(x, z) || 1)); // the back only: the front still folds with the thigh
 
-function surface(rows, sculpt = (p) => p, rings = 64, sides = 48) {
+// warp (0..1): bunches the sides toward the front (a = 0) and spreads them at the back (a = u - warp sin u).
+function surface(rows, sculpt = (p) => p, rings = 64, sides = 48, warp = 0) {
   const positions = [], uv = [], indices = [];
   for (let j = 0; j <= rings; j++) {
     const y = THREE.MathUtils.lerp(rows[0][0], rows[rows.length - 1][0], j / rings);
     const [rx, rz, offset = 0] = contour(rows, y);
     for (let i = 0; i <= sides; i++) {
-      const a = i / sides * Math.PI * 2;
+      const u = i / sides * Math.PI * 2, a = u - warp * Math.sin(u);
       const p = sculpt(new THREE.Vector3(Math.max(0.0001, rx) * Math.sin(a), y, Math.max(0.0001, rz) * Math.cos(a) + offset), a);
       positions.push(p.x, p.y, p.z); uv.push(i / sides, j / rings);
       if (j < rings && i < sides) {
@@ -499,6 +500,9 @@ export function makeHero(kind) {
       + 0.018 * bump(y, 0.029, 0.016) * bump(p.x, 0, 0.04)                  // jutting chin
       + 0.006 * bump(y, 0.014, 0.007) * bump(p.x, 0, 0.035)                 // square chin: flat front down to a crisp underside
       - 0.003 * bump(p.x, 0, 0.005) * bump(y, 0.022, 0.012));               // chin cleft
+    // Comic nose line: the nasion fills so the bridge runs on from the glabella instead of dropping into a
+    // down-facing notch that the high moon key left as a dark bar across the nose between the eyes.
+    p.z += front ** 3 * 0.0035 * bump(y, 0.144, 0.008) * bump(p.x, 0, 0.008);
     p.z += front ** 2 * 0.012 * bump(y, 0.178, 0.022) * bump(p.x, 0, 0.05);  // full forehead: no shelf above the brow
     // Upright comic-book forehead: the upper forehead (and the hairline riding on it) fills forward so it
     // rises steeply from the brow instead of sloping back ~2 cm to the hairline.
@@ -552,7 +556,10 @@ export function makeHero(kind) {
     return p;
   };
   // Superman's face is denser (x spacing ~4 mm instead of ~1 cm) so the nose, lips and chin read as sculpted forms.
-  const faceGeo = surface(faceRows, faceSculpt, B ? 72 : 144, B ? 48 : 128);
+  // FACE_WARP bunches its sides toward the front: |sin a|^0.83 left the first column 6.6 mm off the midline, so the
+  // nose bridge was a ridge two vertices wide whose side normals (0.75 sideways) shaded it dark; now ~3 mm.
+  const FACE_WARP = B ? 0 : 0.6;
+  const faceGeo = surface(faceRows, faceSculpt, B ? 72 : 144, B ? 48 : 128, FACE_WARP);
   // Front-surface depth of the sculpted face at (x, y): facial features are seated on it rather than
   // placed at fixed depths that leave them floating in front of (or buried in) the face.
   const fp = faceGeo.attributes.position;
@@ -592,9 +599,10 @@ export function makeHero(kind) {
     const hDir = new THREE.Vector3(0, 0.75, 0.66).normalize(), hv = new THREE.Vector3();
     const foldInk = new THREE.Color(0x4a2420); // nasolabial creases, the mouth line's brown
     hairMask.forEach((h, i) => {
-      hc.copy(skin.color).lerp(foldInk, 0.75 * foldMask[i] + cheekMask[i]).lerp(hairDark, h);
+      // (fold 0.55: the warped, denser columns resolve the 3 mm stroke, and 0.75 turned it into a broad black smear)
+      hc.copy(skin.color).lerp(foldInk, 0.55 * foldMask[i] + cheekMask[i]).lerp(hairDark, h);
       if (h > 0) {
-        const a = (i % 129) / 128 * Math.PI * 2, y = fp.getY(i);
+        const u = (i % 129) / 128 * Math.PI * 2, a = u - FACE_WARP * Math.sin(u), y = fp.getY(i);
         const streak = 0.15 + 0.85 * blend(0.1, 0.8, Math.sin(a * 11 + y * 70));
         hc.lerp(hairBlue, h * streak * blend(0.4, 0.85, hv.fromBufferAttribute(HN, i).dot(hDir)));
       }
