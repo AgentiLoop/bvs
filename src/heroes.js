@@ -533,7 +533,12 @@ export function makeHero(kind) {
       sh.vertexShader = 'attribute float skinW;\nvarying float vSkinW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vSkinW = skinW;');
       sh.fragmentShader = 'varying float vSkinW;\n' + sh.fragmentShader
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor += mix(0.42, 0.82, vSkinW) - roughness;') // offset, so battle-damage roughness still applies
-        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n  metalnessFactor = 0.12 * (1.0 - vSkinW);');
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n  metalnessFactor = 0.12 * (1.0 - vSkinW);')
+        // In-game the face is back-lit by the moon and only the orange city light reaches the jaw (~76,40,32, mouth
+        // unreadable). Skin scatters light under the surface, so give the jaw a soft cool skylight-bounce fill of its
+        // own (scaled by its albedo, so the baked AO, lips and stubble still read) instead of touching scene lights.
+        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.indirectDiffuse += vSkinW * SKIN_FILL * material.diffuseColor;');
+      sh.fragmentShader = sh.fragmentShader.replace('varying float vSkinW;', 'varying float vSkinW;\n#define SKIN_FILL vec3(0.14, 0.16, 0.21)');
     };
     headMat.customProgramCacheKey = () => 'hero-rim|batcowl';
     part(head, faceGeo, headMat);
