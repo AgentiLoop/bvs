@@ -1471,6 +1471,22 @@ const FIST_PTS = [[0, -0.055, 0.015, 0.05], [0.03, -0.07, 0.06, 0.012], [-0.008,
 for (const x of [-0.035, 0.035]) for (const y of [-0.015, -0.1]) for (const z of [-0.03, 0.04]) FIST_PTS.push([x, y, z, 0.012]);
 // against the opponent (s.foe) the knuckle face counts too: it's what lands on him
 const FOE_NEAR = [0.4, 0.5], FOE_STICK = 0.15, ARM_SWING_FOE = [0.5, 0.8], _fp = new THREE.Vector3(), _fp2 = new THREE.Vector3();
+// FOE_STOP [fist centre past the wrist, clearance]: foeStop() marches the shoulder->target line and pulls a target
+// that lies inside the foe back to where the fist centre first meets his torso / head (faded by FOE_NEAR as below).
+const FOE_STOP = [0.08, 0.05], _sS = new THREE.Vector3(), _sD = new THREE.Vector3(), _sP = new THREE.Vector3(), _sQ = new THREE.Vector3();
+function foeStop(H, a, X, T) {
+  const kf = blend(FOE_NEAR[0], FOE_NEAR[1], H.chest.getWorldPosition(_C4).distanceTo(X.chest.getWorldPosition(_C5)));
+  if (kf < 0.01) return;
+  a.sh.getWorldPosition(_sS); _sD.copy(T).sub(_sS);
+  const L = _sD.length(); if (L < 1e-4) return;
+  const at = u => _sP.copy(_sS).addScaledVector(_sD, u).addScaledVector(_sD, FOE_STOP[0] / L);
+  const ins = u => (at(u), pushOutOfTorso(X, _sQ.copy(_sP), FOE_STOP[1]) || pushOutOfHead(X, _sQ.copy(_sP), FOE_STOP[1]));
+  if (!ins(1) || ins(0)) return;
+  let lo = 0, hi = 1;
+  for (let i = 1; i < 10; i++) if (ins(i / 10)) { hi = i / 10; break; } else lo = i / 10;
+  for (let i = 0; i < 6; i++) { const m = (lo + hi) / 2; if (ins(m)) hi = m; else lo = m; }
+  T.lerp(_sP.copy(_sS).addScaledVector(_sD, lo), kf);
+}
 const FOE_PTS = [...FIST_PTS, [0.028, -0.1, 0.015, 0.028], [-0.028, -0.1, 0.015, 0.028]];
 // w = wrist extension 0..1 (palm strikes): the hand bends back up to 66 deg so the heel of the palm leads
 // and the fingers point up (a palm-down extended arm turns into a palm-forward strike).
@@ -1811,6 +1827,11 @@ function posePass(H, s, t, ground, raise) {
     _T.set(tg[0], tg[1] + Math.min(0, dz), tg[2] + dz); H.root.localToWorld(_T);
     if (_T.y > ground - 0.6) _T.y = Math.max(_T.y, ground + 0.07); // fists rest on the roof, not in it
     pushOutOfTorso(H, _T, 0.065); // fists stay in front of / beside the chest, not sunk inside it
+    // Chest to chest (walking in, a jab thrown at 0.6 m) the fist's target lay inside the foe, and the push-out below
+    // threw it out round his body after the solve: the guard fist sat at belly height while walking in, then jumped
+    // back up to the chin for the jab, 40-61 cm in one 30 fps frame. Like a real fist, it now stops where the arm's
+    // line from the shoulder first meets his torso or head (FOE_STOP), before the arm is solved.
+    if (s.foe && !s.hold) foeStop(H, a, s.foe, _T);
     // A fist pulled in onto its own shoulder (spinning elbow, drive impact's rear hand, the rush on a deep lean) left
     // the shoulder->fist direction undefined: a few cm of travel swung it round and the elbow jumped 20-29 cm in one
     // frame. Inside FOLD_R the target is eased out along a fixed forward-down-inward line, where a folded fist sits.
