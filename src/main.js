@@ -636,6 +636,7 @@ function render() {
 
 // ---------- input ----------
 const playUI = document.getElementById('play'), keysUI = document.getElementById('hud');
+keysUI.textContent += ' · v' + VERSION;
 if (qs.has('freeze') || qs.has('t') || qs.has('cam')) playUI.style.display = keysUI.style.display = 'none'; // clean frames for stills
 function startGame(choice, demo = false, train = false) { reset(); game.demo = demo; game.train = train; game.start(choice); playUI.style.display = keysUI.style.display = 'none'; paused = false; }
 function quitGame() { game.stop(); reset(); playUI.style.display = 'flex'; keysUI.style.display = ''; if (paused) { paused = false; sound.pause(false); } }
