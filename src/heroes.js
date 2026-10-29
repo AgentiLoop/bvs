@@ -854,8 +854,18 @@ export function makeHero(kind) {
         const N0 = legGeo.attributes.normal.array;
         return new THREE.Float32BufferAttribute(g.attributes.normal.array.map((x, k) => x - N0[k]), 3);
       };
-      legGeo.morphAttributes.position = [dF, dO, dI, dS].map(d => new THREE.Float32BufferAttribute(d, 3));
-      legGeo.morphAttributes.normal = [dF, dO, dI, dS].map(nrm);
+      // Throat crease: a dorsiflexed ankle (crouch, lunge, the guard's rear foot) bent the shaft's front over the vamp
+      // as a smooth ramp; a boot buckles there. A deep crease at the bend (rings 5-6, 2-3 cm above the ankle) with the
+      // bunched leather standing up as a ridge above it, across the front and fading round the sides (Batman's
+      // stiffer boot less). Driven by the ankle's dorsiflexion in bendToes (THROAT_DF).
+      const dT = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const a = U.getX(i) * Math.PI * 2, y = P0.getY(i) + 0.04; // bind -> thigh-local (ankle at -0.92)
+        const g = (B ? 0.6 : 1) * (-0.0028 * bump(y, -0.889, 0.008) + 0.0016 * bump(y, -0.866, 0.008)) * Math.max(0, Math.cos(a)) ** 2;
+        dT[i * 3] = g * Math.sin(a); dT[i * 3 + 2] = g * Math.cos(a);
+      }
+      legGeo.morphAttributes.position = [dF, dO, dI, dS, dT].map(d => new THREE.Float32BufferAttribute(d, 3));
+      legGeo.morphAttributes.normal = [dF, dO, dI, dS, dT].map(nrm);
       legGeo.morphTargetsRelative = true;
       legGeo.userData.leg = side;
     }
