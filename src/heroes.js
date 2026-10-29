@@ -545,17 +545,31 @@ export function makeHero(kind) {
       // tip, the scowl built into the mask) instead of grey ovals. Self-lit pure white so they read white
       // under the night lighting, and the slab is bent onto the sculpted face so it sits flush in the socket.
       const pts = [[-0.017, -0.0015], [-0.006, 0.0042], [0.01, 0.0062], [0.022, 0.0042], [0.0235, 0.0005],
-        [0.012, -0.0048], [-0.002, -0.0058], [-0.013, -0.0042]].map(([x, y]) => new THREE.Vector2(s * x, y));
-      if (s < 0) pts.reverse();
-      const lens = new THREE.ExtrudeGeometry(new THREE.Shape(pts), { depth: 0.004, bevelEnabled: true,
-        bevelThickness: 0.0008, bevelSize: 0.0008, bevelSegments: 2, curveSegments: 4 });
-      const lp = lens.attributes.position, z0 = faceZ(lid.position.x, lid.position.y);
-      for (let i = 0; i < lp.count; i++) {
-        const x = lp.getX(i), y = lp.getY(i);
-        lp.setZ(i, lp.getZ(i) - 0.0035 + faceZ(lid.position.x + x, lid.position.y + y) - z0 + 0.002);
-      }
-      lens.computeVertexNormals();
-      eyes.push(part(lid, lens, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35,
+        [0.012, -0.0048], [-0.002, -0.0058], [-0.013, -0.0042]];
+      const z0 = faceZ(lid.position.x, lid.position.y);
+      const outline = (scale) => {
+        const sp = pts.map(([x, y]) => new THREE.Vector2(s * (0.003 + (x - 0.003) * scale), y * scale));
+        return s < 0 ? sp.reverse() : sp;
+      };
+      const slab = (scale, depth, bevel, shift, hole = 0) => {
+        const shape = new THREE.Shape(outline(scale));
+        if (hole) shape.holes.push(new THREE.Path(outline(hole).reverse()));
+        const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: bevel > 0,
+          bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 4 });
+        const gp = g.attributes.position;
+        for (let i = 0; i < gp.count; i++) {
+          const x = gp.getX(i), y = gp.getY(i);
+          gp.setZ(i, gp.getZ(i) + shift + faceZ(lid.position.x + x, lid.position.y + y) - z0 + 0.002);
+        }
+        g.computeVertexNormals();
+        return g;
+      };
+      // Comic-style black rim: a ring just outside and behind the lens (front face below the lens' bevelled edge, and
+      // open in the middle: a solid cap's flat triangles, spanning the curved brow / socket, rose through the white),
+      // flush with the cowl surface, so the
+      // white reads as a crisp inked shape instead of bleeding into the dark-blue cowl.
+      part(lid, slab(1.22, 0.003, 0, -0.0031, 0.9), new THREE.MeshBasicMaterial({ color: 0x000000 })); // unlit ink: no rim light
+      eyes.push(part(lid, slab(1, 0.004, 0.0008, -0.0035), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35,
         emissive: 0xffffff, emissiveIntensity: 0.9 })));
     } else eyes.push(oval(lid, new THREE.MeshStandardMaterial({ color: 0xe1ddd4, roughness: 0.6, emissive: 0 }),
       [0, 0, 0], [0.018, 0.006, 0.006])); // seated in the socket
@@ -569,7 +583,8 @@ export function makeHero(kind) {
   }
   const mz = faceZ(0, 0.056);
   const cavity = oval(head, mat(0x1a0807, 0.95), [0, 0.06, mz - 0.0012], [0.012, 0.0004, 0.0024]);
-  const teeth = oval(head, mat(0xe6e0d2, 0.5), [0, 0.0598, mz - 0.0006], [0.0095, 0.0004, 0.0022]);
+  // Batman's teeth are clean white (lightly self-lit like his lenses) so they don't turn grey at night.
+  const teeth = oval(head, B ? mat(0xf4f2ec, 0.45, 0, { emissive: 0xffffff, emissiveIntensity: 0.25 }) : mat(0xe6e0d2, 0.5), [0, 0.0598, mz - 0.0006], [0.0095, 0.0004, 0.0022]);
   cavity.visible = teeth.visible = false;
   // Closed, firm mouth: a thin line close to the lip colour so it reads as set lips, not an open shout.
   line(head, [[-0.016, 0.0605], [0, 0.0615], [0.016, 0.0605]].map(onFace(0.0004)),
