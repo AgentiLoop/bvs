@@ -575,6 +575,9 @@ export function makeHero(kind) {
   // nose bridge was a ridge two vertices wide whose side normals (0.75 sideways) shaded it dark; now ~3 mm.
   const FACE_WARP = B ? 0 : 0.6;
   const faceGeo = surface(faceRows, faceSculpt, B ? 72 : 144, B ? 48 : 128, FACE_WARP);
+  // Comic ink weight: a fine line down the nose instead of the full 5.5 mm contour. In a three-quarter view the
+  // nose's outline lay across the far eye and left only a sliver of its white between it and the face contour.
+  if (!B) faceGeo.userData.inkW = (x, y, z) => 1 - 0.7 * bump(x, 0, 0.05) * blend(0.075, 0.09, y) * (1 - blend(0.165, 0.185, y)) * blend(0.03, 0.05, z);
   // Front-surface depth of the sculpted face at (x, y): facial features are seated on it rather than
   // placed at fixed depths that leave them floating in front of (or buried in) the face.
   const fp = faceGeo.attributes.position;
@@ -1184,6 +1187,7 @@ export function makeHero(kind) {
       const [rx, rz] = y < 0.06 ? contour(trunkRows, y) : contour(torsoRows, y);
       w[i] = blend(1.02, 1.22, Math.hypot(x / rx, z / (y < 0.06 && z < 0 ? rz + cheek(x, y) : rz))); // trunks include the glutes
     }
+    if (g.userData.inkW) for (let i = 0; i < P.count; i++) w[i] = g.userData.inkW(P.getX(i), P.getY(i), P.getZ(i));
     og.setAttribute('inkW', new THREE.BufferAttribute(w, 1));
     const o = m.isSkinnedMesh ? new THREE.SkinnedMesh(og, ink) : new THREE.Mesh(og, ink);
     o.frustumCulled = false;
