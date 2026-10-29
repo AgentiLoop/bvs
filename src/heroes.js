@@ -449,7 +449,7 @@ export function makeHero(kind) {
       [0.115, 0.085, 0.076, 0], [0.149, 0.081, 0.077, -0.002],
       [0.182, 0.079, 0.076, -0.006], [0.214, 0.068, 0.064, -0.009],
       [0.237, 0.036, 0.035, -0.009], [0.245, 0.0001, 0.0001, -0.009]];
-  const hairMask = [];
+  const hairMask = [], foldMask = [];
   // Superman's mouth corners turn down: the head's fighting chin-tuck sets the receding corners higher than the
   // middle on screen, so a level lip seam read as a smile; the lips and the mouth line follow this dip instead.
   const mouthDip = x => 0.004 * Math.min(1.5, (x / 0.023) ** 2);
@@ -501,6 +501,20 @@ export function makeHero(kind) {
     p.z += front ** 2 * 0.012 * bump(y, 0.178, 0.022) * bump(p.x, 0, 0.05);  // full forehead: no shelf above the brow
     p.z += front ** 2 * 0.007 * bump(ax, 0.052, 0.018) * bump(y, 0.112, 0.016); // cheekbones
     p.z -= front ** 2 * 0.004 * bump(ax, 0.056, 0.014) * bump(y, 0.082, 0.013); // flat cheek plane hollowing under them
+    // Nasolabial folds (the comic-book Superman's set face): a crease from each nostril wing bowing out and
+    // down past the mouth corner, a narrow groove on the lip side with the cheek rolling over it laterally.
+    {
+      let dm = 1, sd = 0, wt = 0;
+      for (let i = 0; i <= 16; i++) {
+        const t = i / 16, fx = 0.019 + 0.012 * t + 0.004 * Math.sin(Math.PI * t), fy = 0.093 - 0.043 * t;
+        const d = Math.hypot(ax - fx, y - fy);
+        if (d < dm) { dm = d; sd = Math.sign(ax - fx || 1); wt = Math.min(1, t / 0.15, (1 - t) / 0.35); }
+      }
+      const g = sd * dm;                                                     // + = cheek side of the crease
+      p.z += front ** 2 * Math.max(0, wt) * (0.0016 * Math.exp(-(((g - 0.006) / 0.005) ** 2))
+        - 0.002 * Math.exp(-(((g + 0.0005) / 0.003) ** 2)));
+      foldMask.push(front ** 2 * Math.max(0, wt) * Math.exp(-(((g + 0.0005) / 0.003) ** 2))); // inked crease
+    }
     p.z -= front ** 3 * 0.0035 * bump(ax, 0.034, 0.016) * bump(y, 0.141, 0.01); // shallow eye sockets
     // Orbital fold: the skin under the brow bulges forward over the lid instead of a 5 mm shelf facing
     // 35-40 deg down, which the high night key light left as a dark band between brow and lash line. It
@@ -562,8 +576,9 @@ export function makeHero(kind) {
     // (it rendered as a flat neutral grey mass): a few broad strokes swept back and to the side.
     const hairDark = new THREE.Color(0x05070d), hairBlue = new THREE.Color(0x30508f), HN = faceGeo.attributes.normal;
     const hDir = new THREE.Vector3(0, 0.75, 0.66).normalize(), hv = new THREE.Vector3();
+    const foldInk = new THREE.Color(0x4a2420); // nasolabial creases, the mouth line's brown
     hairMask.forEach((h, i) => {
-      hc.copy(skin.color).lerp(hairDark, h);
+      hc.copy(skin.color).lerp(foldInk, 0.75 * foldMask[i]).lerp(hairDark, h);
       if (h > 0) {
         const a = (i % 129) / 128 * Math.PI * 2, y = fp.getY(i);
         const streak = 0.15 + 0.85 * blend(0.1, 0.8, Math.sin(a * 11 + y * 70));
