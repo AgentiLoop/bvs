@@ -16,6 +16,13 @@ const HAND_RATE = 12;
 const JOLT = 25;
 // A clean hit's reaction pose (target(), stun) eases in from the pose he was hit in over this long (s, game time).
 const REACT_IN = 0.08, RISE_IN = 0.1;
+// A new action, or the next stage of one (a super's next blow, a fatality's next pose, landing from the rising uppercut),
+// eases in from the pose he was in over this long (s, game time) instead of starting on its first key in one frame.
+// The ease takes longer for a bigger change (hand / foot travel / ACT_V m/s, up to ACT_MAX s), so a limb never covers
+// more than ~1.5 ACT_V at its fastest: a fatal blow's throat hold to the uppercut dip moved the hand ~1 m in 0.08 s.
+const ACT_IN = 0.08, ACT_V = 6, ACT_MAX = 0.2;
+// Rising uppercut: the arm comes down from overhead into the falling tuck between these fall speeds (m/s).
+const RISE_FALL = [1, 5];
 // Fight camera: swung round the pair more than this (rad) to see past a roof prop (world.js OCCLUDERS), it stays on that side.
 const CAM_FLIP = Math.PI / 2;
 // swing angles tried, nearest first: up to 1 rad either way (further and the fighters line up, one hiding the other),
@@ -1901,7 +1908,13 @@ export class Game {
       return a.t < DI_BLEND.out[0] ? mixPose(T(MP.diUp), T(MP.di), ss(DI_BLEND.strike)) : mixPose(T(MP.di), T(MP.whiff), ss(DI_BLEND.out));
     }
     // (the fist drives up out of the dip over RISE_IN s: switched at 0.05 s it jumped 44-63 cm in one 30 fps frame)
-    if (a && a.type === 'rise') { const u = clamp(a.t / RISE_IN, 0, 1); return a.landT != null ? T(MP.crouch) : f.vy > -1.5 || a.t < RISE_IN ? mixPose(T(MP.dip), T(MP.riseUp), u * u * (3 - 2 * u)) : T(POSES.tuck); }
+    // (and comes down into the falling tuck as he drops, over RISE_FALL m/s of fall speed: switched at -1.5 m/s the
+    // fist was pulled 1.2 m from overhead to the knees in ~0.1 s)
+    if (a && a.type === 'rise') {
+      if (a.landT != null) return T(MP.crouch);
+      const u = clamp(a.t / RISE_IN, 0, 1), v = a.t < RISE_IN ? 0 : clamp((-f.vy - RISE_FALL[0]) / (RISE_FALL[1] - RISE_FALL[0]), 0, 1);
+      return mixPose(mixPose(T(MP.dip), T(MP.riseUp), u * u * (3 - 2 * u)), T(POSES.tuck), v * v * (3 - 2 * v));
+    }
     if (f.brk > BREAK.inv - BREAK.pose && !a) return T(MP.burst);
     if (f.parryT > 0 && !a && f.stun <= 0) return T(f.parLow ? MP.parryLow : MP.parry);
     if (f.stun > 0) {
@@ -1991,7 +2004,21 @@ export class Game {
     for (const f of this.gripOf(this.F.bat, this.F.sup) ? [this.F.sup, this.F.bat] : [this.F.bat, this.F.sup]) {
       const o = f === this.F.bat ? this.F.sup : this.F.bat;
       const k = dt ? 1 - Math.exp(-dt * (f.act || f.stun > 0 ? 26 : 16)) : 1;
-      const tg = this.target(f), c = f.cur, gr = this.gripOf(f, o);
+      // a new action / stage (segK) eases in from the pose he was in (f.s0 at f.segT) over f.segD s (ACT_IN..ACT_MAX)
+      // (switched in one frame, the pose spring threw the fist 40-60 cm in the first 30 fps frame: the roundhouse
+      // chained from a full-reach cross, a jab from a dropped hand, a super's next blow, the rising uppercut's landing)
+      // (stg: the key pose of acts whose target() switches keys without easing: the rising uppercut's landing crouch,
+      // projectile, drum and throw keys, the flying kick's tuck)
+      const a0 = f.act, kn = (keys) => keys.filter(([t]) => a0.t >= t).length;
+      const stg = !a0 ? '' : a0.type === 'rise' ? a0.landT != null : a0.type === 'shoot' ? kn(SHOT[f.key].keys)
+        : a0.type === 'prop' ? kn(PROP.keys) : a0.type === 'throw' ? `${a0.grab}${a0.checked}${a0.grab ? kn(TOSS[f.key].keys) : ''}` : a0.type === 'flykick' ? a0.t < 0.1125 : '';
+      const sk = a0 && `${a0.type}|${a0.phase ?? ''}|${a0.k ?? ''}|${a0.name ?? ''}|${a0.pose ?? ''}|${stg}`;
+      let tg = this.target(f); const c = f.cur, gr = this.gripOf(f, o);
+      if (a0 !== f.segA || sk !== f.segK) {
+        const c0 = f.cur, D = Math.max(...ARR.map((n) => Math.hypot(...tg[n].map((v, j) => v - c0[n][j]))));
+        f.segA = a0; f.segK = sk; f.s0 = a0 ? { ...c0, lh: [...c0.lh], rh: [...c0.rh], lf: [...c0.lf], rf: [...c0.rf] } : null; f.segT = this.t; f.segD = clamp(D / ACT_V, ACT_IN, ACT_MAX);
+      }
+      if (f.s0) { const u = clamp((this.t - f.segT) / f.segD, 0, 1); if (u < 1) tg = mixPose(f.s0, tg, u * u * (3 - 2 * u)); }
       if (f.jl || f.jt) { const l = (f.jl || 0) * jk, t = (f.jt || 0) * jk; c.lean += l; c.tw += t; f.jl -= l; f.jt -= t; } // a hit's snap back reaches the body over a few frames (in real time, so it plays through hitstop), not in one
       for (const n of NUM) {
         const d = (tg[n] - c[n]) * k;
