@@ -634,7 +634,25 @@ export function makeHero(kind) {
     }
     const bp = [s * 0.033, 0.159, faceZ(s * 0.033, 0.159)];
     const bg = new THREE.Group(); bg.position.set(...bp); head.add(bg); brows.push({ g: bg, s, y: bp[1] });
-    line(bg, [[s * 0.014, 0.156], [s * 0.032, 0.16], [s * 0.053, 0.157]].map(onFace(B ? 0.002 : 0.0015)).map(p => [p[0] - bp[0], p[1] - bp[1], p[2] - bp[2]]), B ? 0.006 : 0.005, brow);
+    if (B) line(bg, [[s * 0.014, 0.156], [s * 0.032, 0.16], [s * 0.053, 0.157]].map(onFace(0.002)).map(p => [p[0] - bp[0], p[1] - bp[1], p[2] - bp[2]]), 0.006, brow);
+    else {
+      // Comic-book brow instead of a uniform 1 cm tube: a flat stroke lying on the brow ridge, blunt and
+      // full at the inner end, thickest a third of the way out, tapering to a fine tail that dips past the
+      // outer eye corner. Height = 2r (~5.4 mm at the peak), depth squashed to 0.4 so it hugs the skin.
+      const browR = t => 0.0004 + 0.0023 * Math.sin(Math.PI * (0.25 + 0.75 * t)), n = 32;
+      const curve = new THREE.CatmullRomCurve3([[0.012, 0.1555], [0.021, 0.1585], [0.032, 0.1605], [0.043, 0.1595], [0.051, 0.1565],
+        [0.056, 0.1525]].map(([x, y]) => new THREE.Vector3(s * x - bp[0], y - bp[1], faceZ(s * x, y) + 0.0008 - bp[2])));
+      const g = new THREE.TubeGeometry(curve, n, 1, 8, false), P = g.attributes.position, c = new THREE.Vector3(), v = new THREE.Vector3();
+      for (let j = 0; j <= n; j++) {
+        curve.getPointAt(j / n, c); const r = browR(j / n);
+        for (let k = 0; k <= 8; k++) {
+          const i = j * 9 + k; v.fromBufferAttribute(P, i).sub(c);
+          P.setXYZ(i, c.x + v.x * r, c.y + v.y * r, c.z + v.z * r * 0.4);
+        }
+      }
+      g.computeVertexNormals();
+      part(bg, g, brow);
+    }
   }
   const mz = faceZ(0, 0.056);
   const cavity = oval(head, mat(0x1a0807, 0.95), [0, 0.06, mz - 0.0012], [0.012, 0.0004, 0.0024]);
