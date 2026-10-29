@@ -606,6 +606,7 @@ export function makeHero(kind) {
     // Comic-book hair: blue-black with blue highlight streaks where the swept hair faces up and forward
     // (it rendered as a flat neutral grey mass): a few broad strokes swept back and to the side.
     const hairDark = new THREE.Color(0x05070d), hairBlue = new THREE.Color(0x30508f), HN = faceGeo.attributes.normal;
+    const hairBlue2 = new THREE.Color(0x4f7cc8), PART_X = -0.034; // part highlight; the part's x on the hair (groove at -0.032 x the hair's ~1.06 swell)
     const hDir = new THREE.Vector3(0, 0.75, 0.66).normalize(), hv = new THREE.Vector3();
     const foldInk = new THREE.Color(0x4a2420); // nasolabial creases, the mouth line's brown
     hairMask.forEach((h, i) => {
@@ -615,6 +616,11 @@ export function makeHero(kind) {
         const u = (i % 129) / 128 * Math.PI * 2, a = u - FACE_WARP * Math.sin(u), y = fp.getY(i);
         const streak = 0.15 + 0.85 * blend(0.1, 0.8, Math.sin(a * 11 + y * 70));
         hc.lerp(hairBlue, h * streak * blend(0.4, 0.85, hv.fromBufferAttribute(HN, i).dot(hDir)));
+        // Comic side part: an unbroken dark line from the hairline back over the top, with a bright blue
+        // highlight along the lifted hair swept over from it (the 4 mm groove alone vanished in the cel bands).
+        const d = fp.getX(i) - PART_X, run = h * blend(-0.04, 0, fp.getZ(i));
+        hc.lerp(hairBlue2, run * 0.9 * bump(d, 0.0075, 0.0035)).lerp(hairBlue, run * 0.6 * bump(d, -0.0055, 0.002))
+          .lerp(hairDark, run * bump(d, 0, 0.0018));
       }
       colors.push(hc.r, hc.g, hc.b);
     });
