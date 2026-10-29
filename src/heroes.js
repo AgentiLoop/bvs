@@ -18,6 +18,12 @@ const rim = (m) => {
 };
 const mat = (color, roughness = 0.6, metalness = 0, extra = {}) =>
   rim(new THREE.MeshStandardMaterial({ color, roughness, metalness, ...extra }));
+// Comic Batman's cowl is inked black with flat blue highlight shapes on the planes facing the sky (crown, top of the
+// brow plates, nose bridge, ear edges). In-game it is moon-backlit and the cowl read as a featureless black mass,
+// so the sky-facing planes get a cool sheen of their own (the comic cel bands snap it into crisp shapes).
+// w = GLSL weight of the cowl surface on the mesh.
+const COWL_SHEEN = (w) => `
+  reflectedLight.directSpecular += (${w}) * vec3(0.05, 0.09, 0.2) * smoothstep(0.3, 0.75, inverseTransformDirection(normal, viewMatrix).y);`;
 
 // MK11-style battle damage: up to DMG_N bruise / scuff spots (world positions + strength, refreshed each
 // frame by main.js from the game's bone-anchored scars), torn-in cuts inside the worst of them, and dusty
@@ -212,7 +218,12 @@ export function makeHero(kind) {
   const dark = mat(0x10151e, 0.57, 0.06);
   // Batman's cowl is one moulded piece: the neck, ears and brow ridges share the head's semi-gloss cowl response
   // (roughness 0.42, metalness 0.12) so there is no sheen seam where the cowl meets the neck or the ears' fillet.
-  const cowl = mat(0x10151e, 0.42, 0.12);
+  const cowl = mat(0x10151e, 0.42, 0.12), cowlCompile = cowl.onBeforeCompile;
+  cowl.onBeforeCompile = (sh, r) => {
+    cowlCompile.call(cowl, sh, r);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', '#include <lights_fragment_end>' + COWL_SHEEN('1.0'));
+  };
+  cowl.customProgramCacheKey = () => 'hero-rim|cowlsheen';
   const red = mat(0xa9152b, 0.8);
   const skin = mat(0xdca784, 0.84);
   const yellow = mat(0xd9ac38, 0.48, 0.24);
@@ -546,7 +557,7 @@ export function makeHero(kind) {
         // In-game the face is back-lit by the moon and only the orange city light reaches the jaw (~76,40,32, mouth
         // unreadable). Skin scatters light under the surface, so give the jaw a soft cool skylight-bounce fill of its
         // own (scaled by its albedo, so the baked AO, lips and stubble still read) instead of touching scene lights.
-        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.indirectDiffuse += vSkinW * SKIN_FILL * material.diffuseColor;');
+        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.indirectDiffuse += vSkinW * SKIN_FILL * material.diffuseColor;' + COWL_SHEEN('1.0 - vSkinW'));
       sh.fragmentShader = sh.fragmentShader.replace('varying float vSkinW;', 'varying float vSkinW;\n#define SKIN_FILL vec3(0.14, 0.16, 0.21)');
     };
     headMat.customProgramCacheKey = () => 'hero-rim|batcowl';
