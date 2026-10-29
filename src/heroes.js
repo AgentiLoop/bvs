@@ -499,6 +499,9 @@ export function makeHero(kind) {
       + 0.016 * bump(y, 0.028, 0.016) * bump(p.x, 0, 0.04)                  // jutting chin
       - 0.003 * bump(p.x, 0, 0.005) * bump(y, 0.022, 0.012));               // chin cleft
     p.z += front ** 2 * 0.012 * bump(y, 0.178, 0.022) * bump(p.x, 0, 0.05);  // full forehead: no shelf above the brow
+    // Upright comic-book forehead: the upper forehead (and the hairline riding on it) fills forward so it
+    // rises steeply from the brow instead of sloping back ~2 cm to the hairline.
+    p.z += front ** 2 * 0.009 * bump(y, 0.198, 0.02) * bump(p.x, 0, 0.055);
     p.z += front ** 2 * 0.007 * bump(ax, 0.052, 0.018) * bump(y, 0.112, 0.016); // cheekbones
     p.z -= front ** 2 * 0.004 * bump(ax, 0.056, 0.014) * bump(y, 0.082, 0.013); // flat cheek plane hollowing under them
     // Nasolabial folds (the comic-book Superman's set face): a crease from each nostril wing bowing out and
