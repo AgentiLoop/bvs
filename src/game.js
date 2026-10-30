@@ -177,9 +177,9 @@ const LESSONS = [
   ['BARREL ROLL LEFT · RIGHT', 'Q · R', 'FLICK RIGHT STICK LEFT · RIGHT', (a) => a.type === 'broll'],
   ['THROW', 'U (OR J + K TOGETHER) UP CLOSE', 'Ⓧ + Ⓨ TOGETHER UP CLOSE', (a) => a.type === 'throw'],
   ['PROJECTILE', 'C, THEN TOWARD + J', 'DOWN, THEN TOWARD + Ⓧ', (a) => a.type === 'shoot'],
-  ['RISING UPPERCUT', 'O (OR TOWARD, C + TOWARD + J)', 'TOWARD, DOWN-TOWARD + Ⓧ', (a) => a.type === 'rise'],
+  ['RISING UPPERCUT', 'O (OR HOLD C + TOWARD, THEN J)', 'HOLD DOWN-TOWARD + Ⓧ', (a) => a.type === 'rise'],
   ['SPECIAL', 'L', 'Ⓑ', (a) => a.type === 'flykick' || a.type === 'heat'],
-  ['AMPLIFY', 'O, THEN TAP SHIFT AT ONCE', 'TOWARD, DOWN-TOWARD + Ⓧ, THEN TAP LB AT ONCE', (a) => !!a.amp],
+  ['AMPLIFY', 'HOLD SHIFT + O', 'HOLD LB + DOWN-TOWARD + Ⓧ', (a) => !!a.amp],
   ['DRIVE IMPACT', 'H', 'LB + RB', (a) => a.type === 'impact'],
   ['SUPER', 'I (OR SHIFT + L)', 'HOLD LB + Ⓑ', (a) => a.type === 'super'],
   ['FATAL BLOW', 'F', 'LT + RT', (a) => a.type === 'blow'],
@@ -276,14 +276,13 @@ const GRAPNEL = { cd: 1.8, rel: 0.16, speed: 34, back: 40, range: 9, r: 0.45, la
   col: 0x39ff6a, hit: { dmg: 5, kb: 0, stun: 0.4, at: 'rh', blast: 0.5 }, ko: { dmg: 0.01, kb: 2, up: 2, stun: 0.5, heavy: true, blast: 1.2 },
   zip: { dist: 5.5, behind: 1.6, anchor: 6, speed: 13, arc: 1.3, min: 0.35 } };
 const QCF = 0.35; // crouch must have been held within this many seconds of toward + punch
-// SF dragon punch (toward, then crouch + toward + punch, or O): a rising uppercut that is invulnerable for its first
+// SF dragon punch (crouch + toward + punch held together, or O): a rising uppercut that is invulnerable for its first
 // `inv` s, so it beats jump-ins and pressure, but whiffing or getting it blocked leaves you falling and open (`rec` s
 // of landing lag). act: [start, end] of the active window; the fist reaches a foe up to 1.9 m above.
 const RISE = {
   bat: { name: 'RISING KNIGHT', vy: 6, fwd: 2, inv: 0.2, act: [0.05, 0.38], reach: 1.35, dmg: 12, kb: 1.5, up: 8, stun: 0.7, heavy: true, at: 'rh', blast: 1.2, col: 0xffd23a, rec: 0.35 },
   sup: { name: 'KRYPTON RISING', vy: 6.5, fwd: 1.5, inv: 0.22, act: [0.05, 0.42], reach: 1.4, dmg: 13, kb: 1.2, up: 9, stun: 0.7, heavy: true, at: 'rh', blast: 1.3, col: 0x6fa8ff, rec: 0.35 },
 };
-const DP = 0.4; // toward -> crouch -> punch must each follow within this many seconds
 // SF3 parry: tap toward (crouch for lows) within `win` s before a strike or projectile lands = no damage, no chip;
 // the attacker freezes for `frz` s (can't chain) so the parrier gets a free punish. Taps closer together than `lock` s
 // are ignored (no mashing), a successful parry clears the lock. cpu: chance the CPU parries a hit it is idle for.
@@ -366,7 +365,7 @@ const PROP = { reach: 1.4, lift: 0.16, rel: 0.44, dur: 0.72, speed: 12, r: 0.6, 
   spots: [[-5.4, -1.1], [5.4, -1.1]],
   hit: { dmg: 11, kb: 6, up: 3.5, stun: 0.8, heavy: true, at: 'rh', blast: 1.6 },
   keys: [[0, 'pickUp'], [0.16, 'lift'], [0.34, 'heaveUp'], [0.44, 'heave'], [0.62, 'guard']] };
-// MK11 Amplify / SF EX specials: tap block (Shift / any shoulder or trigger) within `win` s of starting a special, with
+// MK11 Amplify / SF EX specials: hold block (Shift / LB / RB) while starting a special, with
 // `cost` meter = the enhanced version (flash + freeze). Batman: three batarangs fanned `fan` rad apart (a sidestep won't
 // clear them); Superman: SONIC BOOM, a bigger ring that knocks down; either rising uppercut: invincible through its whole
 // active window and two hits (rise[k] = [first, second], the second `gap` s later and launching higher); Batman's flying
@@ -466,7 +465,7 @@ export class Game {
     this.ui.combo.style.opacity = 0;
     this.say('');
     this.updateBars();
-    this.lesson = 22; /* TEMP TEST: start trainer at 23/27 — set back to 0 */ this.lessonT = 0; this.trainUI();
+    this.lesson = 0; this.lessonT = 0; this.trainUI();
   }
 
   // ---------- training mode (TRAIN / LESSONS) ----------
@@ -558,7 +557,6 @@ export class Game {
     else if (k === 'q') this.barrelRoll(this.me, -1);
     else if (k === 'r') this.barrelRoll(this.me, 1);
     else if (k === 'y') this.press(this.me, 'A');
-    else if (k === 'shift') this.amplify(this.me);
     else if (k === 't') this.setTrain(!this.train); // training mode on / off (the CPU becomes a defence-only trainer)
     else if (k === 'tab' && this.train) { e.preventDefault(); this.nextLesson(); }
   }
@@ -606,7 +604,6 @@ export class Game {
     if (this.padHit(3)) this.press(this.me, 'K', this.blockHeld());
     if (this.padHit(1)) this.press(this.me, 'S', this.blockHeld());
     if (this.padHit(0)) this.press(this.me, 'A');
-    if ([4, 5].some((i) => this.padHit(i))) this.amplify(this.me); // a block tap during a special's start-up
     if (this.padHit(11) && !this.interact(this.me)) this.grapnelIn(this.me); // R3 = stage interactable, else Batman's grapnel
     // right stick flicked left / right = barrel roll that way (fresh flick only)
     if (Math.abs(this.pad.rx) > 0.7 && Math.abs(this.rxPrev) <= 0.7) this.barrelRoll(this.me, Math.sign(this.pad.rx));
@@ -661,8 +658,8 @@ export class Game {
     if (f.dizzy > 0) { f.dizzy -= DIZZY.mash; return; } // mash out of the dizzy
     if (btn === 'S') return this.canFatal(f) ? this.fatality(f) : mod && f.meter >= 100 ? this.superMove(f) : this.special(f);
     if (btn === 'A') return f.down > 0 ? this.wake(f, 'quick') : this.jump(f, f.inX, f.inZ);
-    // dragon punch (toward, then crouch + toward + punch) = rising uppercut; quarter circle forward + punch = projectile
-    if (btn === 'J' && f.tow > 0.6 && f.cNow && f.cT0 >= f.fwdT && f.cT0 - f.fwdT < DP && this.fightT - f.cT0 < DP && this.rise(f)) return;
+    // dragon punch (crouch + toward + punch held together) = rising uppercut; quarter circle forward + punch = projectile
+    if (btn === 'J' && f.tow > 0.6 && f.cNow && this.rise(f)) return;
     if (btn === 'J' && f.tow > 0.6 && this.fightT - f.downT < QCF && this.shoot(f)) return;
     // punch + kick together = throw (SF style)
     if (f.lastBtn === (btn === 'J' ? 'K' : 'J') && this.fightT - f.lastBtnT < 0.1) { f.lastBtn = null; return this.throwStart(f); }
@@ -757,12 +754,13 @@ export class Game {
   shoot(f) {
     if (this.shots.some((s) => s.f === f) || !this.ready(f)) return false;
     f.act = { type: 'shoot', t: 0, done: false }; f.buf = null; f.block = f.crouch = false; f.downT = -9;
+    if (f === this.me && this.blockHeld()) this.amplify(f);
     return true;
   }
-  // MK11 Amplify (see AMP): a block tap in a special's start-up spends meter on the enhanced version.
+  // MK11 Amplify (see AMP): starting a special (projectile, rising uppercut, Batman's flying kick) while holding block spends meter on the enhanced version.
   amplify(f) {
     const a = f.act;
-    if (this.state !== 'fight' || !a || a.amp || a.done || a.t > (this.train ? AMP.win * 2.5 : AMP.win) || f.meter < AMP.cost || f.stun > 0) return false;
+    if (this.state !== 'fight' || !a || a.amp || a.done || a.t > AMP.win || f.meter < AMP.cost || f.stun > 0) return false;
     if (!(a.type === 'shoot' || a.type === 'rise' || a.type === 'flykick' && f.key === 'bat')) return false;
     const { fx } = this.ctx, c = f.H.chest.getWorldPosition(new THREE.Vector3()), col = f.key === 'bat' ? 0xffd23a : 0x6fa8ff;
     a.amp = true; f.meter -= AMP.cost; this.updateBars();
@@ -999,7 +997,8 @@ export class Game {
   }
   rise(f) {
     if (!this.ready(f)) return false;
-    f.act = { type: 'rise', t: 0, done: false, go: false }; f.buf = null; f.block = f.crouch = false; f.cT0 = -9;
+    f.act = { type: 'rise', t: 0, done: false, go: false }; f.buf = null; f.block = f.crouch = false;
+    if (f === this.me && this.blockHeld()) this.amplify(f);
     return true;
   }
   jump(f, mx = 0, mz = 0) { if (this.free(f) && !f.block) { f.vy = 6; f.kx += mx * 3; f.kz += mz * 3; } }
@@ -1007,6 +1006,7 @@ export class Game {
     if (f.cd > 0 || !this.ready(f)) return false;
     f.cd = 4;
     f.act = { type: f.key === 'bat' ? 'flykick' : 'heat', t: 0, done: false };
+    if (f === this.me && this.blockHeld()) this.amplify(f);
   }
   // SF6 Drive Impact (see IMPACT): spend meter, glow, coil, then lunge into an armoured palm strike.
   impact(f) {
@@ -1663,7 +1663,7 @@ export class Game {
     f.crouch = this.crouchHeld() && this.canCrouch(f);
     const ch = this.crouchHeld();
     if (ch) f.downT = this.fightT; // start of the quarter-circle motion
-    if (ch && !f.cNow) f.cT0 = this.fightT; // crouch pressed (dragon punch: must come right after toward)
+    if (ch && !f.cNow) f.cT0 = this.fightT; // crouch pressed (parry-low tap)
     f.cNow = ch;
     // screen-relative: right = camera right on the ground, up = into the screen
     const fx = this.camLook.x - this.camPos.x, fz = this.camLook.z - this.camPos.z, fl = Math.hypot(fx, fz) || 1;
@@ -1688,7 +1688,6 @@ export class Game {
     f.latS = ls;
     if (f.stun > 0 && tow > 0.6 && this.blockHeld()) this.breaker(f);
     if (f.down > 0 && tow < -0.6) this.wake(f, 'roll');
-    if (tow > 0.6 && !ch) f.fwdT = this.fightT;
     this.walk(f, f.inX, f.inZ, dt);
   }
 
