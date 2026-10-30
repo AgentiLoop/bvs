@@ -1,6 +1,6 @@
 {
   "name": "bvs",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Batman v Superman, every pixel from code (three.js)",
   "main": "index.js",
   "scripts": {
