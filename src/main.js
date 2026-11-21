@@ -31,9 +31,9 @@ function soundPrompt() {
 
 const qs = new URLSearchParams(location.search);
 const SEED = +(qs.get('seed') || 1337);
-const DEMO = qs.get('demo') === '1'; // ?demo=1 attract mode: the title film, then a CPU v CPU auto-pilot match, then the film again
+const DEMO = qs.get('demo') !== '0'; // attract mode (default; ?demo=0 turns it off): the title film, then a CPU v CPU auto-pilot match, then the film again
 const DT = 1 / 60;
-const LOOP_END = 21.5; // real seconds
+const LOOP_END = 27.5; // real seconds (title + credits hold from 19.8s to 27.5s)
 // Screen settings (mode + pixel sizes) are remembered in localStorage; URL params still override.
 const saved = (() => { try { return JSON.parse(localStorage.getItem('bvs.screen')) || {}; } catch { return {}; } })();
 const mode = qs.has('pixel') ? qs.get('pixel') : saved.mode != null ? String(saved.mode) : '2';
@@ -679,7 +679,7 @@ reset();
 const seekT = +(qs.get('t') || 0);
 while (simT < seekT) step();
 if (qs.get('freeze')) paused = true;
-if (qs.get('play') === 'bat' || qs.get('play') === 'sup') startGame(qs.get('play'), DEMO); // ?play=bat|sup skips the title loop (with &demo=1: straight into auto-pilot)
+if (qs.get('play') === 'bat' || qs.get('play') === 'sup') startGame(qs.get('play'), qs.get('demo') === '1'); // ?play=bat|sup skips the title loop (with &demo=1: straight into auto-pilot)
 window.__game = game; window.__sound = sound;
 let last = performance.now();
 function loop(now) {
